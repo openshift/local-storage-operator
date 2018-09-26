@@ -1,0 +1,3 @@
+apiVersion: local.storage.openshift.io/v1alpha1
+kind: LocalStorageProvider
+projectName: local-storage-operator
