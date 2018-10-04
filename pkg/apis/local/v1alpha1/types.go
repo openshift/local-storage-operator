@@ -1,12 +1,12 @@
 package v1alpha1
 
 import (
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
-
+// LocalStorageProviderList returns list of local storage configurations
 type LocalStorageProviderList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata"`
@@ -14,7 +14,7 @@ type LocalStorageProviderList struct {
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
-
+// LocalStorageProvider is a local storage configuration used by the operator
 type LocalStorageProvider struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata"`
@@ -22,21 +22,24 @@ type LocalStorageProvider struct {
 	Status            LocalStorageProviderStatus `json:"status,omitempty"`
 }
 
+// LocalStorageProviderSpec returns spec of configuration
 type LocalStorageProviderSpec struct {
 	// Nodes on which the provisoner must run
-	NodeSelector *corev1.NodeSelector          `json:"nodeSelector,omitempty"`
+	NodeSelector *corev1.NodeSelector `json:"nodeSelector,omitempty"`
 	// List of storage class and devices they can match
-	StorageClassDevices []StorageClassDevice  `json:"storageClassDevice,omitempty"`
+	StorageClassDevices []StorageClassDevice `json:"storageClassDevice,omitempty"`
 	// Version of external local provisioner to use
 	LocalProvisionerImageVersion
 }
 
-
+// StorageClassDevice returns device configuration
 type StorageClassDevice struct {
 	// StorageClass name to use for set of matches devices
-	StorageClassName string  `json:"storageClassName"`
+	StorageClassName string `json:"storageClassName"`
 	// Volume mode. Raw or with file system
 	VolumeMode string `json:"volumeMode"`
+	// File system type
+	FSType string `json:"fsType"`
 	// A list of devices which would be chosen for local storage.
 	// For example - ["/dev/sda", "/dev/sdb"]
 	// Alternately deviceWhitelistPattern can be also used to selecting
@@ -59,14 +62,14 @@ type LocalStorageProviderStatus struct {
 type RolloutStatus string
 
 const (
-	Completed RolloutStatus = "Completed"
-	Failed RolloutStatus = "Failed"
+	Completed  RolloutStatus = "Completed"
+	Failed     RolloutStatus = "Failed"
 	InProgress RolloutStatus = "InProgress"
 )
 
 type ProvisionerRolloutStatus struct {
 	// StorageClass name to use for set of matches devices
-	StorageClassName string  `json:"storageClassName"`
-	Status RolloutStatus `json:"status"`
-	Message string `json:"message"`
+	StorageClassName string        `json:"storageClassName"`
+	Status           RolloutStatus `json:"status"`
+	Message          string        `json:"message"`
 }

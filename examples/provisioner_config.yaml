@@ -1,0 +1,21 @@
+apiVersion: v1
+data:
+  storageClassMap: |
+    fast-disks:
+      hostDir: /mnt/local-storage/ssd
+      mountDir:  /mnt/local-storage/ssd
+      volumeMode: Filesystem
+      fsType: ext4
+    slow-disks:
+      hostDir: /mnt/local-storage/hdd
+      mountDir: /mnt/local-storage/hdd
+      volumeMode: Filesystem
+      fsType: ext4
+kind: ConfigMap
+metadata:
+  creationTimestamp: 2018-10-01T21:11:53Z
+  name: local-provisioner-config
+  namespace: default
+  resourceVersion: "18032"
+  selfLink: /api/v1/namespaces/default/configmaps/local-provisioner-config
+  uid: 9efe5c0e-c5be-11e8-a383-52540000926c

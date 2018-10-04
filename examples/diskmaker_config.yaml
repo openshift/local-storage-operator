@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: disk-maker-config
+  namespace: default
+data:
+  diskMakerConfig: |
+    fast-disks:
+      diskPatterns:
+        - /dev/sd*
+    slow-disks:
+      disks:
+        - /dev/vdb
+        - /dev/vdc
