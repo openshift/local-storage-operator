@@ -8,10 +8,12 @@ import (
 
 // Disks defines disks to be used for local volumes
 type Disks struct {
-	DiskPatterns []string `json:"diskPatterns"`
-	DiskNames    []string `json:"disks"`
+	DiskPatterns []string `json:"diskPatterns,omitempty"`
+	DiskNames    []string `json:"disks,omitempty"`
 }
 
+// DiskConfig stores a mapping between StorageClass Name and disks that the storageclass
+// will use on each matached node.
 type DiskConfig map[string]*Disks
 
 // ToYAML returns yaml representation of diskconfig

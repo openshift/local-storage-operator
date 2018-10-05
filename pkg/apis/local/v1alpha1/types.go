@@ -32,12 +32,22 @@ type LocalStorageProviderSpec struct {
 	LocalProvisionerImageVersion
 }
 
+// PersistentVolumeMode describes how a volume is intended to be consumed, either Block or Filesystem.
+type PersistentVolumeMode string
+
+const (
+	// PersistentVolumeBlock means the volume will not be formatted with a filesystem and will remain a raw block device.
+	PersistentVolumeBlock PersistentVolumeMode = "Block"
+	// PersistentVolumeFilesystem means the volume will be or is formatted with a filesystem.
+	PersistentVolumeFilesystem PersistentVolumeMode = "Filesystem"
+)
+
 // StorageClassDevice returns device configuration
 type StorageClassDevice struct {
 	// StorageClass name to use for set of matches devices
 	StorageClassName string `json:"storageClassName"`
 	// Volume mode. Raw or with file system
-	VolumeMode string `json:"volumeMode"`
+	VolumeMode PersistentVolumeMode `json:"volumeMode"`
 	// File system type
 	FSType string `json:"fsType"`
 	// A list of devices which would be chosen for local storage.

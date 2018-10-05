@@ -45,14 +45,14 @@ func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
 
 // CreateConfigMap Create configmap requires by the local storage provisioner
 func (h *Handler) CreateProvisionerConfigMap(cr *v1alpha1.LocalStorageProvider) (*corev1.ConfigMap, error) {
-	configMapName := cr.Name + "-local-configmap"
+	configMapName := cr.Name + "-local-provisioner-configmap"
 	configMapData := make(localDiskData)
 	storageClassDevices := cr.Spec.StorageClassDevices
 	for _, storageClassDevice := range storageClassDevices {
 		storageClassName := storageClassDevice.StorageClassName
 		storageClassData := map[string]string{}
 		storageClassData["fstype"] = storageClassDevice.FSType
-		storageClassData["volumeMode"] = storageClassDevice.VolumeMode
+		storageClassData["volumeMode"] = string(storageClassDevice.VolumeMode)
 		storageClassData["hostDir"] = fmt.Sprintf("/mnt/local-storage/%s", storageClassName)
 		storageClassData["mountDir"] = fmt.Sprintf("/mnt/local-storage/%s", storageClassName)
 		configMapData[storageClassName] = storageClassData
@@ -67,16 +67,18 @@ func (h *Handler) CreateProvisionerConfigMap(cr *v1alpha1.LocalStorageProvider) 
 	if err != nil {
 		return nil, fmt.Errorf("error creating configmap while marshalling yaml %v", err)
 	}
-	configmap.Data["storageClassMap"] = string(y)
+	configmap.Data = map[string]string{
+		"storageClassMap": string(y),
+	}
 	return configmap, nil
 }
 
 func (h *Handler) CreateDiskMakerConfig(cr *v1alpha1.LocalStorageProvider) (*corev1.ConfigMap, error) {
-	configMapName := cr.Name + "-disk-configmap"
+	configMapName := cr.Name + "-diskmaker-configmap"
 	configMapData := make(diskmaker.DiskConfig)
 	storageClassDevices := cr.Spec.StorageClassDevices
 	for _, storageClassDevice := range storageClassDevices {
-		disks := new(Disks)
+		disks := new(diskmaker.Disks)
 		if len(storageClassDevice.DeviceNames) > 0 {
 			disks.DiskNames = storageClassDevice.DeviceNames
 		} else {
@@ -87,17 +89,18 @@ func (h *Handler) CreateDiskMakerConfig(cr *v1alpha1.LocalStorageProvider) (*cor
 
 	configMap := &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:   configMapName,
-			Labels: h.defaultLabels,
+			Name:      configMapName,
+			Labels:    h.defaultLabels,
+			Namespace: h.localStorageNameSpace,
 		},
 	}
 	yaml, err := configMapData.ToYAML()
 	if err != nil {
 		return nil, err
 	}
-
-	configMap.Data["diskMakerConfig"] = yaml
-
+	configMap.Data = map[string]string{
+		"diskMakerConfig": yaml,
+	}
 	return configMap, nil
 }
 
