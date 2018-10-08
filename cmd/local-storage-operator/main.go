@@ -5,7 +5,7 @@ import (
 	"runtime"
 	"time"
 
-	stub "github.com/openshift/local-storage-operator/pkg/stub"
+	"github.com/openshift/local-storage-operator/pkg/controller"
 	sdk "github.com/operator-framework/operator-sdk/pkg/sdk"
 	k8sutil "github.com/operator-framework/operator-sdk/pkg/util/k8sutil"
 	sdkVersion "github.com/operator-framework/operator-sdk/version"
@@ -34,6 +34,6 @@ func main() {
 	resyncPeriod := time.Duration(5) * time.Second
 	logrus.Infof("Watching %s, %s, %s, %d", resource, kind, namespace, resyncPeriod)
 	sdk.Watch(resource, kind, namespace, resyncPeriod)
-	sdk.Handle(stub.NewHandler())
+	sdk.Handle(controller.NewHandler(namespace))
 	sdk.Run(context.TODO())
 }

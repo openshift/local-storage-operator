@@ -1,6 +1,7 @@
 package v1alpha1
 
 import (
+	operatorv1alpha1 "github.com/openshift/api/operator/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -30,6 +31,8 @@ type LocalStorageProviderSpec struct {
 	StorageClassDevices []StorageClassDevice `json:"storageClassDevice,omitempty"`
 	// Version of external local provisioner to use
 	LocalProvisionerImageVersion
+	// DiskMakerImage version
+	DiskMakerImageVersion
 }
 
 // PersistentVolumeMode describes how a volume is intended to be consumed, either Block or Filesystem.
@@ -65,8 +68,12 @@ type LocalProvisionerImageVersion struct {
 	ProvisionerImage string `json:"provisionerImage,omitempty"`
 }
 
+type DiskMakerImageVersion struct {
+	DiskMakerImage string `json:"diskMakerImage,omitempty"`
+}
 type LocalStorageProviderStatus struct {
 	ProvisionerRolloutStatuses []ProvisionerRolloutStatus `json:"provisionerRolloutStatuses,omitempty"`
+	operatorv1alpha1.OperatorStatus
 }
 
 type RolloutStatus string
