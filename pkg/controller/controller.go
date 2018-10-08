@@ -31,9 +31,17 @@ type localDiskData map[string]map[string]string
 
 // NewHandler returns a controller handler
 func NewHandler(namespace string) sdk.Handler {
-	return &Handler{
+	handler := &Handler{
 		localStorageNameSpace: namespace,
+		localDiskLocation:     "/mnt/local-storage",
+		provisionerLabels: map[string]string{
+			"app": "local-volume-provisioner",
+		},
+		diskMakerLabels: map[string]string{
+			"app": "local-volume-diskmaker",
+		},
 	}
+	return handler
 }
 
 func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
