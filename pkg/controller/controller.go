@@ -10,7 +10,7 @@ import (
 
 	"github.com/operator-framework/operator-sdk/pkg/sdk"
 	"github.com/sirupsen/logrus"
-	k8sv1beta2 "k8s.io/api/apps/v1beta2"
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -104,6 +104,10 @@ func (h *Handler) CreateProvisionerConfigMap(cr *v1alpha1.LocalStorageProvider) 
 		configMapData[storageClassName] = storageClassData
 	}
 	configmap := &corev1.ConfigMap{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "ConfigMap",
+			APIVersion: "v1",
+		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      h.provisonerConfigName,
 			Labels:    h.provisionerLabels,
@@ -135,6 +139,10 @@ func (h *Handler) CreateDiskMakerConfig(cr *v1alpha1.LocalStorageProvider) (*cor
 	}
 
 	configMap := &corev1.ConfigMap{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "ConfigMap",
+			APIVersion: "v1",
+		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      h.diskMakerConfigName,
 			Labels:    h.diskMakerLabels,
@@ -151,10 +159,10 @@ func (h *Handler) CreateDiskMakerConfig(cr *v1alpha1.LocalStorageProvider) (*cor
 	return configMap, nil
 }
 
-func (h *Handler) createLocalProvisionerDaemonset(cr *v1alpha1.LocalStorageProvider) *k8sv1beta2.DaemonSet {
+func (h *Handler) createLocalProvisionerDaemonset(cr *v1alpha1.LocalStorageProvider) *appsv1.DaemonSet {
 	privileged := true
 	hostContainerPropagation := corev1.MountPropagationHostToContainer
-	return &k8sv1beta2.DaemonSet{
+	return &appsv1.DaemonSet{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "DaemonSet",
 			APIVersion: "apps/v1beta2",
@@ -164,7 +172,7 @@ func (h *Handler) createLocalProvisionerDaemonset(cr *v1alpha1.LocalStorageProvi
 			Namespace: cr.Namespace,
 			Labels:    h.provisionerLabels,
 		},
-		Spec: k8sv1beta2.DaemonSetSpec{
+		Spec: appsv1.DaemonSetSpec{
 			Selector: &metav1.LabelSelector{
 				MatchLabels: h.provisionerLabels,
 			},
@@ -231,10 +239,10 @@ func (h *Handler) createLocalProvisionerDaemonset(cr *v1alpha1.LocalStorageProvi
 	}
 }
 
-func (h *Handler) createDiskMakerDaemonSet(cr *v1alpha1.LocalStorageProvider) *k8sv1beta2.DaemonSet {
+func (h *Handler) createDiskMakerDaemonSet(cr *v1alpha1.LocalStorageProvider) *appsv1.DaemonSet {
 	privileged := true
 	hostContainerPropagation := corev1.MountPropagationHostToContainer
-	return &k8sv1beta2.DaemonSet{
+	return &appsv1.DaemonSet{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "DaemonSet",
 			APIVersion: "apps/v1beta2",
@@ -244,7 +252,7 @@ func (h *Handler) createDiskMakerDaemonSet(cr *v1alpha1.LocalStorageProvider) *k
 			Namespace: cr.Namespace,
 			Labels:    h.diskMakerLabels,
 		},
-		Spec: k8sv1beta2.DaemonSetSpec{
+		Spec: appsv1.DaemonSetSpec{
 			Selector: &metav1.LabelSelector{
 				MatchLabels: h.diskMakerLabels,
 			},
