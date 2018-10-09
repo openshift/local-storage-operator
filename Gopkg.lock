@@ -237,6 +237,17 @@
 
 [[projects]]
   branch = "master"
+  digest = "1:946cc219e1516b7c6e47eeb1f459467f9fbb33f9e355b92fb3fec3deb9601384"
+  name = "github.com/openshift/api"
+  packages = [
+    "config/v1",
+    "operator/v1alpha1",
+  ]
+  pruneopts = "NUT"
+  revision = "fac417a1916188eb39f7c36e279c832ce1c965df"
+
+[[projects]]
+  branch = "master"
   digest = "1:1b840e172a4dd78f2638a662264f4d8538384dced8b57cb0b9b739c3f361f7ea"
   name = "github.com/operator-framework/operator-sdk"
   packages = [
@@ -673,15 +684,20 @@
   analyzer-name = "dep"
   analyzer-version = 1
   input-imports = [
+    "github.com/ghodss/yaml",
+    "github.com/openshift/api/operator/v1alpha1",
     "github.com/operator-framework/operator-sdk/pkg/sdk",
     "github.com/operator-framework/operator-sdk/pkg/util/k8sutil",
     "github.com/operator-framework/operator-sdk/version",
     "github.com/sirupsen/logrus",
+    "github.com/spf13/pflag",
+    "k8s.io/api/apps/v1beta2",
     "k8s.io/api/core/v1",
     "k8s.io/apimachinery/pkg/api/errors",
     "k8s.io/apimachinery/pkg/apis/meta/v1",
     "k8s.io/apimachinery/pkg/runtime",
     "k8s.io/apimachinery/pkg/runtime/schema",
+    "k8s.io/apimachinery/pkg/util/sets",
     "k8s.io/client-go/plugin/pkg/client/auth/gcp",
     "k8s.io/code-generator/cmd/client-gen",
     "k8s.io/code-generator/cmd/conversion-gen",
