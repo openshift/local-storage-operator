@@ -28,7 +28,7 @@ type LocalStorageProviderSpec struct {
 	// Nodes on which the provisoner must run
 	NodeSelector *corev1.NodeSelector `json:"nodeSelector,omitempty"`
 	// List of storage class and devices they can match
-	StorageClassDevices []StorageClassDevice `json:"storageClassDevice,omitempty"`
+	StorageClassDevices []StorageClassDevice `json:"storageClassDevices,omitempty"`
 	// Version of external local provisioner to use
 	LocalProvisionerImageVersion
 	// DiskMakerImage version
