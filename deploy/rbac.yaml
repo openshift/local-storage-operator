@@ -22,6 +22,12 @@ rules:
   verbs:
   - "*"
 - apiGroups:
+  - storage.k8s.io
+  resources:
+  - storageclasses
+  verbs:
+    - "*"
+- apiGroups:
   - apps
   resources:
   - deployments
