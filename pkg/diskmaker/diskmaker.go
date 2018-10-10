@@ -2,13 +2,13 @@ package diskmaker
 
 import (
 	"bytes"
-	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"os"
 	"os/exec"
 	"path"
 	"regexp"
+	"strings"
 	"time"
 
 	"github.com/ghodss/yaml"
@@ -75,7 +75,7 @@ func (d *DiskMaker) Run(stop <-chan struct{}) {
 }
 
 func (d *DiskMaker) symLinkDisks(diskConfig DiskConfig) {
-	cmd := exec.Command("lsblk", "--json")
+	cmd := exec.Command("lsblk", "--list", "-o", "NAME,MOUNTPOINT", "--noheadings")
 	var out bytes.Buffer
 	var err error
 	cmd.Stdout = &out
@@ -84,7 +84,7 @@ func (d *DiskMaker) symLinkDisks(diskConfig DiskConfig) {
 		logrus.Errorf("error running lsblk %v", err)
 		return
 	}
-	deviceSet, err := d.findNewDisks(out.Bytes())
+	deviceSet, err := d.findNewDisks(out.String())
 	if err != nil {
 		logrus.Errorf("error unmrashalling json %v", err)
 		return
@@ -141,29 +141,17 @@ func (d *DiskMaker) findMatchingDisks(diskConfig DiskConfig, deviceSet sets.Stri
 	return blockDeviceMap, nil
 }
 
-func (d *DiskMaker) findNewDisks(content []byte) (sets.String, error) {
+func (d *DiskMaker) findNewDisks(content string) (sets.String, error) {
 	deviceSet := sets.NewString()
-	blockDeviceMap, unmarshalErr := d.parseBlockJSON(content)
-	if unmarshalErr != nil {
-		return deviceSet, unmarshalErr
-	}
-	deviceArray, ok := blockDeviceMap["blockdevices"]
-	if !ok {
-		return deviceSet, fmt.Errorf("can not find block devices")
-	}
-	for _, device := range deviceArray {
-		deviceSet.Insert(device.Name)
+	deviceLines := strings.Split(content, "\n")
+	for _, deviceLine := range deviceLines {
+		deviceDetails := strings.Split(deviceLine, " ")
+		if len(deviceDetails) == 1 && len(deviceDetails[0]) > 0 {
+			deviceSet.Insert(deviceDetails[0])
+		}
+
 	}
 	return deviceSet, nil
-}
-
-func (d *DiskMaker) parseBlockJSON(content []byte) (BlockDeviceMap, error) {
-	var blockDeviceMap BlockDeviceMap
-	unmarshalErr := json.Unmarshal(content, &blockDeviceMap)
-	if unmarshalErr != nil {
-		return blockDeviceMap, fmt.Errorf("error unmarshalling lsblk output %v", unmarshalErr)
-	}
-	return blockDeviceMap, nil
 }
 
 func hasExactDisk(disks []string, device string) bool {

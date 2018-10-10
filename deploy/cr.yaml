@@ -2,3 +2,14 @@ apiVersion: "local.storage.openshift.io/v1alpha1"
 kind: "LocalStorageProvider"
 metadata:
   name: "example"
+spec:
+  provisionerImage: quay.io/gnufied/local-volume-provisioner:v2.0.1-hemant
+  diskMakerImage: quay.io/gnufied/local-diskmaker:latest
+  storageClassDevices:
+    - storageClassName: "foobar"
+      volumeMode: Filesystem
+      fsType: ext4
+      deviceNames:
+        - sde
+        - sdf
+

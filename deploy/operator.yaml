@@ -15,7 +15,7 @@ spec:
       serviceAccountName: local-storage-operator
       containers:
         - name: local-storage-operator
-          image: REPLACE_IMAGE
+          image: quay.io/gnufied/local-storage-operator:v0.0.4
           ports:
           - containerPort: 60000
             name: metrics
