@@ -12,6 +12,7 @@ import (
 	"github.com/sirupsen/logrus"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	storagev1 "k8s.io/api/storage/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -23,8 +24,6 @@ type Handler struct {
 	localDiskLocation     string
 	provisonerConfigName  string
 	diskMakerConfigName   string
-	provisionerLabels     map[string]string
-	diskMakerLabels       map[string]string
 }
 
 type localDiskData map[string]map[string]string
@@ -34,12 +33,6 @@ func NewHandler(namespace string) sdk.Handler {
 	handler := &Handler{
 		localStorageNameSpace: namespace,
 		localDiskLocation:     "/mnt/local-storage",
-		provisionerLabels: map[string]string{
-			"app": "local-volume-provisioner",
-		},
-		diskMakerLabels: map[string]string{
-			"app": "local-volume-diskmaker",
-		},
 	}
 	return handler
 }
@@ -70,6 +63,12 @@ func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
 		err = sdk.Create(diskMakerConfigMap)
 		if err != nil && !errors.IsAlreadyExists(err) {
 			logrus.Errorf("failed to create configmap for diskMaker %s with %v", o.Name, err)
+			return err
+		}
+
+		err = h.createStorageClass(o)
+		if err != nil {
+			logrus.Errorf("failed to create storageClass %v", err)
 			return err
 		}
 
@@ -110,7 +109,7 @@ func (h *Handler) CreateProvisionerConfigMap(cr *v1alpha1.LocalStorageProvider) 
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      h.provisonerConfigName,
-			Labels:    h.provisionerLabels,
+			Labels:    provisionerLabels(cr.Name),
 			Namespace: cr.Namespace,
 		},
 	}
@@ -122,6 +121,20 @@ func (h *Handler) CreateProvisionerConfigMap(cr *v1alpha1.LocalStorageProvider) 
 		"storageClassMap": string(y),
 	}
 	return configmap, nil
+}
+
+func (h *Handler) createStorageClass(cr *v1alpha1.LocalStorageProvider) error {
+	storageClassDevices := cr.Spec.StorageClassDevices
+	var err error
+	for _, storageClassDevice := range storageClassDevices {
+		storageClassName := storageClassDevice.StorageClassName
+		storageClass := newStorageClass(cr, storageClassName)
+		err = sdk.Create(storageClass)
+		if err != nil && !errors.IsAlreadyExists(err) {
+			return fmt.Errorf("error creating storageClass %s with %v", storageClassName, err)
+		}
+	}
+	return nil
 }
 
 func (h *Handler) CreateDiskMakerConfig(cr *v1alpha1.LocalStorageProvider) (*corev1.ConfigMap, error) {
@@ -145,7 +158,7 @@ func (h *Handler) CreateDiskMakerConfig(cr *v1alpha1.LocalStorageProvider) (*cor
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      h.diskMakerConfigName,
-			Labels:    h.diskMakerLabels,
+			Labels:    diskMakerLabels(cr.Name),
 			Namespace: cr.Namespace,
 		},
 	}
@@ -162,6 +175,57 @@ func (h *Handler) CreateDiskMakerConfig(cr *v1alpha1.LocalStorageProvider) (*cor
 func (h *Handler) createLocalProvisionerDaemonset(cr *v1alpha1.LocalStorageProvider) *appsv1.DaemonSet {
 	privileged := true
 	hostContainerPropagation := corev1.MountPropagationHostToContainer
+	containers := []corev1.Container{
+		{
+			Name:  "local-storage-provisioner",
+			Image: cr.Spec.ProvisionerImage,
+			SecurityContext: &corev1.SecurityContext{
+				Privileged: &privileged,
+			},
+			Env: []corev1.EnvVar{
+				{
+					Name: "MY_NODE_NAME",
+					ValueFrom: &corev1.EnvVarSource{
+						FieldRef: &corev1.ObjectFieldSelector{
+							FieldPath: "spec.nodeName",
+						},
+					},
+				},
+			},
+			VolumeMounts: []corev1.VolumeMount{
+				{
+					Name:      "provisioner-config",
+					ReadOnly:  true,
+					MountPath: "/etc/provisioner/config",
+				},
+				{
+					Name:             "local-disks",
+					MountPath:        h.localDiskLocation,
+					MountPropagation: &hostContainerPropagation,
+				},
+			},
+		},
+	}
+	volumes := []corev1.Volume{
+		{
+			Name: "provisioner-config",
+			VolumeSource: corev1.VolumeSource{
+				ConfigMap: &corev1.ConfigMapVolumeSource{
+					LocalObjectReference: corev1.LocalObjectReference{
+						Name: h.provisonerConfigName,
+					},
+				},
+			},
+		},
+		{
+			Name: "local-disks",
+			VolumeSource: corev1.VolumeSource{
+				HostPath: &corev1.HostPathVolumeSource{
+					Path: h.localDiskLocation,
+				},
+			},
+		},
+	}
 	return &appsv1.DaemonSet{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "DaemonSet",
@@ -170,69 +234,20 @@ func (h *Handler) createLocalProvisionerDaemonset(cr *v1alpha1.LocalStorageProvi
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      cr.Name + "local-provisioner",
 			Namespace: cr.Namespace,
-			Labels:    h.provisionerLabels,
+			Labels:    provisionerLabels(cr.Name),
 		},
 		Spec: appsv1.DaemonSetSpec{
 			Selector: &metav1.LabelSelector{
-				MatchLabels: h.provisionerLabels,
+				MatchLabels: provisionerLabels(cr.Name),
 			},
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
-					Labels: h.provisionerLabels,
+					Labels: provisionerLabels(cr.Name),
 				},
 				Spec: corev1.PodSpec{
-					Containers: []corev1.Container{
-						{
-							Name:  "local-storage-provisioner",
-							Image: cr.Spec.ProvisionerImage,
-							SecurityContext: &corev1.SecurityContext{
-								Privileged: &privileged,
-							},
-							Env: []corev1.EnvVar{
-								{
-									Name: "MY_NODE_NAME",
-									ValueFrom: &corev1.EnvVarSource{
-										FieldRef: &corev1.ObjectFieldSelector{
-											FieldPath: "spec.nodeName",
-										},
-									},
-								},
-							},
-							VolumeMounts: []corev1.VolumeMount{
-								{
-									Name:      "provisioner-config",
-									ReadOnly:  true,
-									MountPath: "/etc/provisioner/config",
-								},
-								{
-									Name:             "local-disks",
-									MountPath:        h.localDiskLocation,
-									MountPropagation: &hostContainerPropagation,
-								},
-							},
-						},
-					},
+					Containers:         containers,
 					ServiceAccountName: "local-storage-admin",
-					Volumes: []corev1.Volume{
-						{
-							Name: "provisioner-config",
-							VolumeSource: corev1.VolumeSource{
-								ConfigMap: &corev1.ConfigMapVolumeSource{
-									LocalObjectReference: corev1.LocalObjectReference{
-										Name: h.provisonerConfigName,
-									},
-								},
-							},
-						},
-						{
-							Name: "local-disks",
-							VolumeSource: corev1.VolumeSource{
-								HostPath: &corev1.HostPathVolumeSource{
-									Path: h.localDiskLocation,
-								},
-							},
-						},
-					},
+					Volumes:            volumes,
 				},
 			},
 		},
@@ -242,6 +257,57 @@ func (h *Handler) createLocalProvisionerDaemonset(cr *v1alpha1.LocalStorageProvi
 func (h *Handler) createDiskMakerDaemonSet(cr *v1alpha1.LocalStorageProvider) *appsv1.DaemonSet {
 	privileged := true
 	hostContainerPropagation := corev1.MountPropagationHostToContainer
+	containers := []corev1.Container{
+		{
+			Name:  "local-diskmaker",
+			Image: cr.Spec.DiskMakerImage,
+			SecurityContext: &corev1.SecurityContext{
+				Privileged: &privileged,
+			},
+			Env: []corev1.EnvVar{
+				{
+					Name: "MY_NODE_NAME",
+					ValueFrom: &corev1.EnvVarSource{
+						FieldRef: &corev1.ObjectFieldSelector{
+							FieldPath: "spec.nodeName",
+						},
+					},
+				},
+			},
+			VolumeMounts: []corev1.VolumeMount{
+				{
+					Name:      "provisioner-config",
+					ReadOnly:  true,
+					MountPath: "/etc/local-storage-operator/config",
+				},
+				{
+					Name:             "local-disks",
+					MountPath:        h.localDiskLocation,
+					MountPropagation: &hostContainerPropagation,
+				},
+			},
+		},
+	}
+	volumes := []corev1.Volume{
+		{
+			Name: "provisioner-config",
+			VolumeSource: corev1.VolumeSource{
+				ConfigMap: &corev1.ConfigMapVolumeSource{
+					LocalObjectReference: corev1.LocalObjectReference{
+						Name: h.diskMakerConfigName,
+					},
+				},
+			},
+		},
+		{
+			Name: "local-disks",
+			VolumeSource: corev1.VolumeSource{
+				HostPath: &corev1.HostPathVolumeSource{
+					Path: h.localDiskLocation,
+				},
+			},
+		},
+	}
 	return &appsv1.DaemonSet{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "DaemonSet",
@@ -250,71 +316,61 @@ func (h *Handler) createDiskMakerDaemonSet(cr *v1alpha1.LocalStorageProvider) *a
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      cr.Name + "local-diskmaker",
 			Namespace: cr.Namespace,
-			Labels:    h.diskMakerLabels,
+			Labels:    diskMakerLabels(cr.Name),
 		},
 		Spec: appsv1.DaemonSetSpec{
 			Selector: &metav1.LabelSelector{
-				MatchLabels: h.diskMakerLabels,
+				MatchLabels: diskMakerLabels(cr.Name),
 			},
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
-					Labels: h.diskMakerLabels,
+					Labels: diskMakerLabels(cr.Name),
 				},
 				Spec: corev1.PodSpec{
-					Containers: []corev1.Container{
-						{
-							Name:  "local-diskmaker",
-							Image: cr.Spec.DiskMakerImage,
-							SecurityContext: &corev1.SecurityContext{
-								Privileged: &privileged,
-							},
-							Env: []corev1.EnvVar{
-								{
-									Name: "MY_NODE_NAME",
-									ValueFrom: &corev1.EnvVarSource{
-										FieldRef: &corev1.ObjectFieldSelector{
-											FieldPath: "spec.nodeName",
-										},
-									},
-								},
-							},
-							VolumeMounts: []corev1.VolumeMount{
-								{
-									Name:      "provisioner-config",
-									ReadOnly:  true,
-									MountPath: "/etc/local-storage-operator/config",
-								},
-								{
-									Name:             "local-disks",
-									MountPath:        h.localDiskLocation,
-									MountPropagation: &hostContainerPropagation,
-								},
-							},
-						},
-					},
+					Containers:         containers,
 					ServiceAccountName: "local-storage-admin",
-					Volumes: []corev1.Volume{
-						{
-							Name: "provisioner-config",
-							VolumeSource: corev1.VolumeSource{
-								ConfigMap: &corev1.ConfigMapVolumeSource{
-									LocalObjectReference: corev1.LocalObjectReference{
-										Name: h.diskMakerConfigName,
-									},
-								},
-							},
-						},
-						{
-							Name: "local-disks",
-							VolumeSource: corev1.VolumeSource{
-								HostPath: &corev1.HostPathVolumeSource{
-									Path: h.localDiskLocation,
-								},
-							},
-						},
-					},
+					Volumes:            volumes,
 				},
 			},
 		},
 	}
+}
+
+func diskMakerLabels(crName string) map[string]string {
+	return map[string]string{
+		"app":                fmt.Sprintf("local-volume-diskmaker-%s", crName),
+		"openshift-operator": fmt.Sprintf("local-operator-%s", crName),
+	}
+}
+
+func provisionerLabels(crName string) map[string]string {
+	return map[string]string{
+		"app":                fmt.Sprintf("local-volume-provisioner-%s", crName),
+		"openshift-operator": fmt.Sprintf("local-operator-%s", crName),
+	}
+}
+
+func storageClassLabels(crName string) map[string]string {
+	return map[string]string{
+		"openshift-operator": fmt.Sprintf("local-operator-%s", crName),
+	}
+}
+
+func newStorageClass(cr *v1alpha1.LocalStorageProvider, scName string) *storagev1.StorageClass {
+	deleteReclaimPolicy := corev1.PersistentVolumeReclaimDelete
+	firstConsumerBinding := storagev1.VolumeBindingWaitForFirstConsumer
+	sc := &storagev1.StorageClass{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "StorageClass",
+			APIVersion: "storage.k8s.io/v1",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:   scName,
+			Labels: storageClassLabels(cr.Name),
+		},
+		Provisioner:       "kubernetes.io/no-provisioner",
+		ReclaimPolicy:     &deleteReclaimPolicy,
+		VolumeBindingMode: &firstConsumerBinding,
+	}
+	return sc
 }

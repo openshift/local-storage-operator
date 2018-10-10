@@ -156,6 +156,7 @@ func (d *DiskMaker) findNewDisks(content string) (sets.String, error) {
 	deviceSet := sets.NewString()
 	deviceLines := strings.Split(content, "\n")
 	for _, deviceLine := range deviceLines {
+		deviceLine := strings.TrimSpace(deviceLine)
 		deviceDetails := strings.Split(deviceLine, " ")
 		// We only consider devices that are not mounted.
 		// TODO: We should also consider checking for device partitions, so as
@@ -164,7 +165,6 @@ func (d *DiskMaker) findNewDisks(content string) (sets.String, error) {
 		if len(deviceDetails) == 1 && len(deviceDetails[0]) > 0 {
 			deviceSet.Insert(deviceDetails[0])
 		}
-
 	}
 	return deviceSet, nil
 }
