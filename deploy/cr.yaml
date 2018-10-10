@@ -10,6 +10,5 @@ spec:
       volumeMode: Filesystem
       fsType: ext4
       deviceNames:
-        - sde
-        - sdf
-
+        - vde
+        - vdf
