@@ -90,9 +90,19 @@ func (d *DiskMaker) symLinkDisks(diskConfig DiskConfig) {
 		return
 	}
 
+	if len(deviceSet) == 0 {
+		logrus.Infof("unable to find any new disks")
+		return
+	}
+
 	deviceMap, err := d.findMatchingDisks(diskConfig, deviceSet)
 	if err != nil {
 		logrus.Errorf("error matching finding disks : %v", err)
+		return
+	}
+
+	if len(deviceMap) == 0 {
+		logrus.Errorf("unable to find any matching disks")
 		return
 	}
 
@@ -106,6 +116,7 @@ func (d *DiskMaker) symLinkDisks(diskConfig DiskConfig) {
 			}
 			symLinkPath := path.Join(symLinkDirPath, deviceName)
 			devicePath := path.Join("/dev", deviceName)
+			logrus.Infof("symlinking to %s to %s", devicePath, symLinkPath)
 			symLinkErr := os.Symlink(devicePath, symLinkPath)
 			if symLinkErr != nil {
 				logrus.Errorf("error creating symlink %s with %v", symLinkPath, err)
@@ -146,6 +157,10 @@ func (d *DiskMaker) findNewDisks(content string) (sets.String, error) {
 	deviceLines := strings.Split(content, "\n")
 	for _, deviceLine := range deviceLines {
 		deviceDetails := strings.Split(deviceLine, " ")
+		// We only consider devices that are not mounted.
+		// TODO: We should also consider checking for device partitions, so as
+		// if a device has partitions then we do not consider the device. We only
+		// consider partitions.
 		if len(deviceDetails) == 1 && len(deviceDetails[0]) > 0 {
 			deviceSet.Insert(deviceDetails[0])
 		}
