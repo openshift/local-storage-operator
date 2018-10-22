@@ -178,11 +178,6 @@ func (in *StorageClassDevice) DeepCopyInto(out *StorageClassDevice) {
 		*out = make([]string, len(*in))
 		copy(*out, *in)
 	}
-	if in.DeviceWhitelistPattern != nil {
-		in, out := &in.DeviceWhitelistPattern, &out.DeviceWhitelistPattern
-		*out = make([]string, len(*in))
-		copy(*out, *in)
-	}
 	return
 }
 

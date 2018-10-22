@@ -7,7 +7,6 @@ import (
 	"os"
 	"os/exec"
 	"path"
-	"regexp"
 	"strings"
 	"time"
 
@@ -142,11 +141,6 @@ func (d *DiskMaker) findMatchingDisks(diskConfig DiskConfig, deviceSet sets.Stri
 				addDiskToMap(storageClass, blockDevice)
 				break
 			}
-
-			if hasMatchingDisk(disks.DiskPatterns, blockDevice) {
-				addDiskToMap(storageClass, blockDevice)
-				break
-			}
 		}
 	}
 	return blockDeviceMap, nil
@@ -172,20 +166,6 @@ func (d *DiskMaker) findNewDisks(content string) (sets.String, error) {
 func hasExactDisk(disks []string, device string) bool {
 	for _, disk := range disks {
 		if disk == device {
-			return true
-		}
-	}
-	return false
-}
-
-func hasMatchingDisk(diskPatterns []string, device string) bool {
-	for _, diskPattern := range diskPatterns {
-		patternExp, err := regexp.Compile(diskPattern)
-		if err != nil {
-			logrus.Errorf("error compiling disk pattern %s with %v", diskPattern, err)
-			continue
-		}
-		if patternExp.MatchString(device) {
 			return true
 		}
 	}

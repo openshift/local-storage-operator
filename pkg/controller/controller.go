@@ -145,8 +145,6 @@ func (h *Handler) CreateDiskMakerConfig(cr *v1alpha1.LocalStorageProvider) (*cor
 		disks := new(diskmaker.Disks)
 		if len(storageClassDevice.DeviceNames) > 0 {
 			disks.DiskNames = storageClassDevice.DeviceNames
-		} else {
-			disks.DiskPatterns = storageClassDevice.DeviceWhitelistPattern
 		}
 		configMapData[storageClassDevice.StorageClassName] = disks
 	}

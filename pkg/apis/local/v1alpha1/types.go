@@ -58,10 +58,6 @@ type StorageClassDevice struct {
 	// Alternately deviceWhitelistPattern can be also used to selecting
 	// devices which should be considered for local provisioning.
 	DeviceNames []string `json:"deviceNames,omitempty"`
-	// A list of patterns that can match one or more devices
-	// which can be selected for local storage provisioning.
-	// For example - ["/dev/nvme*1", "/dev/xvdb*"]
-	DeviceWhitelistPattern []string `json:"deviceWhitelistPattern,omitempty"`
 }
 
 type LocalProvisionerImageVersion struct {
