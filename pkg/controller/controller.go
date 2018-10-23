@@ -56,15 +56,15 @@ func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
 			return nil
 		}
 		var err error
-		err = h.syncConfigMaps(o)
+		err = h.syncRbacPolicies(o)
 		if err != nil {
-			logrus.Errorf("error creating provisioner configmap %s with %v", o.Name, err)
+			logrus.Error(err)
 			return err
 		}
 
-		err = h.syncServiceAccount(o)
+		err = h.syncConfigMaps(o)
 		if err != nil {
-			logrus.Error(err)
+			logrus.Errorf("error creating provisioner configmap %s with %v", o.Name, err)
 			return err
 		}
 
@@ -112,7 +112,7 @@ func (h *Handler) syncConfigMaps(o *v1alpha1.LocalStorageProvider) error {
 	return nil
 }
 
-func (h *Handler) syncServiceAccount(o *v1alpha1.LocalStorageProvider) error {
+func (h *Handler) syncRbacPolicies(o *v1alpha1.LocalStorageProvider) error {
 	operatorLabel := map[string]string{
 		"openshift-openshift": "local-storage-operator",
 	}
