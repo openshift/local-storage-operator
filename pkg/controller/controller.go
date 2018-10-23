@@ -13,6 +13,7 @@ import (
 	"github.com/sirupsen/logrus"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -30,7 +31,12 @@ type Handler struct {
 type localDiskData map[string]map[string]string
 
 const (
-	localDiskLocation = "/mnt/local-storage"
+	localDiskLocation              = "/mnt/local-storage"
+	provisionerServiceAccount      = "local-storage-admin"
+	provisionerPVRoleBindingName   = "local-storage-provisioner-pv-binding"
+	provisionerNodeRoleName        = "local-storage-provisioner-node-clusterrole"
+	defaultPVClusterRole           = "system:persistent-volume-provisioner"
+	provisionerNodeRoleBindingName = "local-storage-provisioner-node-binding"
 )
 
 // NewHandler returns a controller handler
@@ -50,20 +56,15 @@ func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
 			return nil
 		}
 		var err error
-		_, err = h.syncConfigMaps(o)
+		err = h.syncConfigMaps(o)
 		if err != nil {
 			logrus.Errorf("error creating provisioner configmap %s with %v", o.Name, err)
 			return err
 		}
 
-		diskMakerConfigMap, err := h.CreateDiskMakerConfig(o)
+		err = h.syncServiceAccount(o)
 		if err != nil {
-			logrus.Errorf("error creating diskmaker configmap %s with %v", o.Name, err)
-			return err
-		}
-		err = sdk.Create(diskMakerConfigMap)
-		if err != nil && !errors.IsAlreadyExists(err) {
-			logrus.Errorf("failed to create configmap for diskMaker %s with %v", o.Name, err)
+			logrus.Error(err)
 			return err
 		}
 
@@ -89,17 +90,112 @@ func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
 	return nil
 }
 
-func (h *Handler) syncConfigMaps(o *v1alpha1.LocalStorageProvider) (*corev1.ConfigMap, error) {
-	configMap, err := h.generateProvisionerConfigMap(o)
+func (h *Handler) syncConfigMaps(o *v1alpha1.LocalStorageProvider) error {
+	provisionerConfigMap, err := h.generateProvisionerConfigMap(o)
 	if err != nil {
-		logrus.Errorf("error creating provisioner configmap %s with %v", o.Name, err)
-		return nil, err
+		logrus.Errorf("error generating provisioner configmap %s with %v", o.Name, err)
+		return err
 	}
-	configMap, _, err = resourceapply.ApplyConfigMap(k8sclient.GetKubeClient().CoreV1(), configMap)
+	provisionerConfigMap, _, err = resourceapply.ApplyConfigMap(k8sclient.GetKubeClient().CoreV1(), provisionerConfigMap)
 	if err != nil {
-		return nil, err
+		return fmt.Errorf("error creating provisioner configmap %s with %v", o.Name, err)
 	}
-	return configMap, nil
+
+	diskMakerConfigMap, err := h.generateDiskMakerConfig(o)
+	if err != nil {
+		return fmt.Errorf("error generating diskmaker configmap %s with %v", o.Name, err)
+	}
+	diskMakerConfigMap, _, err = resourceapply.ApplyConfigMap(k8sclient.GetKubeClient().CoreV1(), diskMakerConfigMap)
+	if err != nil {
+		return fmt.Errorf("error creating diskmarker configmap %s with %v", o.Name, err)
+	}
+	return nil
+}
+
+func (h *Handler) syncServiceAccount(o *v1alpha1.LocalStorageProvider) error {
+	operatorLabel := map[string]string{
+		"openshift-openshift": "local-storage-operator",
+	}
+	serviceAccount := &corev1.ServiceAccount{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      provisionerServiceAccount,
+			Namespace: o.Namespace,
+			Labels:    operatorLabel,
+		},
+	}
+	serviceAccount, _, err := resourceapply.ApplyServiceAccount(k8sclient.GetKubeClient().CoreV1(), serviceAccount)
+	if err != nil {
+		return fmt.Errorf("error applying service account %s with %v", serviceAccount.Name, err)
+	}
+
+	provisionerClusterRole := &rbacv1.ClusterRole{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      provisionerNodeRoleName,
+			Namespace: o.Namespace,
+			Labels:    operatorLabel,
+		},
+		Rules: []rbacv1.PolicyRule{
+			{
+				Verbs:     []string{"get"},
+				APIGroups: []string{""},
+				Resources: []string{"nodes"},
+			},
+		},
+	}
+	provisionerClusterRole, _, err = resourceapply.ApplyClusterRole(k8sclient.GetKubeClient().RbacV1(), provisionerClusterRole)
+	if err != nil {
+		return fmt.Errorf("error applying cluster role %s with %v", provisionerClusterRole.Name, err)
+	}
+
+	pvClusterRoleBinding := &rbacv1.ClusterRoleBinding{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      provisionerPVRoleBindingName,
+			Namespace: o.Namespace,
+			Labels:    operatorLabel,
+		},
+		Subjects: []rbacv1.Subject{
+			{
+				Kind:      "ServiceAccount",
+				Name:      serviceAccount.Name,
+				Namespace: serviceAccount.Namespace,
+			},
+		},
+		RoleRef: rbacv1.RoleRef{
+			APIGroup: "rbac.authorization.k8s.io",
+			Kind:     "ClusterRole",
+			Name:     defaultPVClusterRole,
+		},
+	}
+
+	pvClusterRoleBinding, _, err = resourceapply.ApplyClusterRoleBinding(k8sclient.GetKubeClient().RbacV1(), pvClusterRoleBinding)
+	if err != nil {
+		return fmt.Errorf("error applying pv cluster role binding %s with %v", pvClusterRoleBinding.Name, err)
+	}
+
+	nodeRoleBinding := &rbacv1.ClusterRoleBinding{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      provisionerNodeRoleBindingName,
+			Namespace: o.Namespace,
+			Labels:    operatorLabel,
+		},
+		Subjects: []rbacv1.Subject{
+			{
+				Kind:      "ServiceAccount",
+				Name:      serviceAccount.Name,
+				Namespace: serviceAccount.Namespace,
+			},
+		},
+		RoleRef: rbacv1.RoleRef{
+			APIGroup: "rbac.authorization.k8s.io",
+			Kind:     "ClusterRole",
+			Name:     provisionerClusterRole.Name,
+		},
+	}
+	nodeRoleBinding, _, err = resourceapply.ApplyClusterRoleBinding(k8sclient.GetKubeClient().RbacV1(), nodeRoleBinding)
+	if err != nil {
+		return fmt.Errorf("error creating node role binding %s with %v", nodeRoleBinding.Name, err)
+	}
+	return nil
 }
 
 // CreateConfigMap Create configmap requires by the local storage provisioner
@@ -151,7 +247,7 @@ func (h *Handler) createStorageClass(cr *v1alpha1.LocalStorageProvider) error {
 	return nil
 }
 
-func (h *Handler) CreateDiskMakerConfig(cr *v1alpha1.LocalStorageProvider) (*corev1.ConfigMap, error) {
+func (h *Handler) generateDiskMakerConfig(cr *v1alpha1.LocalStorageProvider) (*corev1.ConfigMap, error) {
 	h.diskMakerConfigName = cr.Name + "-diskmaker-configmap"
 	configMapData := make(diskmaker.DiskConfig)
 	storageClassDevices := cr.Spec.StorageClassDevices
@@ -346,6 +442,19 @@ func (h *Handler) createDiskMakerDaemonSet(cr *v1alpha1.LocalStorageProvider) *a
 					Volumes:            volumes,
 				},
 			},
+		},
+	}
+}
+
+func (h *Handler) addOwner(meta *metav1.ObjectMeta, cr *v1alpha1.LocalStorageProvider) {
+	trueVal := true
+	meta.OwnerReferences = []metav1.OwnerReference{
+		{
+			APIVersion: v1alpha1.SchemeGroupVersion.String(),
+			Kind:       v1alpha1.LocalStorageProviderKind,
+			Name:       cr.Name,
+			UID:        cr.UID,
+			Controller: &trueVal,
 		},
 	}
 }
