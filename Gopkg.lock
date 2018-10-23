@@ -142,6 +142,14 @@
   revision = "24818f796faf91cd76ec7bddd72458fbced7a6c1"
 
 [[projects]]
+  digest = "1:a1578f7323eca2b88021fdc9a79a99833d40b12c32a5ea4f284e2fad19ea2657"
+  name = "github.com/google/uuid"
+  packages = ["."]
+  pruneopts = "NUT"
+  revision = "d460ce9f8df2e77fb1ba55ca87fafed96c607494"
+  version = "v1.0.0"
+
+[[projects]]
   digest = "1:06a7dadb7b760767341ffb6c8d377238d68a1226f2b21b5d497d2e3f6ecf6b4e"
   name = "github.com/googleapis/gnostic"
   packages = [
@@ -236,15 +244,67 @@
   version = "1.0.1"
 
 [[projects]]
-  branch = "master"
-  digest = "1:946cc219e1516b7c6e47eeb1f459467f9fbb33f9e355b92fb3fec3deb9601384"
+  digest = "1:27abbe41748a343bb00f115cc8f3d390f5c2031c9636f5173d62d910e68d6016"
   name = "github.com/openshift/api"
   packages = [
+    ".",
+    "apps",
+    "apps/v1",
+    "authorization",
+    "authorization/v1",
+    "build",
+    "build/v1",
+    "config",
     "config/v1",
+    "image",
+    "image/docker10",
+    "image/dockerpre012",
+    "image/v1",
+    "kubecontrolplane",
+    "kubecontrolplane/v1",
+    "legacyconfig/v1",
+    "network",
+    "network/v1",
+    "oauth",
+    "oauth/v1",
+    "openshiftcontrolplane",
+    "openshiftcontrolplane/v1",
+    "operator",
     "operator/v1alpha1",
+    "osin",
+    "osin/v1",
+    "pkg/serialization",
+    "project",
+    "project/v1",
+    "quota",
+    "quota/v1",
+    "route",
+    "route/v1",
+    "security",
+    "security/v1",
+    "servicecertsigner",
+    "servicecertsigner/v1alpha1",
+    "template",
+    "template/v1",
+    "user",
+    "user/v1",
+    "webconsole",
+    "webconsole/v1",
   ]
   pruneopts = "NUT"
-  revision = "fac417a1916188eb39f7c36e279c832ce1c965df"
+  revision = "a46029836bdc207f9949fc5f4907f0bfd3cf7763"
+
+[[projects]]
+  branch = "master"
+  digest = "1:663f0ce6a8d723b009e88f6932a67f5c0af83143c15032a5565ac962a87643ed"
+  name = "github.com/openshift/library-go"
+  packages = [
+    "pkg/operator/resource/resourceapply",
+    "pkg/operator/resource/resourcemerge",
+    "pkg/operator/v1alpha1helpers",
+  ]
+  pruneopts = "NUT"
+  revision = "dd6554843a719fcb151deb612e2116371adedcb6"
 
 [[projects]]
   branch = "master"
@@ -259,6 +319,14 @@
   ]
   pruneopts = "NUT"
   revision = "4e49fba798f696afdf9879b99372ca01a36f341d"
+
+[[projects]]
+  digest = "1:93b1d84c5fa6d1ea52f4114c37714cddd84d5b78f151b62bb101128dd51399bf"
+  name = "github.com/pborman/uuid"
+  packages = ["."]
+  pruneopts = "NUT"
+  revision = "adf5a7427709b9deb95d29d3fa8a2bf9cfd388f1"
+  version = "v1.2"
 
 [[projects]]
   branch = "master"
@@ -464,9 +532,10 @@
   version = "v2.2.1"
 
 [[projects]]
-  digest = "1:ef716a2116d8a040e16fbcd7fca71d3354915a94720de6af22c7a09970234296"
+  digest = "1:f11e5753e619f411a51a49d60d39b2bc4da6766f5f0af2e2291daa6a3d9385d5"
   name = "k8s.io/api"
   packages = [
+    "admission/v1beta1",
     "admissionregistration/v1alpha1",
     "admissionregistration/v1beta1",
     "apps/v1",
@@ -485,6 +554,7 @@
     "core/v1",
     "events/v1beta1",
     "extensions/v1beta1",
+    "imagepolicy/v1alpha1",
     "networking/v1",
     "policy/v1beta1",
     "rbac/v1",
@@ -501,9 +571,10 @@
   revision = "2d6f90ab1293a1fb871cf149423ebb72aa7423aa"
 
 [[projects]]
-  digest = "1:69b102c3ee60ab3704fac6e46bac1e8894e20b11498ec832846a229f21946200"
+  digest = "1:76eaa7874b0113b962defce2782d0148e50381022e473ea3483c674750d7cf68"
   name = "k8s.io/apimachinery"
   packages = [
+    "pkg/api/equality",
     "pkg/api/errors",
     "pkg/api/meta",
     "pkg/api/resource",
@@ -535,6 +606,7 @@
     "pkg/util/net",
     "pkg/util/runtime",
     "pkg/util/sets",
+    "pkg/util/uuid",
     "pkg/util/validation",
     "pkg/util/validation/field",
     "pkg/util/wait",
@@ -667,6 +739,19 @@
   revision = "4242d8e6c5dba56827bb7bcf14ad11cda38f3991"
 
 [[projects]]
+  digest = "1:b44df0637be4f706403865f5c0616705d25360ba19537848883ee133403336fe"
+  name = "k8s.io/kube-aggregator"
+  packages = [
+    "pkg/apis/apiregistration",
+    "pkg/apis/apiregistration/v1",
+    "pkg/apis/apiregistration/v1beta1",
+    "pkg/client/clientset_generated/clientset/scheme",
+    "pkg/client/clientset_generated/clientset/typed/apiregistration/v1",
+  ]
+  pruneopts = "NUT"
+  revision = "07bfdba27d43fe6b7eea965213b3aad555de2457"
+
+[[projects]]
   branch = "master"
   digest = "1:396d31417183c4e572d907cee379238ea343c23dde9e028465ca3692498017c1"
   name = "k8s.io/kube-openapi"
@@ -686,6 +771,8 @@
   input-imports = [
     "github.com/ghodss/yaml",
     "github.com/openshift/api/operator/v1alpha1",
+    "github.com/openshift/library-go/pkg/operator/resource/resourceapply",
+    "github.com/operator-framework/operator-sdk/pkg/k8sclient",
     "github.com/operator-framework/operator-sdk/pkg/sdk",
     "github.com/operator-framework/operator-sdk/pkg/util/k8sutil",
     "github.com/operator-framework/operator-sdk/version",

@@ -34,6 +34,9 @@ func main() {
 	resyncPeriod := time.Duration(5) * time.Second
 	logrus.Infof("Watching %s, %s, %s, %d", resource, kind, namespace, resyncPeriod)
 	sdk.Watch(resource, kind, namespace, resyncPeriod)
+	sdk.Watch("v1", "ConfigMap", namespace, resyncPeriod)
+	sdk.Watch("apps/v1", "DaemonSet", namespace, resyncPeriod)
+	sdk.Watch("storage.k8s.io/v1", "StorageClass", namespace, resyncPeriod)
 	sdk.Handle(controller.NewHandler(namespace))
 	sdk.Run(context.TODO())
 }

@@ -178,6 +178,11 @@ func (in *StorageClassDevice) DeepCopyInto(out *StorageClassDevice) {
 		*out = make([]string, len(*in))
 		copy(*out, *in)
 	}
+	if in.DeviceIDs != nil {
+		in, out := &in.DeviceIDs, &out.DeviceIDs
+		*out = make([]string, len(*in))
+		copy(*out, *in)
+	}
 	return
 }
 

@@ -5,9 +5,10 @@ import (
 	"fmt"
 
 	"github.com/ghodss/yaml"
+	"github.com/openshift/library-go/pkg/operator/resource/resourceapply"
 	"github.com/openshift/local-storage-operator/pkg/apis/local/v1alpha1"
 	"github.com/openshift/local-storage-operator/pkg/diskmaker"
-
+	"github.com/operator-framework/operator-sdk/pkg/k8sclient"
 	"github.com/operator-framework/operator-sdk/pkg/sdk"
 	"github.com/sirupsen/logrus"
 	appsv1 "k8s.io/api/apps/v1"
@@ -28,11 +29,15 @@ type Handler struct {
 
 type localDiskData map[string]map[string]string
 
+const (
+	localDiskLocation = "/mnt/local-storage"
+)
+
 // NewHandler returns a controller handler
 func NewHandler(namespace string) sdk.Handler {
 	handler := &Handler{
 		localStorageNameSpace: namespace,
-		localDiskLocation:     "/mnt/local-storage",
+		localDiskLocation:     localDiskLocation,
 	}
 	return handler
 }
@@ -45,16 +50,12 @@ func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
 			return nil
 		}
 		var err error
-		provisionerConfigMap, err := h.CreateProvisionerConfigMap(o)
+		_, err = h.syncConfigMaps(o)
 		if err != nil {
 			logrus.Errorf("error creating provisioner configmap %s with %v", o.Name, err)
 			return err
 		}
-		err = sdk.Create(provisionerConfigMap)
-		if err != nil && !errors.IsAlreadyExists(err) {
-			logrus.Errorf("failed to create configmap for provisioner %s with %v", o.Name, err)
-			return err
-		}
+
 		diskMakerConfigMap, err := h.CreateDiskMakerConfig(o)
 		if err != nil {
 			logrus.Errorf("error creating diskmaker configmap %s with %v", o.Name, err)
@@ -88,8 +89,21 @@ func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
 	return nil
 }
 
+func (h *Handler) syncConfigMaps(o *v1alpha1.LocalStorageProvider) (*corev1.ConfigMap, error) {
+	configMap, err := h.generateProvisionerConfigMap(o)
+	if err != nil {
+		logrus.Errorf("error creating provisioner configmap %s with %v", o.Name, err)
+		return nil, err
+	}
+	configMap, _, err = resourceapply.ApplyConfigMap(k8sclient.GetKubeClient().CoreV1(), configMap)
+	if err != nil {
+		return nil, err
+	}
+	return configMap, nil
+}
+
 // CreateConfigMap Create configmap requires by the local storage provisioner
-func (h *Handler) CreateProvisionerConfigMap(cr *v1alpha1.LocalStorageProvider) (*corev1.ConfigMap, error) {
+func (h *Handler) generateProvisionerConfigMap(cr *v1alpha1.LocalStorageProvider) (*corev1.ConfigMap, error) {
 	h.provisonerConfigName = cr.Name + "-local-provisioner-configmap"
 	configMapData := make(localDiskData)
 	storageClassDevices := cr.Spec.StorageClassDevices
@@ -145,6 +159,8 @@ func (h *Handler) CreateDiskMakerConfig(cr *v1alpha1.LocalStorageProvider) (*cor
 		disks := new(diskmaker.Disks)
 		if len(storageClassDevice.DeviceNames) > 0 {
 			disks.DiskNames = storageClassDevice.DeviceNames
+		} else if len(storageClassDevice.DeviceIDs) > 0 {
+			disks.DeviceIDs = storageClassDevice.DeviceIDs
 		}
 		configMapData[storageClassDevice.StorageClassName] = disks
 	}
@@ -227,7 +243,7 @@ func (h *Handler) createLocalProvisionerDaemonset(cr *v1alpha1.LocalStorageProvi
 	return &appsv1.DaemonSet{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "DaemonSet",
-			APIVersion: "apps/v1beta2",
+			APIVersion: "apps/v1",
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      cr.Name + "local-provisioner",
@@ -309,7 +325,7 @@ func (h *Handler) createDiskMakerDaemonSet(cr *v1alpha1.LocalStorageProvider) *a
 	return &appsv1.DaemonSet{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "DaemonSet",
-			APIVersion: "apps/v1beta2",
+			APIVersion: "apps/v1",
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      cr.Name + "local-diskmaker",

@@ -9,6 +9,7 @@ import (
 // Disks defines disks to be used for local volumes
 type Disks struct {
 	DiskNames []string `json:"disks,omitempty"`
+	DeviceIDs []string `json:"deviceIDs,omitempty"`
 }
 
 // DiskConfig stores a mapping between StorageClass Name and disks that the storageclass

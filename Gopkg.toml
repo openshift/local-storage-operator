@@ -41,6 +41,16 @@ required = [
   name = "sigs.k8s.io/controller-runtime"
   version = "v0.1.3"
 
+[[override]]
+  name = "k8s.io/kube-aggregator"
+  # revision for tag "kubernetes-1.11.3"
+  revision = "07bfdba27d43fe6b7eea965213b3aad555de2457"
+
+# Stick to old api,
+[[override]]
+  name = "github.com/openshift/api"
+  revision = "a46029836bdc207f9949fc5f4907f0bfd3cf7763"
+
 [prune]
   go-tests = true
   non-go = true

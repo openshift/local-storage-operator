@@ -47,7 +47,7 @@ const (
 
 // StorageClassDevice returns device configuration
 type StorageClassDevice struct {
-	// StorageClass name to use for set of matches devices
+	// StorageClass name to use for set of matched devices
 	StorageClassName string `json:"storageClassName"`
 	// Volume mode. Raw or with file system
 	VolumeMode PersistentVolumeMode `json:"volumeMode"`
@@ -55,9 +55,14 @@ type StorageClassDevice struct {
 	FSType string `json:"fsType"`
 	// A list of devices which would be chosen for local storage.
 	// For example - ["/dev/sda", "/dev/sdb"]
-	// Alternately deviceWhitelistPattern can be also used to selecting
+	// Alternately deviceIDs can be also used to selecting
 	// devices which should be considered for local provisioning.
 	DeviceNames []string `json:"deviceNames,omitempty"`
+	// A list of unique device names taken from /dev/disk/by-id/*
+	// For example - ["/dev/disk/by-id/ata-Crucial_CT275MX300SSD1_1643232F2"]
+	// Either DeviceNames or DeviceIDs must be specified while defining
+	// StorageClassDevice but not both.
+	DeviceIDs []string `json:"deviceIDs,omitempty"`
 }
 
 type LocalProvisionerImageVersion struct {
