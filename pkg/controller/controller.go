@@ -17,6 +17,9 @@ import (
 	storagev1 "k8s.io/api/storage/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
+	utilerrors "k8s.io/apimachinery/pkg/util/errors"
+	"k8s.io/apimachinery/pkg/util/sets"
 )
 
 // Handler returns a Handler for running the operator
@@ -37,6 +40,8 @@ const (
 	provisionerNodeRoleName        = "local-storage-provisioner-node-clusterrole"
 	defaultPVClusterRole           = "system:persistent-volume-provisioner"
 	provisionerNodeRoleBindingName = "local-storage-provisioner-node-binding"
+	ownerNamespaceLabel            = "local.storage.openshift.io/owner-namespace"
+	ownerNameLabel                 = "local.storage.openshift.io/owner-name"
 )
 
 // NewHandler returns a controller handler
@@ -62,13 +67,19 @@ func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
 			return err
 		}
 
-		err = h.syncConfigMaps(o)
+		provisionerConfigMapModified, err := h.syncProvisionerConfigMap(o)
 		if err != nil {
 			logrus.Errorf("error creating provisioner configmap %s with %v", o.Name, err)
 			return err
 		}
 
-		err = h.createStorageClass(o)
+		diskMakerConfigMapModified, err := h.syncDiskMakerConfigMap(o)
+		if err != nil {
+			logrus.Errorf("error creating diskmaker configmap %s with %v", o.Name, err)
+			return err
+		}
+
+		err = h.syncStorageClass(o)
 		if err != nil {
 			logrus.Errorf("failed to create storageClass %v", err)
 			return err
@@ -90,31 +101,35 @@ func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
 	return nil
 }
 
-func (h *Handler) syncConfigMaps(o *v1alpha1.LocalStorageProvider) error {
+// syncProvisionerConfigMap syncs the configmap and returns true if configmap was modified
+func (h *Handler) syncProvisionerConfigMap(o *v1alpha1.LocalStorageProvider) (bool, error) {
 	provisionerConfigMap, err := h.generateProvisionerConfigMap(o)
 	if err != nil {
 		logrus.Errorf("error generating provisioner configmap %s with %v", o.Name, err)
-		return err
+		return false, err
 	}
-	provisionerConfigMap, _, err = resourceapply.ApplyConfigMap(k8sclient.GetKubeClient().CoreV1(), provisionerConfigMap)
+	provisionerConfigMap, modified, err := resourceapply.ApplyConfigMap(k8sclient.GetKubeClient().CoreV1(), provisionerConfigMap)
 	if err != nil {
-		return fmt.Errorf("error creating provisioner configmap %s with %v", o.Name, err)
+		return false, fmt.Errorf("error creating provisioner configmap %s with %v", o.Name, err)
 	}
+	return modified, nil
+}
 
+func (h *Handler) syncDiskMakerConfigMap(o *v1alpha1.LocalStorageProvider) (bool, error) {
 	diskMakerConfigMap, err := h.generateDiskMakerConfig(o)
 	if err != nil {
-		return fmt.Errorf("error generating diskmaker configmap %s with %v", o.Name, err)
+		return false, fmt.Errorf("error generating diskmaker configmap %s with %v", o.Name, err)
 	}
-	diskMakerConfigMap, _, err = resourceapply.ApplyConfigMap(k8sclient.GetKubeClient().CoreV1(), diskMakerConfigMap)
+	diskMakerConfigMap, modified, err := resourceapply.ApplyConfigMap(k8sclient.GetKubeClient().CoreV1(), diskMakerConfigMap)
 	if err != nil {
-		return fmt.Errorf("error creating diskmarker configmap %s with %v", o.Name, err)
+		return false, fmt.Errorf("error creating diskmarker configmap %s with %v", o.Name, err)
 	}
-	return nil
+	return modified, nil
 }
 
 func (h *Handler) syncRbacPolicies(o *v1alpha1.LocalStorageProvider) error {
 	operatorLabel := map[string]string{
-		"openshift-openshift": "local-storage-operator",
+		"openshift-operator": "local-storage-operator",
 	}
 	serviceAccount := &corev1.ServiceAccount{
 		ObjectMeta: metav1.ObjectMeta{
@@ -230,21 +245,49 @@ func (h *Handler) generateProvisionerConfigMap(cr *v1alpha1.LocalStorageProvider
 	configmap.Data = map[string]string{
 		"storageClassMap": string(y),
 	}
+	addOwnerLabels(&configmap.ObjectMeta, cr)
+	addOwner(&configmap.ObjectMeta, cr)
 	return configmap, nil
 }
 
-func (h *Handler) createStorageClass(cr *v1alpha1.LocalStorageProvider) error {
+func (h *Handler) syncStorageClass(cr *v1alpha1.LocalStorageProvider) error {
 	storageClassDevices := cr.Spec.StorageClassDevices
-	var err error
+	expectedStorageClasses := sets.NewString()
 	for _, storageClassDevice := range storageClassDevices {
 		storageClassName := storageClassDevice.StorageClassName
-		storageClass := newStorageClass(cr, storageClassName)
-		err = sdk.Create(storageClass)
-		if err != nil && !errors.IsAlreadyExists(err) {
+		expectedStorageClasses.Insert(storageClassName)
+		storageClass := generateStorageClass(cr, storageClassName)
+		storageClass, _, err := applyStorageClass(k8sclient.GetKubeClient().StorageV1(), storageClass)
+		if err != nil {
 			return fmt.Errorf("error creating storageClass %s with %v", storageClassName, err)
 		}
 	}
+	removeErrors := h.removeUnExpectedStorageClasses(cr, expectedStorageClasses)
+	// For now we will ignore errors while removing unexpected storageClasses
+	if removeErrors != nil {
+		logrus.Errorf("error removing unexpected storageclasses : %v", removeErrors)
+	}
 	return nil
+}
+
+func (h *Handler) removeUnExpectedStorageClasses(cr *v1alpha1.LocalStorageProvider, expectedStorageClasses sets.String) error {
+	list, err := k8sclient.
+		GetKubeClient().StorageV1().
+		StorageClasses().List(metav1.ListOptions{LabelSelector: getOwnerLabelSelector(cr).String()})
+	if err != nil {
+		return fmt.Errorf("error listing storageclasses for CR %s with %v", cr.Name, err)
+	}
+	removeErrors := []error{}
+	for _, sc := range list.Items {
+		if !expectedStorageClasses.Has(sc.Name) {
+			logrus.Infof("removing storageClass %s", sc.Name)
+			scDeleteErr := k8sclient.GetKubeClient().StorageV1().StorageClasses().Delete(sc.Name, nil)
+			if scDeleteErr != nil && !errors.IsNotFound(scDeleteErr) {
+				removeErrors = append(removeErrors, fmt.Errorf("error deleting storageclass %s with %v", sc.Name, scDeleteErr))
+			}
+		}
+	}
+	return utilerrors.NewAggregate(removeErrors)
 }
 
 func (h *Handler) generateDiskMakerConfig(cr *v1alpha1.LocalStorageProvider) (*corev1.ConfigMap, error) {
@@ -279,7 +322,17 @@ func (h *Handler) generateDiskMakerConfig(cr *v1alpha1.LocalStorageProvider) (*c
 	configMap.Data = map[string]string{
 		"diskMakerConfig": yaml,
 	}
+	addOwnerLabels(&configMap.ObjectMeta, cr)
+	addOwner(&configMap.ObjectMeta, cr)
 	return configMap, nil
+}
+
+func (h *Handler) syncDiskMakerDaemonset(cr *v1alpha1.LocalStorageProvider, forceRollout bool) error {
+	return nil
+}
+
+func (h *Handler) syncProvisionerDaemonset(cr *v1alpha1.LocalStorageProvider, forceRollout bool) error {
+	return nil
 }
 
 func (h *Handler) createLocalProvisionerDaemonset(cr *v1alpha1.LocalStorageProvider) *appsv1.DaemonSet {
@@ -446,7 +499,7 @@ func (h *Handler) createDiskMakerDaemonSet(cr *v1alpha1.LocalStorageProvider) *a
 	}
 }
 
-func (h *Handler) addOwner(meta *metav1.ObjectMeta, cr *v1alpha1.LocalStorageProvider) {
+func addOwner(meta *metav1.ObjectMeta, cr *v1alpha1.LocalStorageProvider) {
 	trueVal := true
 	meta.OwnerReferences = []metav1.OwnerReference{
 		{
@@ -459,27 +512,37 @@ func (h *Handler) addOwner(meta *metav1.ObjectMeta, cr *v1alpha1.LocalStoragePro
 	}
 }
 
+func addOwnerLabels(meta *metav1.ObjectMeta, cr *v1alpha1.LocalStorageProvider) bool {
+	changed := false
+	if meta.Labels == nil {
+		meta.Labels = map[string]string{}
+		changed = true
+	}
+	if v, exists := meta.Labels[ownerNamespaceLabel]; !exists || v != cr.Namespace {
+		meta.Labels[ownerNamespaceLabel] = cr.Namespace
+		changed = true
+	}
+	if v, exists := meta.Labels[ownerNameLabel]; !exists || v != cr.Name {
+		meta.Labels[ownerNameLabel] = cr.Name
+		changed = true
+	}
+
+	return changed
+}
+
 func diskMakerLabels(crName string) map[string]string {
 	return map[string]string{
-		"app":                fmt.Sprintf("local-volume-diskmaker-%s", crName),
-		"openshift-operator": fmt.Sprintf("local-operator-%s", crName),
+		"app": fmt.Sprintf("local-volume-diskmaker-%s", crName),
 	}
 }
 
 func provisionerLabels(crName string) map[string]string {
 	return map[string]string{
-		"app":                fmt.Sprintf("local-volume-provisioner-%s", crName),
-		"openshift-operator": fmt.Sprintf("local-operator-%s", crName),
+		"app": fmt.Sprintf("local-volume-provisioner-%s", crName),
 	}
 }
 
-func storageClassLabels(crName string) map[string]string {
-	return map[string]string{
-		"openshift-operator": fmt.Sprintf("local-operator-%s", crName),
-	}
-}
-
-func newStorageClass(cr *v1alpha1.LocalStorageProvider, scName string) *storagev1.StorageClass {
+func generateStorageClass(cr *v1alpha1.LocalStorageProvider, scName string) *storagev1.StorageClass {
 	deleteReclaimPolicy := corev1.PersistentVolumeReclaimDelete
 	firstConsumerBinding := storagev1.VolumeBindingWaitForFirstConsumer
 	sc := &storagev1.StorageClass{
@@ -488,12 +551,21 @@ func newStorageClass(cr *v1alpha1.LocalStorageProvider, scName string) *storagev
 			APIVersion: "storage.k8s.io/v1",
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Name:   scName,
-			Labels: storageClassLabels(cr.Name),
+			Name: scName,
 		},
 		Provisioner:       "kubernetes.io/no-provisioner",
 		ReclaimPolicy:     &deleteReclaimPolicy,
 		VolumeBindingMode: &firstConsumerBinding,
 	}
+	addOwnerLabels(&sc.ObjectMeta, cr)
+	addOwner(&sc.ObjectMeta, cr)
 	return sc
+}
+
+func getOwnerLabelSelector(cr *v1alpha1.LocalStorageProvider) labels.Selector {
+	ownerLabels := labels.Set{
+		ownerNamespaceLabel: cr.Namespace,
+		ownerNameLabel:      cr.Name,
+	}
+	return labels.SelectorFromSet(ownerLabels)
 }

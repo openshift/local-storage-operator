@@ -73,21 +73,17 @@ type DiskMakerImageVersion struct {
 	DiskMakerImage string `json:"diskMakerImage,omitempty"`
 }
 type LocalStorageProviderStatus struct {
-	ProvisionerRolloutStatuses []ProvisionerRolloutStatus `json:"provisionerRolloutStatuses,omitempty"`
-	operatorv1alpha1.OperatorStatus
-}
+	// ObservedGeneration is the last generation of this object that
+	// the operator has acted on.
+	ObservedGeneration *int64 `json:"observedGeneration,omitempty"`
 
-type RolloutStatus string
+	// Generation of API objects that the operator has created / updated.
+	// For internal operator bookkeeping purposes.
+	Children []operatorv1alpha1.GenerationHistory `json:"children,omitempty"`
 
-const (
-	Completed  RolloutStatus = "Completed"
-	Failed     RolloutStatus = "Failed"
-	InProgress RolloutStatus = "InProgress"
-)
+	// state indicates what the operator has observed to be its current operational status.
+	State operatorv1alpha1.ManagementState `json:"state,omitempty"`
 
-type ProvisionerRolloutStatus struct {
-	// StorageClass name to use for set of matches devices
-	StorageClassName string        `json:"storageClassName"`
-	Status           RolloutStatus `json:"status"`
-	Message          string        `json:"message"`
+	// Conditions is a list of conditions and their status.
+	Conditions []operatorv1alpha1.OperatorCondition
 }
