@@ -503,8 +503,21 @@ func (h *Handler) generateLocalProvisionerDaemonset(cr *v1alpha1.LocalStoragePro
 			},
 		},
 	}
+	h.applyNodeSelector(cr, ds)
 	addOwner(&ds.ObjectMeta, cr)
 	addOwnerLabels(&ds.ObjectMeta, cr)
+	return ds
+}
+
+func (h *Handler) applyNodeSelector(cr *v1alpha1.LocalStorageProvider, ds *appsv1.DaemonSet) *appsv1.DaemonSet {
+	nodeSelector := cr.Spec.NodeSelector
+	if nodeSelector != nil {
+		ds.Spec.Template.Spec.Affinity = &corev1.Affinity{
+			NodeAffinity: &corev1.NodeAffinity{
+				RequiredDuringSchedulingIgnoredDuringExecution: nodeSelector,
+			},
+		}
+	}
 	return ds
 }
 
@@ -588,6 +601,7 @@ func (h *Handler) generateDiskMakerDaemonSet(cr *v1alpha1.LocalStorageProvider) 
 			},
 		},
 	}
+	h.applyNodeSelector(cr, ds)
 	addOwner(&ds.ObjectMeta, cr)
 	addOwnerLabels(&ds.ObjectMeta, cr)
 	return ds
