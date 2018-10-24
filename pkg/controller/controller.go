@@ -3,8 +3,10 @@ package controller
 import (
 	"context"
 	"fmt"
+	"sync"
 
 	"github.com/ghodss/yaml"
+	operatorv1alpha1 "github.com/openshift/api/operator/v1alpha1"
 	"github.com/openshift/library-go/pkg/operator/resource/resourceapply"
 	"github.com/openshift/local-storage-operator/pkg/apis/local/v1alpha1"
 	"github.com/openshift/local-storage-operator/pkg/diskmaker"
@@ -15,9 +17,12 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	storagev1 "k8s.io/api/storage/v1"
+	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/runtime"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/sets"
 )
@@ -29,6 +34,7 @@ type Handler struct {
 	localDiskLocation     string
 	provisonerConfigName  string
 	diskMakerConfigName   string
+	lock                  sync.Mutex
 }
 
 type localDiskData map[string]map[string]string
@@ -54,50 +60,118 @@ func NewHandler(namespace string) sdk.Handler {
 }
 
 func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
+	var localStorageProvider *v1alpha1.LocalStorageProvider
 	switch o := event.Object.(type) {
 	case *v1alpha1.LocalStorageProvider:
 		if event.Deleted {
-			// TODO: Handle deletion later
+			h.cleanupLocalStorageDeployment(o)
 			return nil
 		}
-		var err error
-		err = h.syncRbacPolicies(o)
-		if err != nil {
-			logrus.Error(err)
-			return err
-		}
-
-		provisionerConfigMapModified, err := h.syncProvisionerConfigMap(o)
-		if err != nil {
-			logrus.Errorf("error creating provisioner configmap %s with %v", o.Name, err)
-			return err
-		}
-
-		diskMakerConfigMapModified, err := h.syncDiskMakerConfigMap(o)
-		if err != nil {
-			logrus.Errorf("error creating diskmaker configmap %s with %v", o.Name, err)
-			return err
-		}
-
-		err = h.syncStorageClass(o)
-		if err != nil {
-			logrus.Errorf("failed to create storageClass %v", err)
-			return err
-		}
-
-		err = sdk.Create(h.createLocalProvisionerDaemonset(o))
-		if err != nil && !errors.IsAlreadyExists(err) {
-			logrus.Errorf("failed to create daemonset for provisioner %s with %v", o.Name, err)
-			return err
-		}
-
-		err = sdk.Create(h.createDiskMakerDaemonSet(o))
-		if err != nil && !errors.IsAlreadyExists(err) {
-			logrus.Errorf("failed to create daemonset for diskmaker %s with %v", o.Name, err)
-			return err
-		}
-
+		localStorageProvider = o
+	case *appsv1.DaemonSet, *corev1.ConfigMap:
+		logrus.Infof("Received configmap or daemonset set")
+	case *storagev1.StorageClass:
+		logrus.Infof("received storageClass")
+	default:
+		logrus.Infof("Unexpected kind of object : %+v", o)
+		return fmt.Errorf("expected object : %+v", o)
 	}
+
+	if localStorageProvider != nil {
+		return h.syncLocalStorageProvider(localStorageProvider)
+	}
+	return nil
+}
+
+func (h *Handler) syncLocalStorageProvider(instance *v1alpha1.LocalStorageProvider) error {
+	h.lock.Lock()
+	defer h.lock.Unlock()
+
+	var err error
+	// Create a copy so as we don't modify original LocalStorageProvider
+	o := instance.DeepCopy()
+	err = h.syncRbacPolicies(o)
+	if err != nil {
+		logrus.Error(err)
+		return err
+	}
+
+	provisionerConfigMapModified, err := h.syncProvisionerConfigMap(o)
+	if err != nil {
+		logrus.Errorf("error creating provisioner configmap %s with %v", o.Name, err)
+		return err
+	}
+
+	diskMakerConfigMapModified, err := h.syncDiskMakerConfigMap(o)
+	if err != nil {
+		logrus.Errorf("error creating diskmaker configmap %s with %v", o.Name, err)
+		return err
+	}
+
+	err = h.syncStorageClass(o)
+	if err != nil {
+		logrus.Errorf("failed to create storageClass %v", err)
+		return err
+	}
+
+	children := []operatorv1alpha1.GenerationHistory{}
+
+	provisionerDS, err := h.syncProvisionerDaemonset(o, provisionerConfigMapModified)
+	if err != nil {
+		logrus.Errorf("failed to create daemonset for provisioner %s with %v", o.Name, err)
+		return err
+	}
+
+	if provisionerDS != nil {
+		children = append(children, operatorv1alpha1.GenerationHistory{
+			Group:          appsv1.GroupName,
+			Resource:       "DaemonSet",
+			Namespace:      provisionerDS.Namespace,
+			Name:           provisionerDS.Name,
+			LastGeneration: provisionerDS.Generation,
+		})
+	}
+
+	diskMakerDaemonset, err := h.syncDiskMakerDaemonset(o, diskMakerConfigMapModified)
+	if err != nil {
+		logrus.Errorf("failed to create daemonset for diskmaker %s with %v", o.Name, err)
+		return err
+	}
+	if diskMakerDaemonset != nil {
+		children = append(children, operatorv1alpha1.GenerationHistory{
+			Group:          appsv1.GroupName,
+			Resource:       "DaemonSet",
+			Namespace:      diskMakerDaemonset.Namespace,
+			Name:           diskMakerDaemonset.Name,
+			LastGeneration: diskMakerDaemonset.Generation,
+		})
+	}
+	o.Status.Children = children
+	o.Status.ObservedGeneration = &o.Generation
+	// TODO handle conditions here too
+	err = h.syncStatus(instance, o)
+	if err != nil {
+		return fmt.Errorf("error syncing status %v", err)
+	}
+	return nil
+}
+
+func (h *Handler) syncStatus(oldInstance, newInstance *v1alpha1.LocalStorageProvider) error {
+	logrus.Info("Syncing LocalStorageProvider.Status")
+
+	if !equality.Semantic.DeepEqual(oldInstance.Status, newInstance.Status) {
+		logrus.Info("Updating LocalStorageProvider.Status")
+		err := sdk.Update(newInstance)
+		if err != nil && errors.IsConflict(err) {
+			err = nil
+		}
+		return err
+	}
+	return nil
+}
+
+func (h *Handler) cleanupLocalStorageDeployment(o *v1alpha1.LocalStorageProvider) error {
+	// TODO: Handle deletion later
 	return nil
 }
 
@@ -327,15 +401,27 @@ func (h *Handler) generateDiskMakerConfig(cr *v1alpha1.LocalStorageProvider) (*c
 	return configMap, nil
 }
 
-func (h *Handler) syncDiskMakerDaemonset(cr *v1alpha1.LocalStorageProvider, forceRollout bool) error {
-	return nil
+func (h *Handler) syncDiskMakerDaemonset(cr *v1alpha1.LocalStorageProvider, forceRollout bool) (*appsv1.DaemonSet, error) {
+	ds := h.generateDiskMakerDaemonSet(cr)
+	generation := getExpectedGeneration(cr, ds)
+	ds, _, err := resourceapply.ApplyDaemonSet(k8sclient.GetKubeClient().AppsV1(), ds, generation, forceRollout)
+	if err != nil {
+		return nil, fmt.Errorf("error applying diskmaker daemonset %s with %v", ds.Name, err)
+	}
+	return ds, nil
 }
 
-func (h *Handler) syncProvisionerDaemonset(cr *v1alpha1.LocalStorageProvider, forceRollout bool) error {
-	return nil
+func (h *Handler) syncProvisionerDaemonset(cr *v1alpha1.LocalStorageProvider, forceRollout bool) (*appsv1.DaemonSet, error) {
+	ds := h.generateLocalProvisionerDaemonset(cr)
+	generation := getExpectedGeneration(cr, ds)
+	ds, _, err := resourceapply.ApplyDaemonSet(k8sclient.GetKubeClient().AppsV1(), ds, generation, forceRollout)
+	if err != nil {
+		return nil, fmt.Errorf("error applying provisioner daemonset %s with %v", ds.Name, err)
+	}
+	return ds, nil
 }
 
-func (h *Handler) createLocalProvisionerDaemonset(cr *v1alpha1.LocalStorageProvider) *appsv1.DaemonSet {
+func (h *Handler) generateLocalProvisionerDaemonset(cr *v1alpha1.LocalStorageProvider) *appsv1.DaemonSet {
 	privileged := true
 	hostContainerPropagation := corev1.MountPropagationHostToContainer
 	containers := []corev1.Container{
@@ -389,7 +475,7 @@ func (h *Handler) createLocalProvisionerDaemonset(cr *v1alpha1.LocalStorageProvi
 			},
 		},
 	}
-	return &appsv1.DaemonSet{
+	ds := &appsv1.DaemonSet{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "DaemonSet",
 			APIVersion: "apps/v1",
@@ -409,15 +495,18 @@ func (h *Handler) createLocalProvisionerDaemonset(cr *v1alpha1.LocalStorageProvi
 				},
 				Spec: corev1.PodSpec{
 					Containers:         containers,
-					ServiceAccountName: "local-storage-admin",
+					ServiceAccountName: provisionerServiceAccount,
 					Volumes:            volumes,
 				},
 			},
 		},
 	}
+	addOwner(&ds.ObjectMeta, cr)
+	addOwnerLabels(&ds.ObjectMeta, cr)
+	return ds
 }
 
-func (h *Handler) createDiskMakerDaemonSet(cr *v1alpha1.LocalStorageProvider) *appsv1.DaemonSet {
+func (h *Handler) generateDiskMakerDaemonSet(cr *v1alpha1.LocalStorageProvider) *appsv1.DaemonSet {
 	privileged := true
 	hostContainerPropagation := corev1.MountPropagationHostToContainer
 	containers := []corev1.Container{
@@ -471,7 +560,7 @@ func (h *Handler) createDiskMakerDaemonSet(cr *v1alpha1.LocalStorageProvider) *a
 			},
 		},
 	}
-	return &appsv1.DaemonSet{
+	ds := &appsv1.DaemonSet{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "DaemonSet",
 			APIVersion: "apps/v1",
@@ -491,12 +580,15 @@ func (h *Handler) createDiskMakerDaemonSet(cr *v1alpha1.LocalStorageProvider) *a
 				},
 				Spec: corev1.PodSpec{
 					Containers:         containers,
-					ServiceAccountName: "local-storage-admin",
+					ServiceAccountName: provisionerServiceAccount,
 					Volumes:            volumes,
 				},
 			},
 		},
 	}
+	addOwner(&ds.ObjectMeta, cr)
+	addOwnerLabels(&ds.ObjectMeta, cr)
+	return ds
 }
 
 func addOwner(meta *metav1.ObjectMeta, cr *v1alpha1.LocalStorageProvider) {
@@ -568,4 +660,23 @@ func getOwnerLabelSelector(cr *v1alpha1.LocalStorageProvider) labels.Selector {
 		ownerNameLabel:      cr.Name,
 	}
 	return labels.SelectorFromSet(ownerLabels)
+}
+
+func getExpectedGeneration(cr *v1alpha1.LocalStorageProvider, obj runtime.Object) int64 {
+	gvk := obj.GetObjectKind().GroupVersionKind()
+	var lastGeneration int64 = -1
+	for _, child := range cr.Status.Children {
+		if child.Group != gvk.Group || child.Resource != gvk.Kind {
+			continue
+		}
+		accessor, err := meta.Accessor(obj)
+		if err != nil {
+			return -1
+		}
+		if child.Name != accessor.GetName() || child.Namespace != accessor.GetNamespace() {
+			continue
+		}
+		lastGeneration = child.LastGeneration
+	}
+	return lastGeneration
 }
