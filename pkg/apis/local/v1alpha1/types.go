@@ -58,11 +58,11 @@ type StorageClassDevice struct {
 	// Alternately deviceIDs can be also used to selecting
 	// devices which should be considered for local provisioning.
 	DeviceNames []string `json:"deviceNames,omitempty"`
-	// A list of unique device names taken from /dev/disk/by-id/*
-	// For example - ["/dev/disk/by-id/ata-Crucial_CT275MX300SSD1_1643232F2"]
-	// Either DeviceNames or DeviceIDs must be specified while defining
+	// A list of unique device names taken from /dev/disk/by-uuid/*
+	// For example - ["/dev/disk/by-uuid/12a022e6-13f5-4510-95b5-7bea2a312d3f"]
+	// Either DeviceNames or DeviceUUIDs must be specified while defining
 	// StorageClassDevice but not both.
-	DeviceIDs []string `json:"deviceIDs,omitempty"`
+	DeviceUUIDs []string `json:"deviceUUIDs,omitempty"`
 }
 
 type LocalProvisionerImageVersion struct {
