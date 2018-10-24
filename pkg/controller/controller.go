@@ -182,7 +182,7 @@ func (h *Handler) syncProvisionerConfigMap(o *v1alpha1.LocalStorageProvider) (bo
 		logrus.Errorf("error generating provisioner configmap %s with %v", o.Name, err)
 		return false, err
 	}
-	provisionerConfigMap, modified, err := resourceapply.ApplyConfigMap(k8sclient.GetKubeClient().CoreV1(), provisionerConfigMap)
+	_, modified, err := resourceapply.ApplyConfigMap(k8sclient.GetKubeClient().CoreV1(), provisionerConfigMap)
 	if err != nil {
 		return false, fmt.Errorf("error creating provisioner configmap %s with %v", o.Name, err)
 	}
@@ -194,7 +194,7 @@ func (h *Handler) syncDiskMakerConfigMap(o *v1alpha1.LocalStorageProvider) (bool
 	if err != nil {
 		return false, fmt.Errorf("error generating diskmaker configmap %s with %v", o.Name, err)
 	}
-	diskMakerConfigMap, modified, err := resourceapply.ApplyConfigMap(k8sclient.GetKubeClient().CoreV1(), diskMakerConfigMap)
+	_, modified, err := resourceapply.ApplyConfigMap(k8sclient.GetKubeClient().CoreV1(), diskMakerConfigMap)
 	if err != nil {
 		return false, fmt.Errorf("error creating diskmarker configmap %s with %v", o.Name, err)
 	}
@@ -212,7 +212,7 @@ func (h *Handler) syncRbacPolicies(o *v1alpha1.LocalStorageProvider) error {
 			Labels:    operatorLabel,
 		},
 	}
-	serviceAccount, _, err := resourceapply.ApplyServiceAccount(k8sclient.GetKubeClient().CoreV1(), serviceAccount)
+	_, _, err := resourceapply.ApplyServiceAccount(k8sclient.GetKubeClient().CoreV1(), serviceAccount)
 	if err != nil {
 		return fmt.Errorf("error applying service account %s with %v", serviceAccount.Name, err)
 	}
@@ -231,7 +231,7 @@ func (h *Handler) syncRbacPolicies(o *v1alpha1.LocalStorageProvider) error {
 			},
 		},
 	}
-	provisionerClusterRole, _, err = resourceapply.ApplyClusterRole(k8sclient.GetKubeClient().RbacV1(), provisionerClusterRole)
+	_, _, err = resourceapply.ApplyClusterRole(k8sclient.GetKubeClient().RbacV1(), provisionerClusterRole)
 	if err != nil {
 		return fmt.Errorf("error applying cluster role %s with %v", provisionerClusterRole.Name, err)
 	}
@@ -256,7 +256,7 @@ func (h *Handler) syncRbacPolicies(o *v1alpha1.LocalStorageProvider) error {
 		},
 	}
 
-	pvClusterRoleBinding, _, err = resourceapply.ApplyClusterRoleBinding(k8sclient.GetKubeClient().RbacV1(), pvClusterRoleBinding)
+	_, _, err = resourceapply.ApplyClusterRoleBinding(k8sclient.GetKubeClient().RbacV1(), pvClusterRoleBinding)
 	if err != nil {
 		return fmt.Errorf("error applying pv cluster role binding %s with %v", pvClusterRoleBinding.Name, err)
 	}
@@ -280,7 +280,7 @@ func (h *Handler) syncRbacPolicies(o *v1alpha1.LocalStorageProvider) error {
 			Name:     provisionerClusterRole.Name,
 		},
 	}
-	nodeRoleBinding, _, err = resourceapply.ApplyClusterRoleBinding(k8sclient.GetKubeClient().RbacV1(), nodeRoleBinding)
+	_, _, err = resourceapply.ApplyClusterRoleBinding(k8sclient.GetKubeClient().RbacV1(), nodeRoleBinding)
 	if err != nil {
 		return fmt.Errorf("error creating node role binding %s with %v", nodeRoleBinding.Name, err)
 	}
@@ -331,7 +331,7 @@ func (h *Handler) syncStorageClass(cr *v1alpha1.LocalStorageProvider) error {
 		storageClassName := storageClassDevice.StorageClassName
 		expectedStorageClasses.Insert(storageClassName)
 		storageClass := generateStorageClass(cr, storageClassName)
-		storageClass, _, err := applyStorageClass(k8sclient.GetKubeClient().StorageV1(), storageClass)
+		_, _, err := applyStorageClass(k8sclient.GetKubeClient().StorageV1(), storageClass)
 		if err != nil {
 			return fmt.Errorf("error creating storageClass %s with %v", storageClassName, err)
 		}
@@ -403,20 +403,22 @@ func (h *Handler) generateDiskMakerConfig(cr *v1alpha1.LocalStorageProvider) (*c
 
 func (h *Handler) syncDiskMakerDaemonset(cr *v1alpha1.LocalStorageProvider, forceRollout bool) (*appsv1.DaemonSet, error) {
 	ds := h.generateDiskMakerDaemonSet(cr)
+	dsName := ds.Name
 	generation := getExpectedGeneration(cr, ds)
 	ds, _, err := resourceapply.ApplyDaemonSet(k8sclient.GetKubeClient().AppsV1(), ds, generation, forceRollout)
 	if err != nil {
-		return nil, fmt.Errorf("error applying diskmaker daemonset %s with %v", ds.Name, err)
+		return nil, fmt.Errorf("error applying diskmaker daemonset %s with %v", dsName, err)
 	}
 	return ds, nil
 }
 
 func (h *Handler) syncProvisionerDaemonset(cr *v1alpha1.LocalStorageProvider, forceRollout bool) (*appsv1.DaemonSet, error) {
 	ds := h.generateLocalProvisionerDaemonset(cr)
+	dsName := ds.Name
 	generation := getExpectedGeneration(cr, ds)
 	ds, _, err := resourceapply.ApplyDaemonSet(k8sclient.GetKubeClient().AppsV1(), ds, generation, forceRollout)
 	if err != nil {
-		return nil, fmt.Errorf("error applying provisioner daemonset %s with %v", ds.Name, err)
+		return nil, fmt.Errorf("error applying provisioner daemonset %s with %v", dsName, err)
 	}
 	return ds, nil
 }
