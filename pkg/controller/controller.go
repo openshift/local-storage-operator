@@ -372,8 +372,8 @@ func (h *Handler) generateDiskMakerConfig(cr *v1alpha1.LocalStorageProvider) (*c
 		disks := new(diskmaker.Disks)
 		if len(storageClassDevice.DeviceNames) > 0 {
 			disks.DiskNames = storageClassDevice.DeviceNames
-		} else if len(storageClassDevice.DeviceUUIDs) > 0 {
-			disks.DeviceUUIDs = storageClassDevice.DeviceUUIDs
+		} else if len(storageClassDevice.DeviceIDs) > 0 {
+			disks.DeviceIDs = storageClassDevice.DeviceIDs
 		}
 		configMapData[storageClassDevice.StorageClassName] = disks
 	}
