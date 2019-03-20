@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -17,11 +18,17 @@ import (
 
 var (
 	checkDuration = 5 * time.Second
+	diskByIDPath  = "/dev/disk/by-id/*"
 )
 
 type DiskMaker struct {
 	configLocation  string
 	symlinkLocation string
+}
+
+type DiskLocation struct {
+	diskName string
+	diskID   string
 }
 
 // DiskMaker returns a new instance of DiskMaker
@@ -106,17 +113,16 @@ func (d *DiskMaker) symLinkDisks(diskConfig DiskConfig) {
 	}
 
 	for storageClass, deviceArray := range deviceMap {
-		for _, deviceName := range deviceArray {
+		for _, deviceNameLoction := range deviceArray {
 			symLinkDirPath := path.Join(d.symlinkLocation, storageClass)
 			err := os.MkdirAll(symLinkDirPath, 0755)
 			if err != nil {
 				logrus.Errorf("error creating symlink directory %s with %v", symLinkDirPath, err)
 				continue
 			}
-			symLinkPath := path.Join(symLinkDirPath, deviceName)
-			devicePath := path.Join("/dev", deviceName)
-			logrus.Infof("symlinking to %s to %s", devicePath, symLinkPath)
-			symLinkErr := os.Symlink(devicePath, symLinkPath)
+			symLinkPath := path.Join(symLinkDirPath, deviceNameLoction.diskName)
+			logrus.Infof("symlinking to %s to %s", deviceNameLoction.diskID, symLinkPath)
+			symLinkErr := os.Symlink(deviceNameLoction.diskID, symLinkPath)
 			if symLinkErr != nil {
 				logrus.Errorf("error creating symlink %s with %v", symLinkPath, err)
 			}
@@ -125,25 +131,83 @@ func (d *DiskMaker) symLinkDisks(diskConfig DiskConfig) {
 
 }
 
-func (d *DiskMaker) findMatchingDisks(diskConfig DiskConfig, deviceSet sets.String) (map[string][]string, error) {
-	blockDeviceMap := make(map[string][]string)
-	addDiskToMap := func(scName, diskName string) {
+func (d *DiskMaker) findMatchingDisks(diskConfig DiskConfig, deviceSet sets.String) (map[string][]DiskLocation, error) {
+	blockDeviceMap := make(map[string][]DiskLocation)
+	addDiskToMap := func(scName, stableDeviceID, diskName string) {
 		deviceArray, ok := blockDeviceMap[scName]
 		if !ok {
-			deviceArray = []string{}
+			deviceArray = []DiskLocation{}
 		}
-		deviceArray = append(deviceArray, diskName)
+		deviceArray = append(deviceArray, DiskLocation{diskName, stableDeviceID})
 		blockDeviceMap[scName] = deviceArray
 	}
-	for blockDevice := range deviceSet {
-		for storageClass, disks := range diskConfig {
-			if hasExactDisk(disks.DiskNames, blockDevice) {
-				addDiskToMap(storageClass, blockDevice)
-				break
+	for storageClass, disks := range diskConfig {
+		// handle diskNames
+		for _, diskName := range disks.DiskNames {
+			if hasExactDisk(deviceSet, diskName) {
+				devicePath, err := d.findStableDeviceID(diskName)
+				if err != nil {
+					logrus.Errorf("Unable to add disk %s to local disk pool %v", diskName, err)
+					continue
+				}
+				addDiskToMap(storageClass, devicePath, diskName)
+				continue
 			}
+		}
+		// handle DeviceIDs
+		for _, deviceID := range disks.DeviceIDs {
+			diskPath, deviceName, err := d.findDeviceByID(deviceID)
+			if err != nil {
+				logrus.Errorf("unable to add disk %s to local disk pool %v", deviceID, err)
+				continue
+			}
+			addDiskToMap(storageClass, diskPath, deviceName)
 		}
 	}
 	return blockDeviceMap, nil
+}
+
+// findDeviceByID finds device ID and return name and path
+func (d *DiskMaker) findDeviceByID(deviceID string) (string, string, error) {
+	allDisks, err := filepath.Glob(diskByIDPath)
+	if err != nil {
+		return "", "", fmt.Errorf("error finding disk %s with %v", deviceID, err)
+	}
+	for _, disk := range allDisks {
+		drive, err := filepath.EvalSymlinks(disk)
+		if err != nil {
+			continue
+		}
+		diskNameParts := strings.Split(drive, "/")
+		realDiskName := strings.TrimSpace(diskNameParts[len(diskNameParts)-1])
+
+		diskIDParts := strings.Split(disk, "/")
+		realDiskID := strings.TrimSpace(diskIDParts[len(diskIDParts)-1])
+		if realDiskID == deviceID {
+			return disk, realDiskName, nil
+		}
+
+	}
+	return "", "", fmt.Errorf("unable to find ID of disk %s", deviceID)
+}
+
+func (d *DiskMaker) findStableDeviceID(diskName string) (string, error) {
+	allDisks, err := filepath.Glob(diskByIDPath)
+	if err != nil {
+		return "", fmt.Errorf("error finding disk %s with %v", diskName, err)
+	}
+	for _, disk := range allDisks {
+		drive, err := filepath.EvalSymlinks(disk)
+		if err != nil {
+			continue
+		}
+		diskNameParts := strings.Split(drive, "/")
+		realDiskName := strings.TrimSpace(diskNameParts[len(diskNameParts)-1])
+		if realDiskName == diskName {
+			return disk, nil
+		}
+	}
+	return "", fmt.Errorf("unable to find ID of disk %s", diskName)
 }
 
 func (d *DiskMaker) findNewDisks(content string) (sets.String, error) {
@@ -163,8 +227,8 @@ func (d *DiskMaker) findNewDisks(content string) (sets.String, error) {
 	return deviceSet, nil
 }
 
-func hasExactDisk(disks []string, device string) bool {
-	for _, disk := range disks {
+func hasExactDisk(disks sets.String, device string) bool {
+	for _, disk := range disks.List() {
 		if disk == device {
 			return true
 		}
