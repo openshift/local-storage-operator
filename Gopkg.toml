@@ -49,7 +49,7 @@ required = [
 # Stick to old api,
 [[override]]
   name = "github.com/openshift/api"
-  revision = "a46029836bdc207f9949fc5f4907f0bfd3cf7763"
+  revision = "963e1402ed59e6843598ca035cfdd243d01b49e0"
 
 [prune]
   go-tests = true

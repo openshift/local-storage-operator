@@ -244,7 +244,7 @@
   version = "1.0.1"
 
 [[projects]]
-  digest = "1:27abbe41748a343bb00f115cc8f3d390f5c2031c9636f5173d62d910e68d6016"
+  digest = "1:f093ff0b7566546060439b692bb57bcaa736f05b229446c5bfe1e15f946e5e5a"
   name = "github.com/openshift/api"
   packages = [
     ".",
@@ -270,6 +270,7 @@
     "openshiftcontrolplane",
     "openshiftcontrolplane/v1",
     "operator",
+    "operator/v1",
     "operator/v1alpha1",
     "osin",
     "osin/v1",
@@ -292,7 +293,7 @@
     "webconsole/v1",
   ]
   pruneopts = "NUT"
-  revision = "a46029836bdc207f9949fc5f4907f0bfd3cf7763"
+  revision = "963e1402ed59e6843598ca035cfdd243d01b49e0"
 
 [[projects]]
   branch = "master"
