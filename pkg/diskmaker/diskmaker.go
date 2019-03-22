@@ -16,6 +16,10 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 )
 
+// DiskMaker is a small utility that reads configmap and
+// creates and symlinks disks in location from which local-storage-provisioner can access.
+// It also ensures that only stable device names are used.
+
 var (
 	checkDuration = 5 * time.Second
 	diskByIDPath  = "/dev/disk/by-id/*"
