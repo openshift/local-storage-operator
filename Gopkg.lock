@@ -244,7 +244,7 @@
   version = "1.0.1"
 
 [[projects]]
-  digest = "1:27abbe41748a343bb00f115cc8f3d390f5c2031c9636f5173d62d910e68d6016"
+  digest = "1:f093ff0b7566546060439b692bb57bcaa736f05b229446c5bfe1e15f946e5e5a"
   name = "github.com/openshift/api"
   packages = [
     ".",
@@ -270,6 +270,7 @@
     "openshiftcontrolplane",
     "openshiftcontrolplane/v1",
     "operator",
+    "operator/v1",
     "operator/v1alpha1",
     "osin",
     "osin/v1",
@@ -292,7 +293,7 @@
     "webconsole/v1",
   ]
   pruneopts = "NUT"
-  revision = "a46029836bdc207f9949fc5f4907f0bfd3cf7763"
+  revision = "963e1402ed59e6843598ca035cfdd243d01b49e0"
 
 [[projects]]
   branch = "master"
@@ -307,8 +308,7 @@
   revision = "dd6554843a719fcb151deb612e2116371adedcb6"
 
 [[projects]]
-  branch = "master"
-  digest = "1:1b840e172a4dd78f2638a662264f4d8538384dced8b57cb0b9b739c3f361f7ea"
+  digest = "1:ce6ed8da0816d327c1d586722a13c05a3fd26cf9b8649cdcda300c16f026feca"
   name = "github.com/operator-framework/operator-sdk"
   packages = [
     "pkg/k8sclient",
@@ -318,7 +318,8 @@
     "version",
   ]
   pruneopts = "NUT"
-  revision = "4e49fba798f696afdf9879b99372ca01a36f341d"
+  revision = "e5a0ab096e1a7c0e6b937d2b41707eccb82c3c77"
+  version = "v0.0.7"
 
 [[projects]]
   digest = "1:93b1d84c5fa6d1ea52f4114c37714cddd84d5b78f151b62bb101128dd51399bf"
