@@ -10,9 +10,8 @@ IMAGE = $(REGISTRY)local-volume-provisioner:$(VERSION)
 MUTABLE_IMAGE = $(REGISTRY)local-volume-provisioner:latest
 DISKMAKER_IMAGE = $(REGISTRY)local-diskmaker:latest
 
-diskmaker-container: all
-	cp diskmaker deploy/diskmaker
-	docker build -t $(DISKMAKER_IMAGE) deploy/diskmaker
+diskmaker-container:
+	docker build -t $(DISKMAKER_IMAGE) -f Dockerfile.diskmaker
 .PHONY: diskmaker-container
 
 all build:
