@@ -1,4 +1,6 @@
 packageName: local-storage
 channels:
 - name: alpha
-  currentCSV: local-storage-operator.v0.0.1
+  currentCSV: local-storage-operator.v0.0.4
+
+

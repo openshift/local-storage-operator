@@ -1,7 +1,7 @@
 apiVersion: operators.coreos.com/v1alpha1
 kind: ClusterServiceVersion
 metadata:
-  name: local-storage-operator.v0.0.1
+  name: local-storage-operator.v0.0.4
   namespace: placeholder
   labels:
     operator-metering: "true"
@@ -9,7 +9,7 @@ spec:
   displayName: Local Storage
   description: Local Storage... # TODO: description
   keywords: [local storage]
-  version: 0.0.1
+  version: 0.0.4
   maturity: alpha
   maintainers:
     - email: aos-storage-staff@redhat.com
@@ -18,7 +18,7 @@ spec:
     name: Red Hat
   labels:
     alm-owner-metering: local-storage-operator
-    alm-status-descriptors: local-storage-operator.v0.0.1
+    alm-status-descriptors: local-storage-operator.v0.0.4
   selector:
     matchLabels:
       alm-owner-metering: local-storage-operator

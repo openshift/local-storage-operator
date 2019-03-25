@@ -7,24 +7,24 @@ import (
 )
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
-// LocalStorageProviderList returns list of local storage configurations
-type LocalStorageProviderList struct {
+//  LocalVolumeList returns list of local storage configurations
+type LocalVolumeList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata"`
-	Items           []LocalStorageProvider `json:"items"`
+	Items           []LocalVolume `json:"items"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
-// LocalStorageProvider is a local storage configuration used by the operator
-type LocalStorageProvider struct {
+// LocalVolume is a local storage configuration used by the operator
+type LocalVolume struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata"`
-	Spec              LocalStorageProviderSpec   `json:"spec"`
-	Status            LocalStorageProviderStatus `json:"status,omitempty"`
+	Spec              LocalVolumeSpec   `json:"spec"`
+	Status            LocalVolumeStatus `json:"status,omitempty"`
 }
 
-// LocalStorageProviderSpec returns spec of configuration
-type LocalStorageProviderSpec struct {
+// LocalVolumeSpec returns spec of configuration
+type LocalVolumeSpec struct {
 	// Nodes on which the provisoner must run
 	NodeSelector *corev1.NodeSelector `json:"nodeSelector,omitempty"`
 	// List of storage class and devices they can match
@@ -72,7 +72,7 @@ type LocalProvisionerImageVersion struct {
 type DiskMakerImageVersion struct {
 	DiskMakerImage string `json:"diskMakerImage,omitempty"`
 }
-type LocalStorageProviderStatus struct {
+type LocalVolumeStatus struct {
 	// ObservedGeneration is the last generation of this object that
 	// the operator has acted on.
 	ObservedGeneration *int64 `json:"observedGeneration,omitempty"`

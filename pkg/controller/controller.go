@@ -60,11 +60,11 @@ func NewHandler(namespace string) sdk.Handler {
 }
 
 func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
-	var localStorageProvider *v1alpha1.LocalStorageProvider
+	var localStorageProvider *v1alpha1.LocalVolume
 	switch o := event.Object.(type) {
-	case *v1alpha1.LocalStorageProvider:
+	case *v1alpha1.LocalVolume:
 		if event.Deleted {
-			h.cleanupLocalStorageDeployment(o)
+			h.cleanupLocalVolumeDeployment(o)
 			return nil
 		}
 		localStorageProvider = o
@@ -78,17 +78,17 @@ func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
 	}
 
 	if localStorageProvider != nil {
-		return h.syncLocalStorageProvider(localStorageProvider)
+		return h.syncLocalVolumeProvider(localStorageProvider)
 	}
 	return nil
 }
 
-func (h *Handler) syncLocalStorageProvider(instance *v1alpha1.LocalStorageProvider) error {
+func (h *Handler) syncLocalVolumeProvider(instance *v1alpha1.LocalVolume) error {
 	h.lock.Lock()
 	defer h.lock.Unlock()
 
 	var err error
-	// Create a copy so as we don't modify original LocalStorageProvider
+	// Create a copy so as we don't modify original LocalVolume
 	o := instance.DeepCopy()
 	err = h.syncRbacPolicies(o)
 	if err != nil {
@@ -156,11 +156,11 @@ func (h *Handler) syncLocalStorageProvider(instance *v1alpha1.LocalStorageProvid
 	return nil
 }
 
-func (h *Handler) syncStatus(oldInstance, newInstance *v1alpha1.LocalStorageProvider) error {
-	logrus.Info("Syncing LocalStorageProvider.Status")
+func (h *Handler) syncStatus(oldInstance, newInstance *v1alpha1.LocalVolume) error {
+	logrus.Info("Syncing LocalVolume.Status")
 
 	if !equality.Semantic.DeepEqual(oldInstance.Status, newInstance.Status) {
-		logrus.Info("Updating LocalStorageProvider.Status")
+		logrus.Info("Updating LocalVolume.Status")
 		err := sdk.Update(newInstance)
 		if err != nil && errors.IsConflict(err) {
 			err = nil
@@ -170,13 +170,13 @@ func (h *Handler) syncStatus(oldInstance, newInstance *v1alpha1.LocalStorageProv
 	return nil
 }
 
-func (h *Handler) cleanupLocalStorageDeployment(o *v1alpha1.LocalStorageProvider) error {
+func (h *Handler) cleanupLocalVolumeDeployment(o *v1alpha1.LocalVolume) error {
 	// TODO: Handle deletion later
 	return nil
 }
 
 // syncProvisionerConfigMap syncs the configmap and returns true if configmap was modified
-func (h *Handler) syncProvisionerConfigMap(o *v1alpha1.LocalStorageProvider) (bool, error) {
+func (h *Handler) syncProvisionerConfigMap(o *v1alpha1.LocalVolume) (bool, error) {
 	provisionerConfigMap, err := h.generateProvisionerConfigMap(o)
 	if err != nil {
 		logrus.Errorf("error generating provisioner configmap %s with %v", o.Name, err)
@@ -189,7 +189,7 @@ func (h *Handler) syncProvisionerConfigMap(o *v1alpha1.LocalStorageProvider) (bo
 	return modified, nil
 }
 
-func (h *Handler) syncDiskMakerConfigMap(o *v1alpha1.LocalStorageProvider) (bool, error) {
+func (h *Handler) syncDiskMakerConfigMap(o *v1alpha1.LocalVolume) (bool, error) {
 	diskMakerConfigMap, err := h.generateDiskMakerConfig(o)
 	if err != nil {
 		return false, fmt.Errorf("error generating diskmaker configmap %s with %v", o.Name, err)
@@ -201,7 +201,7 @@ func (h *Handler) syncDiskMakerConfigMap(o *v1alpha1.LocalStorageProvider) (bool
 	return modified, nil
 }
 
-func (h *Handler) syncRbacPolicies(o *v1alpha1.LocalStorageProvider) error {
+func (h *Handler) syncRbacPolicies(o *v1alpha1.LocalVolume) error {
 	operatorLabel := map[string]string{
 		"openshift-operator": "local-storage-operator",
 	}
@@ -288,7 +288,7 @@ func (h *Handler) syncRbacPolicies(o *v1alpha1.LocalStorageProvider) error {
 }
 
 // CreateConfigMap Create configmap requires by the local storage provisioner
-func (h *Handler) generateProvisionerConfigMap(cr *v1alpha1.LocalStorageProvider) (*corev1.ConfigMap, error) {
+func (h *Handler) generateProvisionerConfigMap(cr *v1alpha1.LocalVolume) (*corev1.ConfigMap, error) {
 	h.provisonerConfigName = cr.Name + "-local-provisioner-configmap"
 	configMapData := make(localDiskData)
 	storageClassDevices := cr.Spec.StorageClassDevices
@@ -324,7 +324,7 @@ func (h *Handler) generateProvisionerConfigMap(cr *v1alpha1.LocalStorageProvider
 	return configmap, nil
 }
 
-func (h *Handler) syncStorageClass(cr *v1alpha1.LocalStorageProvider) error {
+func (h *Handler) syncStorageClass(cr *v1alpha1.LocalVolume) error {
 	storageClassDevices := cr.Spec.StorageClassDevices
 	expectedStorageClasses := sets.NewString()
 	for _, storageClassDevice := range storageClassDevices {
@@ -344,7 +344,7 @@ func (h *Handler) syncStorageClass(cr *v1alpha1.LocalStorageProvider) error {
 	return nil
 }
 
-func (h *Handler) removeUnExpectedStorageClasses(cr *v1alpha1.LocalStorageProvider, expectedStorageClasses sets.String) error {
+func (h *Handler) removeUnExpectedStorageClasses(cr *v1alpha1.LocalVolume, expectedStorageClasses sets.String) error {
 	list, err := k8sclient.
 		GetKubeClient().StorageV1().
 		StorageClasses().List(metav1.ListOptions{LabelSelector: getOwnerLabelSelector(cr).String()})
@@ -364,7 +364,7 @@ func (h *Handler) removeUnExpectedStorageClasses(cr *v1alpha1.LocalStorageProvid
 	return utilerrors.NewAggregate(removeErrors)
 }
 
-func (h *Handler) generateDiskMakerConfig(cr *v1alpha1.LocalStorageProvider) (*corev1.ConfigMap, error) {
+func (h *Handler) generateDiskMakerConfig(cr *v1alpha1.LocalVolume) (*corev1.ConfigMap, error) {
 	h.diskMakerConfigName = cr.Name + "-diskmaker-configmap"
 	configMapData := make(diskmaker.DiskConfig)
 	storageClassDevices := cr.Spec.StorageClassDevices
@@ -401,7 +401,7 @@ func (h *Handler) generateDiskMakerConfig(cr *v1alpha1.LocalStorageProvider) (*c
 	return configMap, nil
 }
 
-func (h *Handler) syncDiskMakerDaemonset(cr *v1alpha1.LocalStorageProvider, forceRollout bool) (*appsv1.DaemonSet, error) {
+func (h *Handler) syncDiskMakerDaemonset(cr *v1alpha1.LocalVolume, forceRollout bool) (*appsv1.DaemonSet, error) {
 	ds := h.generateDiskMakerDaemonSet(cr)
 	dsName := ds.Name
 	generation := getExpectedGeneration(cr, ds)
@@ -412,7 +412,7 @@ func (h *Handler) syncDiskMakerDaemonset(cr *v1alpha1.LocalStorageProvider, forc
 	return ds, nil
 }
 
-func (h *Handler) syncProvisionerDaemonset(cr *v1alpha1.LocalStorageProvider, forceRollout bool) (*appsv1.DaemonSet, error) {
+func (h *Handler) syncProvisionerDaemonset(cr *v1alpha1.LocalVolume, forceRollout bool) (*appsv1.DaemonSet, error) {
 	ds := h.generateLocalProvisionerDaemonset(cr)
 	dsName := ds.Name
 	generation := getExpectedGeneration(cr, ds)
@@ -423,7 +423,7 @@ func (h *Handler) syncProvisionerDaemonset(cr *v1alpha1.LocalStorageProvider, fo
 	return ds, nil
 }
 
-func (h *Handler) generateLocalProvisionerDaemonset(cr *v1alpha1.LocalStorageProvider) *appsv1.DaemonSet {
+func (h *Handler) generateLocalProvisionerDaemonset(cr *v1alpha1.LocalVolume) *appsv1.DaemonSet {
 	privileged := true
 	hostContainerPropagation := corev1.MountPropagationHostToContainer
 	containers := []corev1.Container{
@@ -509,7 +509,7 @@ func (h *Handler) generateLocalProvisionerDaemonset(cr *v1alpha1.LocalStoragePro
 	return ds
 }
 
-func (h *Handler) applyNodeSelector(cr *v1alpha1.LocalStorageProvider, ds *appsv1.DaemonSet) *appsv1.DaemonSet {
+func (h *Handler) applyNodeSelector(cr *v1alpha1.LocalVolume, ds *appsv1.DaemonSet) *appsv1.DaemonSet {
 	nodeSelector := cr.Spec.NodeSelector
 	if nodeSelector != nil {
 		ds.Spec.Template.Spec.Affinity = &corev1.Affinity{
@@ -521,7 +521,7 @@ func (h *Handler) applyNodeSelector(cr *v1alpha1.LocalStorageProvider, ds *appsv
 	return ds
 }
 
-func (h *Handler) generateDiskMakerDaemonSet(cr *v1alpha1.LocalStorageProvider) *appsv1.DaemonSet {
+func (h *Handler) generateDiskMakerDaemonSet(cr *v1alpha1.LocalVolume) *appsv1.DaemonSet {
 	privileged := true
 	hostContainerPropagation := corev1.MountPropagationHostToContainer
 	containers := []corev1.Container{
@@ -607,12 +607,12 @@ func (h *Handler) generateDiskMakerDaemonSet(cr *v1alpha1.LocalStorageProvider) 
 	return ds
 }
 
-func addOwner(meta *metav1.ObjectMeta, cr *v1alpha1.LocalStorageProvider) {
+func addOwner(meta *metav1.ObjectMeta, cr *v1alpha1.LocalVolume) {
 	trueVal := true
 	meta.OwnerReferences = []metav1.OwnerReference{
 		{
 			APIVersion: v1alpha1.SchemeGroupVersion.String(),
-			Kind:       v1alpha1.LocalStorageProviderKind,
+			Kind:       v1alpha1.LocalVolumeKind,
 			Name:       cr.Name,
 			UID:        cr.UID,
 			Controller: &trueVal,
@@ -620,7 +620,7 @@ func addOwner(meta *metav1.ObjectMeta, cr *v1alpha1.LocalStorageProvider) {
 	}
 }
 
-func addOwnerLabels(meta *metav1.ObjectMeta, cr *v1alpha1.LocalStorageProvider) bool {
+func addOwnerLabels(meta *metav1.ObjectMeta, cr *v1alpha1.LocalVolume) bool {
 	changed := false
 	if meta.Labels == nil {
 		meta.Labels = map[string]string{}
@@ -650,7 +650,7 @@ func provisionerLabels(crName string) map[string]string {
 	}
 }
 
-func generateStorageClass(cr *v1alpha1.LocalStorageProvider, scName string) *storagev1.StorageClass {
+func generateStorageClass(cr *v1alpha1.LocalVolume, scName string) *storagev1.StorageClass {
 	deleteReclaimPolicy := corev1.PersistentVolumeReclaimDelete
 	firstConsumerBinding := storagev1.VolumeBindingWaitForFirstConsumer
 	sc := &storagev1.StorageClass{
@@ -670,7 +670,7 @@ func generateStorageClass(cr *v1alpha1.LocalStorageProvider, scName string) *sto
 	return sc
 }
 
-func getOwnerLabelSelector(cr *v1alpha1.LocalStorageProvider) labels.Selector {
+func getOwnerLabelSelector(cr *v1alpha1.LocalVolume) labels.Selector {
 	ownerLabels := labels.Set{
 		ownerNamespaceLabel: cr.Namespace,
 		ownerNameLabel:      cr.Name,
@@ -678,7 +678,7 @@ func getOwnerLabelSelector(cr *v1alpha1.LocalStorageProvider) labels.Selector {
 	return labels.SelectorFromSet(ownerLabels)
 }
 
-func getExpectedGeneration(cr *v1alpha1.LocalStorageProvider, obj runtime.Object) int64 {
+func getExpectedGeneration(cr *v1alpha1.LocalVolume, obj runtime.Object) int64 {
 	gvk := obj.GetObjectKind().GroupVersionKind()
 	var lastGeneration int64 = -1
 	for _, child := range cr.Status.Children {
