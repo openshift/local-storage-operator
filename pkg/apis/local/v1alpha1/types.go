@@ -6,6 +6,11 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+const (
+	defaultDiskMakerImageVersion = "quay.io/gnufied/local-diskmaker:latest"
+	defaultProvisionImage        = "quay.io/gnufied/local-volume-provisioner:v2.0.1-hemant"
+)
+
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 //  LocalVolumeList returns list of local storage configurations
 type LocalVolumeList struct {
@@ -86,4 +91,15 @@ type LocalVolumeStatus struct {
 
 	// Conditions is a list of conditions and their status.
 	Conditions []operatorv1alpha1.OperatorCondition
+}
+
+// SetDefaults sets image defaults
+func (local *LocalVolume) SetDefaults() {
+	if len(local.Spec.DiskMakerImageVersion.DiskMakerImage) == 0 {
+		local.Spec.DiskMakerImageVersion = DiskMakerImageVersion{defaultDiskMakerImageVersion}
+	}
+
+	if len(local.Spec.LocalProvisionerImageVersion.ProvisionerImage) == 0 {
+		local.Spec.LocalProvisionerImageVersion = LocalProvisionerImageVersion{defaultProvisionImage}
+	}
 }

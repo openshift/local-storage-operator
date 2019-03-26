@@ -90,6 +90,9 @@ func (h *Handler) syncLocalVolumeProvider(instance *v1alpha1.LocalVolume) error 
 	var err error
 	// Create a copy so as we don't modify original LocalVolume
 	o := instance.DeepCopy()
+	// set default image version etc
+	o.SetDefaults()
+
 	err = h.syncRbacPolicies(o)
 	if err != nil {
 		logrus.Error(err)
@@ -552,9 +555,15 @@ func (h *Handler) generateDiskMakerDaemonSet(cr *v1alpha1.LocalVolume) *appsv1.D
 					MountPath:        h.localDiskLocation,
 					MountPropagation: &hostContainerPropagation,
 				},
+				{
+					Name:             "device-dir",
+					MountPath:        "/dev",
+					MountPropagation: &hostContainerPropagation,
+				},
 			},
 		},
 	}
+	directoryHostPath := corev1.HostPathDirectory
 	volumes := []corev1.Volume{
 		{
 			Name: "provisioner-config",
@@ -571,6 +580,15 @@ func (h *Handler) generateDiskMakerDaemonSet(cr *v1alpha1.LocalVolume) *appsv1.D
 			VolumeSource: corev1.VolumeSource{
 				HostPath: &corev1.HostPathVolumeSource{
 					Path: h.localDiskLocation,
+				},
+			},
+		},
+		{
+			Name: "device-dir",
+			VolumeSource: corev1.VolumeSource{
+				HostPath: &corev1.HostPathVolumeSource{
+					Path: "/dev",
+					Type: &directoryHostPath,
 				},
 			},
 		},

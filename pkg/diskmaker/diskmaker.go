@@ -132,8 +132,16 @@ func (d *DiskMaker) symLinkDisks(diskConfig DiskConfig) {
 				continue
 			}
 			symLinkPath := path.Join(symLinkDirPath, deviceNameLoction.diskName)
-			logrus.Infof("symlinking to %s to %s", deviceNameLoction.diskID, symLinkPath)
-			symLinkErr := os.Symlink(deviceNameLoction.diskID, symLinkPath)
+			var symLinkErr error
+			if deviceNameLoction.diskID != "" {
+				logrus.Infof("symlinking to %s to %s", deviceNameLoction.diskID, symLinkPath)
+				symLinkErr = os.Symlink(deviceNameLoction.diskID, symLinkPath)
+			} else {
+				devicePath := path.Join("/dev", deviceNameLoction.diskName)
+				logrus.Infof("symlinking to %s to %s", devicePath, symLinkPath)
+				symLinkErr = os.Symlink(devicePath, symLinkPath)
+			}
+
 			if symLinkErr != nil {
 				logrus.Errorf("error creating symlink %s with %v", symLinkPath, err)
 			}
@@ -160,7 +168,8 @@ func (d *DiskMaker) findMatchingDisks(diskConfig DiskConfig, deviceSet sets.Stri
 			if hasExactDisk(deviceSet, diskName) {
 				matchedDeviceID, err := d.findStableDeviceID(diskName, allDiskIds)
 				if err != nil {
-					logrus.Errorf("Unable to add disk %s to local disk pool %v", diskName, err)
+					logrus.Errorf("Unable to find disk ID %s for local pool %v", diskName, err)
+					addDiskToMap(storageClass, "", diskName)
 					continue
 				}
 				addDiskToMap(storageClass, matchedDeviceID, diskName)
