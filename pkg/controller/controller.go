@@ -429,6 +429,7 @@ func (h *Handler) syncProvisionerDaemonset(cr *v1alpha1.LocalVolume, forceRollou
 func (h *Handler) generateLocalProvisionerDaemonset(cr *v1alpha1.LocalVolume) *appsv1.DaemonSet {
 	privileged := true
 	hostContainerPropagation := corev1.MountPropagationHostToContainer
+	directoryHostPath := corev1.HostPathDirectory
 	containers := []corev1.Container{
 		{
 			Name:  "local-storage-provisioner",
@@ -457,6 +458,11 @@ func (h *Handler) generateLocalProvisionerDaemonset(cr *v1alpha1.LocalVolume) *a
 					MountPath:        h.localDiskLocation,
 					MountPropagation: &hostContainerPropagation,
 				},
+				{
+					Name:             "device-dir",
+					MountPath:        "/dev",
+					MountPropagation: &hostContainerPropagation,
+				},
 			},
 		},
 	}
@@ -476,6 +482,15 @@ func (h *Handler) generateLocalProvisionerDaemonset(cr *v1alpha1.LocalVolume) *a
 			VolumeSource: corev1.VolumeSource{
 				HostPath: &corev1.HostPathVolumeSource{
 					Path: h.localDiskLocation,
+				},
+			},
+		},
+		{
+			Name: "device-dir",
+			VolumeSource: corev1.VolumeSource{
+				HostPath: &corev1.HostPathVolumeSource{
+					Path: "/dev",
+					Type: &directoryHostPath,
 				},
 			},
 		},
