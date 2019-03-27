@@ -15,18 +15,16 @@ func TestFindMatchingDisk(t *testing.T) {
 	}
 	diskConfig := map[string]*Disks{
 		"foo": &Disks{
-			DiskNames: []string{"vda"},
-		},
-		"bar": &Disks{
-			DiskPatterns: []string{"vd*"},
+			DeviceIDs: []string{"xyz"},
 		},
 	}
-	deviceMap, err := d.findMatchingDisks(diskConfig, deviceSet)
+	allDiskIds := getDeiveIDs()
+	deviceMap, err := d.findMatchingDisks(diskConfig, deviceSet, allDiskIds)
 	if err != nil {
 		t.Fatalf("error finding matchin device %v", err)
 	}
-	if len(deviceMap) != 2 {
-		t.Errorf("expected 2 elements in map got %d", len(deviceMap))
+	if len(deviceMap) != 0 {
+		t.Errorf("expected 0 elements in map got %d", len(deviceMap))
 	}
 }
 
@@ -42,4 +40,10 @@ vdc
 vdd
 vde
 vdf`
+}
+
+func getDeiveIDs() []string {
+	return []string{
+		"/dev/disk/by-id/xyz",
+	}
 }

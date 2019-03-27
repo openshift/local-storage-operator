@@ -9,7 +9,7 @@ import (
 )
 
 func TestCreateDiskMakerConfig(t *testing.T) {
-	localStorageProvider := getLocalStorageProvider()
+	localStorageProvider := getLocalVolume()
 	handler := getHandler()
 	diskMakerConfigMap, err := handler.CreateDiskMakerConfig(localStorageProvider)
 	if err != nil {
@@ -22,7 +22,7 @@ func TestCreateDiskMakerConfig(t *testing.T) {
 }
 
 func TestCreateProvisionerConfigMap(t *testing.T) {
-	localStorageProvider := getLocalStorageProvider()
+	localStorageProvider := getLocalVolume()
 	handler := getHandler()
 	provisionerConfigMap, err := handler.CreateProvisionerConfigMap(localStorageProvider)
 	if err != nil {
@@ -42,12 +42,12 @@ func TestCreateProvisionerConfigMap(t *testing.T) {
 	}
 }
 
-func getLocalStorageProvider() *v1alpha1.LocalStorageProvider {
-	return &v1alpha1.LocalStorageProvider{
+func getLocalVolume() *v1alpha1.LocalVolume {
+	return &v1alpha1.LocalVolume{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "local-disks",
 		},
-		Spec: v1alpha1.LocalStorageProviderSpec{
+		Spec: v1alpha1.LocalVolumeSpec{
 			StorageClassDevices: []v1alpha1.StorageClassDevice{
 				{
 					StorageClassName: "foo",

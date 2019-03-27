@@ -1,5 +1,5 @@
 apiVersion: "local.storage.openshift.io/v1alpha1"
-kind: "LocalStorageProvider"
+kind: "LocalVolume"
 metadata:
   name: "example"
 spec:

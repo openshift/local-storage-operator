@@ -6,25 +6,30 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+const (
+	defaultDiskMakerImageVersion = "quay.io/gnufied/local-diskmaker:latest"
+	defaultProvisionImage        = "quay.io/gnufied/local-volume-provisioner:v2.0.1-hemant"
+)
+
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
-// LocalStorageProviderList returns list of local storage configurations
-type LocalStorageProviderList struct {
+//  LocalVolumeList returns list of local storage configurations
+type LocalVolumeList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata"`
-	Items           []LocalStorageProvider `json:"items"`
+	Items           []LocalVolume `json:"items"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
-// LocalStorageProvider is a local storage configuration used by the operator
-type LocalStorageProvider struct {
+// LocalVolume is a local storage configuration used by the operator
+type LocalVolume struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata"`
-	Spec              LocalStorageProviderSpec   `json:"spec"`
-	Status            LocalStorageProviderStatus `json:"status,omitempty"`
+	Spec              LocalVolumeSpec   `json:"spec"`
+	Status            LocalVolumeStatus `json:"status,omitempty"`
 }
 
-// LocalStorageProviderSpec returns spec of configuration
-type LocalStorageProviderSpec struct {
+// LocalVolumeSpec returns spec of configuration
+type LocalVolumeSpec struct {
 	// Nodes on which the provisoner must run
 	NodeSelector *corev1.NodeSelector `json:"nodeSelector,omitempty"`
 	// List of storage class and devices they can match
@@ -58,11 +63,11 @@ type StorageClassDevice struct {
 	// Alternately deviceIDs can be also used to selecting
 	// devices which should be considered for local provisioning.
 	DeviceNames []string `json:"deviceNames,omitempty"`
-	// A list of unique device names taken from /dev/disk/by-uuid/*
-	// For example - ["/dev/disk/by-uuid/12a022e6-13f5-4510-95b5-7bea2a312d3f"]
-	// Either DeviceNames or DeviceUUIDs must be specified while defining
+	// A list of unique device names taken from /dev/disk/by-id/*
+	// For example - ["/dev/disk/by-id/ata-SanDisk_SD7SB7S512G1001_163057401172"]
+	// Either DeviceNames or DevicIDs must be specified while defining
 	// StorageClassDevice but not both.
-	DeviceUUIDs []string `json:"deviceUUIDs,omitempty"`
+	DeviceIDs []string `json:"deviceIDs,omitempty"`
 }
 
 type LocalProvisionerImageVersion struct {
@@ -72,7 +77,7 @@ type LocalProvisionerImageVersion struct {
 type DiskMakerImageVersion struct {
 	DiskMakerImage string `json:"diskMakerImage,omitempty"`
 }
-type LocalStorageProviderStatus struct {
+type LocalVolumeStatus struct {
 	// ObservedGeneration is the last generation of this object that
 	// the operator has acted on.
 	ObservedGeneration *int64 `json:"observedGeneration,omitempty"`
@@ -86,4 +91,15 @@ type LocalStorageProviderStatus struct {
 
 	// Conditions is a list of conditions and their status.
 	Conditions []operatorv1alpha1.OperatorCondition
+}
+
+// SetDefaults sets image defaults
+func (local *LocalVolume) SetDefaults() {
+	if len(local.Spec.DiskMakerImageVersion.DiskMakerImage) == 0 {
+		local.Spec.DiskMakerImageVersion = DiskMakerImageVersion{defaultDiskMakerImageVersion}
+	}
+
+	if len(local.Spec.LocalProvisionerImageVersion.ProvisionerImage) == 0 {
+		local.Spec.LocalProvisionerImageVersion = LocalProvisionerImageVersion{defaultProvisionImage}
+	}
 }

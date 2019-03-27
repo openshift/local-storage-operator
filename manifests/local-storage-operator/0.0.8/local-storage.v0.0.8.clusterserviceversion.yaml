@@ -1,7 +1,7 @@
 apiVersion: operators.coreos.com/v1alpha1
 kind: ClusterServiceVersion
 metadata:
-  name: local-storage-operator.v0.0.1
+  name: local-storage-operator.v0.0.8
   namespace: placeholder
   labels:
     operator-metering: "true"
@@ -9,7 +9,7 @@ spec:
   displayName: Local Storage
   description: Local Storage... # TODO: description
   keywords: [local storage]
-  version: 0.1.0
+  version: 0.0.8
   maturity: alpha
   maintainers:
     - email: aos-storage-staff@redhat.com
@@ -18,20 +18,19 @@ spec:
     name: Red Hat
   labels:
     alm-owner-metering: local-storage-operator
-    alm-status-descriptors: local-storage-operator.v0.0.1
+    alm-status-descriptors: local-storage-operator.v0.0.8
   selector:
     matchLabels:
       alm-owner-metering: local-storage-operator
-  # TODO: InstallModes: A set of InstallModes that tell OLM which OperatorGroups an Operator can belong to. Belonging to an OperatorGroup means that OLM provides the set of targetted namespaces as an annotation on the Operator's CSV and any deployments defined therin. These deployments can then untilize the Downward API to inject the list of namespaces into its container(s). An InstallMode consists of an InstallModeType field and a boolean Supported field. There are four InstallModeTypes:
   installModes:
   - type: OwnNamespace
-    supported: true
+    supported: false
   - type: SingleNamespace
-    supported: true
+    supported: false
   - type: MultiNamespace
     supported: false
   - type: AllNamespaces
-    supported: false
+    supported: true
   install:
     strategy: deployment
     spec:
@@ -105,6 +104,16 @@ spec:
             - nodes
             verbs:
             - get
+          - apiGroups:
+            - ""
+            resources:
+            - persistentvolumes
+            verbs:
+            - get
+            - list
+            - watch
+            - create
+            - delete
           serviceAccountName: local-storage-operator
       deployments:
         - name: local-storage-operator
@@ -121,7 +130,7 @@ spec:
                 serviceAccountName: local-storage-operator
                 containers:
                   - name: local-storage-operator
-                    image: quay.io/gnufied/local-storage-operator:v0.0.8
+                    image: quay.io/gnufied/local-storage-operator:v0.0.13
                     ports:
                     - containerPort: 60000
                       name: metrics
@@ -137,11 +146,11 @@ spec:
                         value: "local-storage-operator"
   customresourcedefinitions:
     owned:
-      - displayName: Local Storage Provider
+      - displayName: Local Volume operator
         group: local.storage.openshift.io
-        kind: LocalStorageProvider
-        name: localstorageproviders.local.storage.openshift.io
+        kind: LocalVolume
+        name: localvolumes.local.storage.openshift.io
+        description: Manage local storage volumes for Openshift
         # TODO: specDescriptors
         # TODO: statusDescriptors
         version: v1alpha1
-        # TODO: description
