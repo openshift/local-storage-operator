@@ -189,37 +189,26 @@ func (d *DiskMaker) findMatchingDisks(diskConfig DiskConfig, deviceSet sets.Stri
 	return blockDeviceMap, nil
 }
 
-// findDeviceByID finds device ID and return name and path
+// findDeviceByID finds device ID and return device name(such as sda, sdb) and complete deviceID path
 func (d *DiskMaker) findDeviceByID(deviceID string, allDisks []string) (string, string, error) {
-	for _, disk := range allDisks {
-		drive, err := filepath.EvalSymlinks(disk)
-		if err != nil {
-			logrus.Errorf("error evaluating symlink : %v", err)
-			continue
-		}
-		diskNameParts := strings.Split(drive, "/")
-		realDiskName := strings.TrimSpace(diskNameParts[len(diskNameParts)-1])
-
-		diskIDParts := strings.Split(disk, "/")
-		realDiskID := strings.TrimSpace(diskIDParts[len(diskIDParts)-1])
-		if realDiskID == deviceID {
-			return disk, realDiskName, nil
-		}
-
+	completeDiskIDPath := fmt.Sprintf("%s/%s", diskByIDPath, deviceID)
+	diskDevPath, err := filepath.EvalSymlinks(completeDiskIDPath)
+	if err != nil {
+		return "", "", fmt.Errorf("unable to find device with id %s", deviceID)
 	}
-	return "", "", fmt.Errorf("unable to find ID of disk %s", deviceID)
+	diskDevName := filepath.Base(diskDevPath)
+	return completeDiskIDPath, diskDevName, nil
 }
 
 func (d *DiskMaker) findStableDeviceID(diskName string, allDisks []string) (string, error) {
-	for _, disk := range allDisks {
-		drive, err := filepath.EvalSymlinks(disk)
+	for _, diskIDPath := range allDisks {
+		diskDevPath, err := filepath.EvalSymlinks(diskIDPath)
 		if err != nil {
 			continue
 		}
-		diskNameParts := strings.Split(drive, "/")
-		realDiskName := strings.TrimSpace(diskNameParts[len(diskNameParts)-1])
-		if realDiskName == diskName {
-			return disk, nil
+		diskDevName := filepath.Base(diskDevPath)
+		if diskDevName == diskName {
+			return diskIDPath, nil
 		}
 	}
 	return "", fmt.Errorf("unable to find ID of disk %s", diskName)
