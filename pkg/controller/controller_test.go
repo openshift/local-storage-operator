@@ -11,7 +11,7 @@ import (
 func TestCreateDiskMakerConfig(t *testing.T) {
 	localStorageProvider := getLocalVolume()
 	handler := getHandler()
-	diskMakerConfigMap, err := handler.CreateDiskMakerConfig(localStorageProvider)
+	diskMakerConfigMap, err := handler.generateDiskMakerConfig(localStorageProvider)
 	if err != nil {
 		t.Fatalf("error creating disk maker configmap %v", err)
 	}
@@ -24,7 +24,7 @@ func TestCreateDiskMakerConfig(t *testing.T) {
 func TestCreateProvisionerConfigMap(t *testing.T) {
 	localStorageProvider := getLocalVolume()
 	handler := getHandler()
-	provisionerConfigMap, err := handler.CreateProvisionerConfigMap(localStorageProvider)
+	provisionerConfigMap, err := handler.generateProvisionerConfigMap(localStorageProvider)
 	if err != nil {
 		t.Fatalf("error creating local provisioner configmap %v", err)
 	}

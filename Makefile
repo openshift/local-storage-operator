@@ -27,3 +27,7 @@ operator-container:
 clean:
 	rm -f diskmaker local-storage-operator
 .PHONY: clean
+
+test:
+	go test ./pkg/... ./cmd/... -coverprofile cover.out
+.PHONY: test
