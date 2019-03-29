@@ -501,7 +501,7 @@ func (h *Handler) generateLocalProvisionerDaemonset(cr *v1alpha1.LocalVolume) *a
 			APIVersion: "apps/v1",
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      cr.Name + "local-provisioner",
+			Name:      cr.Name + "-local-provisioner",
 			Namespace: cr.Namespace,
 			Labels:    provisionerLabels(cr.Name),
 		},
