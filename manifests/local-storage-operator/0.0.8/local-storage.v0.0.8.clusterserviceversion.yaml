@@ -140,7 +140,7 @@ spec:
                 serviceAccountName: local-storage-operator
                 containers:
                   - name: local-storage-operator
-                    image: quay.io/gnufied/local-storage-operator:v0.0.13
+                    image: registry.svc.ci.openshift.org/openshift/origin-v4.0:local-storage-operator
                     ports:
                     - containerPort: 60000
                       name: metrics

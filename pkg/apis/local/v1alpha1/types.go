@@ -7,8 +7,8 @@ import (
 )
 
 const (
-	defaultDiskMakerImageVersion = "quay.io/gnufied/local-diskmaker:latest"
-	defaultProvisionImage        = "quay.io/gnufied/local-volume-provisioner:v2.0.1-hemant"
+	defaultDiskMakerImageVersion = "registry.svc.ci.openshift.org/openshift/origin-v4.0:local-storage-diskmaker"
+	defaultProvisionImage        = "quay.io/external_storage/local-volume-provisioner:v2.3.0"
 )
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
