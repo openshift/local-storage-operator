@@ -17,7 +17,7 @@ oc new-project local-storage
 ### Create and Subscribe to the local-storage Catalog
 
 ```bash
-oc create -f https://github.com/j-griffith/local-storage-operator/blob/master/examples/olm-deploy/catalog-create-subscribe.yaml
+oc create -f https://github.com/openshift/local-storage-operator/blob/master/examples/olm-deploy/catalog-create-subscribe.yaml
 ```
 
 The above file uses defaults values and a namespace of ``local-storage`` which is fine in most cases, but download and modify if desired before running oc create.
@@ -96,7 +96,7 @@ replicaset.apps/local-storage-operator-54564d9988   1         1         1       
 
 Pay particular attention to the DESIRED/CURRENT number of daemonset processes, if the DESIRED count == 0, that typically means that your label selectors were invalid.
 
-You should now be able to see your PVs create:
+You should now have cooresponding PVs:
 
 ```bash
 oc get pv
