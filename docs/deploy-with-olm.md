@@ -15,7 +15,7 @@ Github repo.  Grab the [latest release](https://github.com/operator-framework/op
 
 ### Create and Subscribe to the local-storage Catalog
 
-By default the local-storage-operator assumes the `local-storage` namespace for it's resources.  If you're not modifying the example manifests, be sure to create
+By default the local-storage-operator assumes the `local-storage` namespace for its resources.  If you're not modifying the example manifests, be sure to create
 the `local-storage` project or namespace: 
 `oc new-project local-storage` or `kubectl create ns local-storage`
 
@@ -38,6 +38,8 @@ oc describe no -l node-role.kubernetes.io/worker | grep hostname
 ```
 
 Create a LocalVolume manifest named ``create-cr.yaml`` using the hostnames obtained above:
+
+### CR using volumeMode - Filesystem
 
 ```yaml
 apiVersion: "local.storage.openshift.io/v1alpha1"
@@ -63,11 +65,49 @@ spec:
         - xvdf
 ```
 
-Deploy the local storage CR:
+### CR using volumeMode - Block
+
+```yaml
+apiVersion: "local.storage.openshift.io/v1alpha1"
+kind: "LocalVolume"
+metadata:
+  name: "local-disks"
+  namespace: "local-storage"
+spec:
+  nodeSelector:
+    nodeSelectorTerms:
+    - matchExpressions:
+        - key: kubernetes.io/hostname
+          operator: In
+          values:
+          - ip-10-0-136-143
+          - ip-10-0-140-255
+          - ip-10-0-144-180
+  storageClassDevices:
+    - storageClassName: "localblock-sc"
+      volumeMode: Block 
+      deviceNames:
+        - xvdg
+```
+
+### Deploy the CR
 
 ```bash
 oc create -f create-cr.yaml
 ```
+
+### NOTE about Block and Filesystem modes
+
+With the local-disk provisioner you *MUST* explicitly create a CR for either `Block` or `Fileystem`. 
+Unlike some storage that allows you to dynamically specify the volumeMode regardless of the 
+storageClass definition, with local disks you must use the correct storageClass definition.
+
+It's also important to note that if you do have a filesystem on the disks you allocated for
+the Block CR, you may run in to issues where the pod reports being unschedulable:
+
+``Warning  FailedScheduling  27s (x2 over 27s)  default-scheduler  0/6 nodes are available: 3 node(s) didn't find available persistent volumes to bind, 3 node(s) had taints that the pod didn't tolerate.``
+
+In this example, the disks were prevsiously used, and a filesystem was applied.  Be sure to either use fresh disks, or remove any partitions and file systems if you're setting up a Block mode CR.
 
 ### Verify your deployment
 
@@ -130,8 +170,8 @@ spec:
 EOF
 ```
 
+*NOTE* The default volumeMode for kubernetes pvc's is "Filesystem"
 Keep in mind that when using the local-provisioner a claim is held in pending and not bound until a consuming pod is scheduled and created.
-
 
 ```bash
 oc get pvc
