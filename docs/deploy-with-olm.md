@@ -4,44 +4,49 @@ The local-storage Operator is avaialble in OLM, this makes it easy to consume lo
 
 ## Pre Requisites
 
-A running OCP cluster (>= 4.1), with unused raw disks.  
+* A running OCP cluster (>= 4.1), with unused raw disks.  This operator also works with upstream raw Kubernetes clusters
+  and has been tested with version 1.14.
+* OLM version >= 0.9.0.
 
-## Install and Subscribe to the local-storage catalog
+## Deploy OLM
 
-### Create a project/namespace to use for the operator:
-
-```bash 
-oc new-project local-storage
-```
+The local-storage-operator is dependent upon OLM, if you're not familiar with OLM, check out the [OLM](https://github.com/operator-framework/operator-lifecycle-manager)
+Github repo.  Grab the [latest release](https://github.com/operator-framework/operator-lifecycle-manager/releases) of OLM and install it on your cluster. 
 
 ### Create and Subscribe to the local-storage Catalog
 
-```bash
-oc create -f https://github.com/openshift/local-storage-operator/blob/master/examples/olm-deploy/catalog-create-subscribe.yaml
-```
+By default the local-storage-operator assumes the `local-storage` namespace for its resources.  If you're not modifying the example manifests, be sure to create
+the `local-storage` project or namespace: 
+`oc new-project local-storage` or `kubectl create ns local-storage`
 
-The above file uses defaults values and a namespace of ``local-storage`` which is fine in most cases, but download and modify if desired before running oc create.
+
+`oc apply -f https://raw.githubusercontent.com/openshift/local-storage-operator/master/examples/olm/catalog-create-subscribe.yaml`
+For Kubernetes substitute `oc` with `kubectl`
 
 ### Create a CR with Node Selector
 
-The following example assumes that each worker node include a raw disk ``/dev/xvdf`` that we want to allocate for local-storage provisioning.  Of course you can have different devices, or only have disks on a subset of your worker nodes.
+The following example assumes that each worker node includes a raw disk attached at ``/dev/xvdf`` that we want to allocate for local-storage provisioning.  Of course you can have different devices, or only have disks on a subset of your worker nodes.
 
-Gather the kubernetes hostname value for your worker nodes, (in our example we're using all worker nodes):
+Gather the kubernetes hostname value for your nodes, (in our example we're using only worker nodes, you can omit the label selector if you have master nodes you're deploying pods on):
 
 ```bash
 oc describe no -l node-role.kubernetes.io/worker | grep hostname
 	kubernetes.io/hostname=ip-10-0-136-143
 	kubernetes.io/hostname=ip-10-0-140-255
 	kubernetes.io/hostname=ip-10-0-144-180
+	
 ```
 
 Create a LocalVolume manifest named ``create-cr.yaml`` using the hostnames obtained above:
+
+### CR using volumeMode - Filesystem
 
 ```yaml
 apiVersion: "local.storage.openshift.io/v1alpha1"
 kind: "LocalVolume"
 metadata:
   name: "local-disks"
+  namespace: "local-storage"
 spec:
   nodeSelector:
     nodeSelectorTerms:
@@ -60,15 +65,54 @@ spec:
         - xvdf
 ```
 
-Deploy the local storage CR:
+### CR using volumeMode - Block
+
+```yaml
+apiVersion: "local.storage.openshift.io/v1alpha1"
+kind: "LocalVolume"
+metadata:
+  name: "local-disks"
+  namespace: "local-storage"
+spec:
+  nodeSelector:
+    nodeSelectorTerms:
+    - matchExpressions:
+        - key: kubernetes.io/hostname
+          operator: In
+          values:
+          - ip-10-0-136-143
+          - ip-10-0-140-255
+          - ip-10-0-144-180
+  storageClassDevices:
+    - storageClassName: "localblock-sc"
+      volumeMode: Block 
+      deviceNames:
+        - xvdg
+```
+
+### Deploy the CR
 
 ```bash
-oc create -f crete-cr.yaml
+oc create -f create-cr.yaml
 ```
+
+### NOTE about Block and Filesystem modes
+
+With the local-disk provisioner you *MUST* explicitly create a CR for either `Block` or `Fileystem`. 
+Unlike some storage that allows you to dynamically specify the volumeMode regardless of the 
+storageClass definition, with local disks you must use the correct storageClass definition.
+
+It's also important to note that if you do have a filesystem on the disks you allocated for
+the Block CR, you may run in to issues where the pod reports being unschedulable:
+
+``Warning  FailedScheduling  27s (x2 over 27s)  default-scheduler  0/6 nodes are available: 3 node(s) didn't find available persistent volumes to bind, 3 node(s) had taints that the pod didn't tolerate.``
+
+In this example, the disks were prevsiously used, and a filesystem was applied.  Be sure to either use fresh disks, or remove any partitions and file systems if you're setting up a Block mode CR.
 
 ### Verify your deployment
 
 ```bash
+oc get all -n local-storage
 NAME                                          READY   STATUS    RESTARTS   AGE
 pod/local-disks-local-provisioner-h97hj       1/1     Running   0          46m
 pod/local-disks-local-provisioner-j4mnn       1/1     Running   0          46m
@@ -106,4 +150,50 @@ local-pv-2ef7cd2a   100Gi      RWO            Delete           Available        
 local-pv-3fa1c73    100Gi      RWO            Delete           Available           local-sc                48m
 ```
 
+### Example Usage
 
+Request a PVC using the local-sc storage class we just created:
+
+```bash
+<< EOF | oc create -f -
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: example-local-claim
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 100Gi 
+  storageClassName: local-sc
+EOF
+```
+
+*NOTE* The default volumeMode for kubernetes pvc's is "Filesystem"
+Keep in mind that when using the local-provisioner a claim is held in pending and not bound until a consuming pod is scheduled and created.
+
+```bash
+oc get pvc
+NAME                  STATUS    VOLUME   CAPACITY   ACCESS MODES   STORAGECLASS   AGE
+example-local-claim   Pending                                      local-sc       2s
+```
+```bash
+oc describe pvc example-local-claim
+Name:          example-local-claim
+Namespace:     default
+StorageClass:  local-sc
+Status:        Pending
+Volume:        
+Labels:        <none>
+Annotations:   <none>
+Finalizers:    [kubernetes.io/pvc-protection]
+Capacity:      
+Access Modes:  
+VolumeMode:    Filesystem
+Events:
+  Type       Reason                Age                From                         Message
+----       ------                ----               ----                         -------
+  Normal     WaitForFirstConsumer  13s (x2 over 13s)  persistentvolume-controller  waiting for first consumer to be created before binding
+Mounted By:  <none>
+```
