@@ -15,7 +15,7 @@ spec:
       serviceAccountName: local-storage-operator
       containers:
         - name: local-storage-operator
-          image: quay.io/gnufied/local-storage-operator:v0.0.8
+          image: quay.io/openshift/origin-local-storage-operator
           ports:
           - containerPort: 60000
             name: metrics

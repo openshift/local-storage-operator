@@ -8,5 +8,5 @@ vendor/k8s.io/code-generator/generate-groups.sh \
 deepcopy \
 github.com/openshift/local-storage-operator/pkg/generated \
 github.com/openshift/local-storage-operator/pkg/apis \
-local:v1alpha1 \
+local:v1 \
 --go-header-file "./tmp/codegen/boilerplate.go.txt"

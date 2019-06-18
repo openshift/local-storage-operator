@@ -1,16 +1,77 @@
 package controller
 
 import (
+	"fmt"
+	"os"
 	"testing"
 
 	"github.com/ghodss/yaml"
-	"github.com/openshift/local-storage-operator/pkg/apis/local/v1alpha1"
+	operatorv1 "github.com/openshift/api/operator/v1"
+	localv1 "github.com/openshift/local-storage-operator/pkg/apis/local/v1"
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
+	storagev1 "k8s.io/api/storage/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+type fakeApiUpdater struct {
+	latestInstance      *localv1.LocalVolume
+	oldInstance         *localv1.LocalVolume
+	sas                 []*corev1.ServiceAccount
+	configMaps          []*corev1.ConfigMap
+	clusterRoles        []*rbacv1.ClusterRole
+	clusterRoleBindings []*rbacv1.ClusterRoleBinding
+	storageClasses      []*storagev1.StorageClass
+	daemonSets          []*appsv1.DaemonSet
+}
+
+func (f *fakeApiUpdater) syncStatus(oldInstance, newInstance *localv1.LocalVolume) error {
+	f.latestInstance = newInstance
+	f.oldInstance = oldInstance
+	return nil
+}
+
+func (s *fakeApiUpdater) applyServiceAccount(sa *corev1.ServiceAccount) (*corev1.ServiceAccount, bool, error) {
+	s.sas = append(s.sas, sa)
+	return sa, true, nil
+}
+
+func (s *fakeApiUpdater) applyConfigMap(configmap *corev1.ConfigMap) (*corev1.ConfigMap, bool, error) {
+	s.configMaps = append(s.configMaps, configmap)
+	return configmap, true, nil
+}
+
+func (s *fakeApiUpdater) applyClusterRole(clusterRole *rbacv1.ClusterRole) (*rbacv1.ClusterRole, bool, error) {
+	s.clusterRoles = append(s.clusterRoles, clusterRole)
+	return clusterRole, true, nil
+}
+
+func (s *fakeApiUpdater) applyClusterRoleBinding(roleBinding *rbacv1.ClusterRoleBinding) (*rbacv1.ClusterRoleBinding, bool, error) {
+	s.clusterRoleBindings = append(s.clusterRoleBindings, roleBinding)
+	return roleBinding, true, nil
+}
+
+func (s *fakeApiUpdater) applyStorageClass(sc *storagev1.StorageClass) (*storagev1.StorageClass, bool, error) {
+	s.storageClasses = append(s.storageClasses, sc)
+	return sc, true, nil
+}
+
+func (s *fakeApiUpdater) applyDaemonSet(ds *appsv1.DaemonSet, expectedGeneration int64, forceRollout bool) (*appsv1.DaemonSet, bool, error) {
+	s.daemonSets = append(s.daemonSets, ds)
+	return ds, true, nil
+}
+func (s *fakeApiUpdater) listStorageClasses(listOptions metav1.ListOptions) (*storagev1.StorageClassList, error) {
+	return &storagev1.StorageClassList{Items: []storagev1.StorageClass{}}, nil
+}
+
+func (s *fakeApiUpdater) recordEvent(lv *localv1.LocalVolume, eventType, reason, messageFmt string, args ...interface{}) {
+	fmt.Printf("Recording event : %v", eventType)
+}
+
 func TestCreateDiskMakerConfig(t *testing.T) {
 	localStorageProvider := getLocalVolume()
-	handler := getHandler()
+	handler, _ := getHandler()
 	diskMakerConfigMap, err := handler.generateDiskMakerConfig(localStorageProvider)
 	if err != nil {
 		t.Fatalf("error creating disk maker configmap %v", err)
@@ -23,7 +84,7 @@ func TestCreateDiskMakerConfig(t *testing.T) {
 
 func TestCreateProvisionerConfigMap(t *testing.T) {
 	localStorageProvider := getLocalVolume()
-	handler := getHandler()
+	handler, _ := getHandler()
 	provisionerConfigMap, err := handler.generateProvisionerConfigMap(localStorageProvider)
 	if err != nil {
 		t.Fatalf("error creating local provisioner configmap %v", err)
@@ -42,16 +103,47 @@ func TestCreateProvisionerConfigMap(t *testing.T) {
 	}
 }
 
-func getLocalVolume() *v1alpha1.LocalVolume {
-	return &v1alpha1.LocalVolume{
+func TestSyncLocalVolumeProvider(t *testing.T) {
+	localStorageProvider := getLocalVolume()
+	handler, apiClient := getHandler()
+	diskMakerImage := "quay.io/gnufied/local-diskmaker"
+	provisionerImage := "quay.io/gnufied/local-provisioner"
+	os.Setenv(localv1.DISKMAKER_IMAGE_ENV_NAME, diskMakerImage)
+	os.Setenv(localv1.PROVISIONER_IMAGE_ENV_NAME, provisionerImage)
+	err := handler.syncLocalVolumeProvider(localStorageProvider)
+	if err != nil {
+		t.Fatalf("unexpected error : %v", err)
+	}
+	newInstance := apiClient.latestInstance
+
+	if newInstance.Spec.DiskMakerImage != diskMakerImage {
+		t.Fatalf("expected image %v got %v", diskMakerImage, newInstance.Spec.DiskMakerImage)
+	}
+
+	if newInstance.Spec.ProvisionerImage != provisionerImage {
+		t.Fatalf("expected provisioner image %v got %v", provisionerImage, newInstance.Spec.ProvisionerImage)
+	}
+
+	localVolumeConditions := newInstance.Status.Conditions
+	if len(localVolumeConditions) == 0 {
+		t.Fatalf("expected local volume to be available")
+	}
+
+	if localVolumeConditions[0].Type != operatorv1.OperatorStatusTypeAvailable {
+		t.Fatalf("expected available operator condition got %v", localVolumeConditions)
+	}
+}
+
+func getLocalVolume() *localv1.LocalVolume {
+	return &localv1.LocalVolume{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "local-disks",
 		},
-		Spec: v1alpha1.LocalVolumeSpec{
-			StorageClassDevices: []v1alpha1.StorageClassDevice{
+		Spec: localv1.LocalVolumeSpec{
+			StorageClassDevices: []localv1.StorageClassDevice{
 				{
 					StorageClassName: "foo",
-					VolumeMode:       v1alpha1.PersistentVolumeFilesystem,
+					VolumeMode:       localv1.PersistentVolumeFilesystem,
 					FSType:           "ext4",
 					DeviceNames:      []string{"sda", "sbc"},
 				},
@@ -60,9 +152,12 @@ func getLocalVolume() *v1alpha1.LocalVolume {
 	}
 }
 
-func getHandler() *Handler {
-	return &Handler{
+func getHandler() (*Handler, *fakeApiUpdater) {
+	apiClient := &fakeApiUpdater{}
+	handler := &Handler{
 		localStorageNameSpace: "foobar",
 		localDiskLocation:     "/mnt/local-storage",
+		apiClient:             apiClient,
 	}
+	return handler, apiClient
 }

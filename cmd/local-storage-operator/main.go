@@ -26,7 +26,7 @@ func main() {
 
 	sdk.ExposeMetricsPort()
 
-	resource := "local.storage.openshift.io/v1alpha1"
+	resource := "local.storage.openshift.io/v1"
 	kind := "LocalVolume"
 	namespace, err := k8sutil.GetWatchNamespace()
 	logrus.Infof("Watching %s, %s", resource, kind)
