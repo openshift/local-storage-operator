@@ -42,7 +42,7 @@ Create a LocalVolume manifest named ``create-cr.yaml`` using the hostnames obtai
 ### CR using volumeMode - Filesystem
 
 ```yaml
-apiVersion: "local.storage.openshift.io/v1alpha1"
+apiVersion: "local.storage.openshift.io/v1"
 kind: "LocalVolume"
 metadata:
   name: "local-disks"
@@ -68,7 +68,7 @@ spec:
 ### CR using volumeMode - Block
 
 ```yaml
-apiVersion: "local.storage.openshift.io/v1alpha1"
+apiVersion: "local.storage.openshift.io/v1"
 kind: "LocalVolume"
 metadata:
   name: "local-disks"

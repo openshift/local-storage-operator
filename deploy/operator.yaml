@@ -29,3 +29,9 @@ spec:
                   fieldPath: metadata.namespace
             - name: OPERATOR_NAME
               value: "local-storage-operator"
+            - name: OPERATOR_NAME
+              value: "local-storage-operator"
+            - name: PROVISIONER_IMAGE
+              value: quay.io/openshift/origin-local-storage-static-provisioner
+            - name: DISKMAKER_IMAGE
+              value: quay.io/openshift/origin-local-storage-diskmaker
