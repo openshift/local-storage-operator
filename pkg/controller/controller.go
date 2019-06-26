@@ -3,6 +3,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"os"
 	"sync"
 
 	"github.com/ghodss/yaml"
@@ -50,6 +51,12 @@ const (
 	provisionerNodeRoleBindingName = "local-storage-provisioner-node-binding"
 	ownerNamespaceLabel            = "local.storage.openshift.io/owner-namespace"
 	ownerNameLabel                 = "local.storage.openshift.io/owner-name"
+
+	defaultDiskMakerImageVersion = "quay.io/openshift/origin-local-storage-diskmaker"
+	defaultProvisionImage        = "quay.io/openshift/origin-local-storage-static-provisioner"
+
+	diskMakerImageEnv   = "DISKMAKER_IMAGE"
+	provisionerImageEnv = "PROVISIONER_IMAGE"
 )
 
 // NewHandler returns a controller handler
@@ -193,6 +200,20 @@ func (h *Handler) addFailureCondition(oldLv *localv1.LocalVolume, lv *localv1.Lo
 		logrus.Errorf("error syncing condition : %v", syncErr)
 	}
 	return err
+}
+
+func (h *Handler) localProvisionerImage() string {
+	if provisionerImageFromEnv := os.Getenv(provisionerImageEnv); provisionerImageFromEnv != "" {
+		return provisionerImageFromEnv
+	}
+	return defaultProvisionImage
+}
+
+func (h *Handler) diskMakerImage() string {
+	if diskMakerImageFromEnv := os.Getenv(diskMakerImageEnv); diskMakerImageFromEnv != "" {
+		return diskMakerImageFromEnv
+	}
+	return defaultDiskMakerImageVersion
 }
 
 func (h *Handler) cleanupLocalVolumeDeployment(o *localv1.LocalVolume) error {
@@ -453,7 +474,7 @@ func (h *Handler) generateLocalProvisionerDaemonset(cr *localv1.LocalVolume) *ap
 	containers := []corev1.Container{
 		{
 			Name:  "local-storage-provisioner",
-			Image: cr.Spec.ProvisionerImage,
+			Image: h.localProvisionerImage(),
 			SecurityContext: &corev1.SecurityContext{
 				Privileged: &privileged,
 			},
@@ -565,7 +586,7 @@ func (h *Handler) generateDiskMakerDaemonSet(cr *localv1.LocalVolume) *appsv1.Da
 	containers := []corev1.Container{
 		{
 			Name:  "local-diskmaker",
-			Image: cr.Spec.DiskMakerImage,
+			Image: h.diskMakerImage(),
 			SecurityContext: &corev1.SecurityContext{
 				Privileged: &privileged,
 			},
@@ -634,7 +655,7 @@ func (h *Handler) generateDiskMakerDaemonSet(cr *localv1.LocalVolume) *appsv1.Da
 			APIVersion: "apps/v1",
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      cr.Name + "local-diskmaker",
+			Name:      cr.Name + "-local-diskmaker",
 			Namespace: cr.Namespace,
 			Labels:    diskMakerLabels(cr.Name),
 		},
