@@ -8,6 +8,7 @@ COPY --from=builder /go/src/github.com/openshift/local-storage-operator/local-st
 COPY manifests /manifests
 ENTRYPOINT ["/usr/bin/local-storage-operator"]
 LABEL io.openshift.release.operator true
+LABEL com.redhat.delivery.appregistry=true
 LABEL io.k8s.display-name="OpenShift local-storage-operator" \
       io.k8s.description="This is a component of OpenShift and manages local volumes." \
         maintainer="Hemant Kumar <hekumar@redhat.com>"
