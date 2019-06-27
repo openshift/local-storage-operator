@@ -31,8 +31,9 @@ type DiskMaker struct {
 }
 
 type DiskLocation struct {
-	diskName string
-	diskID   string
+	// diskNamePath stores full device name path - "/dev/sda"
+	diskNamePath string
+	diskID       string
 }
 
 // DiskMaker returns a new instance of DiskMaker
@@ -131,15 +132,14 @@ func (d *DiskMaker) symLinkDisks(diskConfig DiskConfig) {
 				logrus.Errorf("error creating symlink directory %s with %v", symLinkDirPath, err)
 				continue
 			}
-			symLinkPath := path.Join(symLinkDirPath, deviceNameLoction.diskName)
+			symLinkPath := path.Join(symLinkDirPath, deviceNameLoction.diskNamePath)
 			var symLinkErr error
 			if deviceNameLoction.diskID != "" {
 				logrus.Infof("symlinking to %s to %s", deviceNameLoction.diskID, symLinkPath)
 				symLinkErr = os.Symlink(deviceNameLoction.diskID, symLinkPath)
 			} else {
-				devicePath := path.Join("/dev", deviceNameLoction.diskName)
-				logrus.Infof("symlinking to %s to %s", devicePath, symLinkPath)
-				symLinkErr = os.Symlink(devicePath, symLinkPath)
+				logrus.Infof("symlinking to %s to %s", deviceNameLoction.diskNamePath, symLinkPath)
+				symLinkErr = os.Symlink(deviceNameLoction.diskNamePath, symLinkPath)
 			}
 
 			if symLinkErr != nil {
@@ -164,9 +164,11 @@ func (d *DiskMaker) findMatchingDisks(diskConfig DiskConfig, deviceSet sets.Stri
 	}
 	for storageClass, disks := range diskConfig {
 		// handle diskNames
-		for _, diskName := range disks.DiskNames {
-			if hasExactDisk(deviceSet, diskName) {
-				matchedDeviceID, err := d.findStableDeviceID(diskName, allDiskIds)
+		deviceNames := disks.DeviceNames().List()
+		for _, diskName := range deviceNames {
+			baseDeviceName := filepath.Base(diskName)
+			if hasExactDisk(deviceSet, baseDeviceName) {
+				matchedDeviceID, err := d.findStableDeviceID(baseDeviceName, allDiskIds)
 				if err != nil {
 					logrus.Errorf("Unable to find disk ID %s for local pool %v", diskName, err)
 					addDiskToMap(storageClass, "", diskName)
@@ -176,14 +178,20 @@ func (d *DiskMaker) findMatchingDisks(diskConfig DiskConfig, deviceSet sets.Stri
 				continue
 			}
 		}
+
+		deviceIds := disks.DeviceIDs().List()
 		// handle DeviceIDs
-		for _, deviceID := range disks.DeviceIDs {
+		for _, deviceID := range deviceIds {
 			matchedDeviceID, matchedDiskName, err := d.findDeviceByID(deviceID)
 			if err != nil {
 				logrus.Errorf("unable to add disk-id %s to local disk pool %v", deviceID, err)
 				continue
 			}
-			addDiskToMap(storageClass, matchedDeviceID, matchedDiskName)
+			baseDeviceName := filepath.Base(matchedDiskName)
+			// We need to make sure that requested device is not already mounted.
+			if hasExactDisk(deviceSet, baseDeviceName) {
+				addDiskToMap(storageClass, matchedDeviceID, matchedDiskName)
+			}
 		}
 	}
 	return blockDeviceMap, nil
@@ -191,13 +199,11 @@ func (d *DiskMaker) findMatchingDisks(diskConfig DiskConfig, deviceSet sets.Stri
 
 // findDeviceByID finds device ID and return device name(such as sda, sdb) and complete deviceID path
 func (d *DiskMaker) findDeviceByID(deviceID string) (string, string, error) {
-	completeDiskIDPath := fmt.Sprintf("%s/%s", diskByIDPath, deviceID)
-	diskDevPath, err := filepath.EvalSymlinks(completeDiskIDPath)
+	diskDevPath, err := filepath.EvalSymlinks(deviceID)
 	if err != nil {
 		return "", "", fmt.Errorf("unable to find device with id %s", deviceID)
 	}
-	diskDevName := filepath.Base(diskDevPath)
-	return completeDiskIDPath, diskDevName, nil
+	return deviceID, diskDevPath, nil
 }
 
 func (d *DiskMaker) findStableDeviceID(diskName string, allDisks []string) (string, error) {

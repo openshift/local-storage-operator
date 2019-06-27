@@ -1,19 +1,9 @@
 package v1
 
 import (
-	"os"
-
 	operatorv1 "github.com/openshift/api/operator/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-)
-
-const (
-	defaultDiskMakerImageVersion = "quay.io/openshift/origin-local-storage-diskmaker"
-	defaultProvisionImage        = "quay.io/openshift/origin-local-storage-static-provisioner"
-
-	DISKMAKER_IMAGE_ENV_NAME   = "DISKMAKER_IMAGE"
-	PROVISIONER_IMAGE_ENV_NAME = "PROVISIONER_IMAGE"
 )
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
@@ -47,10 +37,6 @@ type LocalVolumeSpec struct {
 	NodeSelector *corev1.NodeSelector `json:"nodeSelector,omitempty"`
 	// List of storage class and devices they can match
 	StorageClassDevices []StorageClassDevice `json:"storageClassDevices,omitempty"`
-	// Version of external local provisioner to use
-	LocalProvisionerImageVersion
-	// DiskMakerImage version
-	DiskMakerImageVersion
 }
 
 // PersistentVolumeMode describes how a volume is intended to be consumed, either Block or Filesystem.
@@ -71,25 +57,11 @@ type StorageClassDevice struct {
 	VolumeMode PersistentVolumeMode `json:"volumeMode"`
 	// File system type
 	FSType string `json:"fsType"`
-	// A list of devices which would be chosen for local storage.
-	// For example - ["/dev/sda", "/dev/sdb"]
-	// Alternately deviceIDs can be also used to selecting
-	// devices which should be considered for local provisioning.
-	DeviceNames []string `json:"deviceNames,omitempty"`
-	// A list of unique device names taken from /dev/disk/by-id/*
-	// For example - ["/dev/disk/by-id/ata-SanDisk_SD7SB7S512G1001_163057401172"]
-	// Either DeviceNames or DevicIDs must be specified while defining
-	// StorageClassDevice but not both.
-	DeviceIDs []string `json:"deviceIDs,omitempty"`
+	// A list of device paths which would be chosen for local storage.
+	// For example - ["/dev/sda", "/dev/sdb", "/dev/disk/by-id/ata-crucial"]
+	DevicePaths []string `json:"devicePaths,omitempty"`
 }
 
-type LocalProvisionerImageVersion struct {
-	ProvisionerImage string `json:"provisionerImage,omitempty"`
-}
-
-type DiskMakerImageVersion struct {
-	DiskMakerImage string `json:"diskMakerImage,omitempty"`
-}
 type LocalVolumeStatus struct {
 	// ObservedGeneration is the last generation of this object that
 	// the operator has acted on.
@@ -109,25 +81,8 @@ type LocalVolumeStatus struct {
 	Generations []operatorv1.GenerationStatus `json:"generations,omitempty"`
 }
 
-// SetDefaults sets image defaults
+// SetDefaults sets values of log level and manage levels
 func (local *LocalVolume) SetDefaults() {
-	if len(local.Spec.DiskMakerImageVersion.DiskMakerImage) == 0 {
-		if diskMakerImageFromEnv := os.Getenv(DISKMAKER_IMAGE_ENV_NAME); diskMakerImageFromEnv != "" {
-			local.Spec.DiskMakerImageVersion = DiskMakerImageVersion{diskMakerImageFromEnv}
-
-		} else {
-			local.Spec.DiskMakerImageVersion = DiskMakerImageVersion{defaultDiskMakerImageVersion}
-		}
-	}
-
-	if len(local.Spec.LocalProvisionerImageVersion.ProvisionerImage) == 0 {
-		if provisionerImageFromEnv := os.Getenv(PROVISIONER_IMAGE_ENV_NAME); provisionerImageFromEnv != "" {
-			local.Spec.LocalProvisionerImageVersion = LocalProvisionerImageVersion{provisionerImageFromEnv}
-		} else {
-			local.Spec.LocalProvisionerImageVersion = LocalProvisionerImageVersion{defaultProvisionImage}
-		}
-	}
-
 	if len(local.Spec.LogLevel) == 0 {
 		local.Spec.LogLevel = operatorv1.Normal
 	}

@@ -108,21 +108,13 @@ func TestSyncLocalVolumeProvider(t *testing.T) {
 	handler, apiClient := getHandler()
 	diskMakerImage := "quay.io/gnufied/local-diskmaker"
 	provisionerImage := "quay.io/gnufied/local-provisioner"
-	os.Setenv(localv1.DISKMAKER_IMAGE_ENV_NAME, diskMakerImage)
-	os.Setenv(localv1.PROVISIONER_IMAGE_ENV_NAME, provisionerImage)
+	os.Setenv(diskMakerImageEnv, diskMakerImage)
+	os.Setenv(provisionerImageEnv, provisionerImage)
 	err := handler.syncLocalVolumeProvider(localStorageProvider)
 	if err != nil {
 		t.Fatalf("unexpected error : %v", err)
 	}
 	newInstance := apiClient.latestInstance
-
-	if newInstance.Spec.DiskMakerImage != diskMakerImage {
-		t.Fatalf("expected image %v got %v", diskMakerImage, newInstance.Spec.DiskMakerImage)
-	}
-
-	if newInstance.Spec.ProvisionerImage != provisionerImage {
-		t.Fatalf("expected provisioner image %v got %v", provisionerImage, newInstance.Spec.ProvisionerImage)
-	}
 
 	localVolumeConditions := newInstance.Status.Conditions
 	if len(localVolumeConditions) == 0 {
@@ -131,6 +123,30 @@ func TestSyncLocalVolumeProvider(t *testing.T) {
 
 	if localVolumeConditions[0].Type != operatorv1.OperatorStatusTypeAvailable {
 		t.Fatalf("expected available operator condition got %v", localVolumeConditions)
+	}
+
+	provisionedDaemonSets := apiClient.daemonSets
+	var localProvisionerDaemonSet *appsv1.DaemonSet
+	var diskMakerDaemonset *appsv1.DaemonSet
+	for _, ds := range provisionedDaemonSets {
+		if ds.Name == "local-disks-local-provisioner" {
+			localProvisionerDaemonSet = ds
+		}
+
+		if ds.Name == "local-disks-local-diskmaker" {
+			diskMakerDaemonset = ds
+		}
+	}
+
+	diskMakerContainerImage := diskMakerDaemonset.Spec.Template.Spec.Containers[0].Image
+	provisionerContainerImage := localProvisionerDaemonSet.Spec.Template.Spec.Containers[0].Image
+
+	if diskMakerContainerImage != diskMakerImage {
+		t.Fatalf("expected image %v got %v", diskMakerImage, diskMakerContainerImage)
+	}
+
+	if provisionerContainerImage != provisionerImage {
+		t.Fatalf("expected provisioner image %v got %v", provisionerImage, provisionerContainerImage)
 	}
 }
 
@@ -145,7 +161,7 @@ func getLocalVolume() *localv1.LocalVolume {
 					StorageClassName: "foo",
 					VolumeMode:       localv1.PersistentVolumeFilesystem,
 					FSType:           "ext4",
-					DeviceNames:      []string{"sda", "sbc"},
+					DevicePaths:      []string{"/dev/sda", "/dev/sbc"},
 				},
 			},
 		},
