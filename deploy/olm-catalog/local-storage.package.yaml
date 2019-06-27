@@ -1,5 +1,0 @@
-packageName: local-storage
-channels:
-- name: stable
-
-  currentCSV: local-storage-operator.v4.2.0

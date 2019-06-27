@@ -1,4 +1,4 @@
-packageName: local-storage
+packageName: local-storage-operator
 channels:
 - name: stable
 
