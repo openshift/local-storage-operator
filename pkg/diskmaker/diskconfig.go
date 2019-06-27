@@ -2,14 +2,36 @@ package diskmaker
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/ghodss/yaml"
+	"k8s.io/apimachinery/pkg/util/sets"
 )
 
 // Disks defines disks to be used for local volumes
 type Disks struct {
-	DiskNames []string `json:"disks,omitempty"`
-	DeviceIDs []string `json:"deviceIDs,omitempty"`
+	DevicePaths []string `json:"devicePaths,omitempty"`
+}
+
+// DeviceNames returns devices which are used by name.
+// Such as - /dev/sda, /dev/xvdba
+func (d *Disks) DeviceNames() sets.String {
+	deviceNames := sets.NewString()
+	for _, disk := range d.DevicePaths {
+		deviceParts := strings.Split(disk, "/")
+		if len(deviceParts) == 3 && (deviceParts[1] == "dev") {
+			deviceNames.Insert(disk)
+		}
+	}
+	return deviceNames
+}
+
+// DeviceIDs returns devices which are specified by ids.
+// For example - /dev/disk/by-id/abcde
+func (d *Disks) DeviceIDs() sets.String {
+	deviceNames := d.DeviceNames()
+	allDevicePaths := sets.NewString(d.DevicePaths...)
+	return allDevicePaths.Difference(deviceNames)
 }
 
 // DiskConfig stores a mapping between StorageClass Name and disks that the storageclass

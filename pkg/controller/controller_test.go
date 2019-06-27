@@ -161,7 +161,7 @@ func getLocalVolume() *localv1.LocalVolume {
 					StorageClassName: "foo",
 					VolumeMode:       localv1.PersistentVolumeFilesystem,
 					FSType:           "ext4",
-					DeviceNames:      []string{"sda", "sbc"},
+					DevicePaths:      []string{"/dev/sda", "/dev/sbc"},
 				},
 			},
 		},

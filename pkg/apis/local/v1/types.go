@@ -57,16 +57,9 @@ type StorageClassDevice struct {
 	VolumeMode PersistentVolumeMode `json:"volumeMode"`
 	// File system type
 	FSType string `json:"fsType"`
-	// A list of devices which would be chosen for local storage.
-	// For example - ["/dev/sda", "/dev/sdb"]
-	// Alternately deviceIDs can be also used to selecting
-	// devices which should be considered for local provisioning.
-	DeviceNames []string `json:"deviceNames,omitempty"`
-	// A list of unique device names taken from /dev/disk/by-id/*
-	// For example - ["/dev/disk/by-id/ata-SanDisk_SD7SB7S512G1001_163057401172"]
-	// Either DeviceNames or DevicIDs must be specified while defining
-	// StorageClassDevice but not both.
-	DeviceIDs []string `json:"deviceIDs,omitempty"`
+	// A list of device paths which would be chosen for local storage.
+	// For example - ["/dev/sda", "/dev/sdb", "/dev/disk/by-id/ata-crucial"]
+	DevicePaths []string `json:"devicePaths,omitempty"`
 }
 
 type LocalVolumeStatus struct {

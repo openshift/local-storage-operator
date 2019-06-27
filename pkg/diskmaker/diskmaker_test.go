@@ -15,7 +15,7 @@ func TestFindMatchingDisk(t *testing.T) {
 	}
 	diskConfig := map[string]*Disks{
 		"foo": &Disks{
-			DeviceIDs: []string{"xyz"},
+			DevicePaths: []string{"xyz"},
 		},
 	}
 	allDiskIds := getDeiveIDs()
