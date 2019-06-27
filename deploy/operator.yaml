@@ -15,7 +15,7 @@ spec:
       serviceAccountName: local-storage-operator
       containers:
         - name: local-storage-operator
-          image: quay.io/gnufied/local-storage-operator:v0.0.8
+          image: quay.io/openshift/origin-local-storage-operator
           ports:
           - containerPort: 60000
             name: metrics
@@ -29,3 +29,9 @@ spec:
                   fieldPath: metadata.namespace
             - name: OPERATOR_NAME
               value: "local-storage-operator"
+            - name: OPERATOR_NAME
+              value: "local-storage-operator"
+            - name: PROVISIONER_IMAGE
+              value: quay.io/openshift/origin-local-storage-static-provisioner
+            - name: DISKMAKER_IMAGE
+              value: quay.io/openshift/origin-local-storage-diskmaker

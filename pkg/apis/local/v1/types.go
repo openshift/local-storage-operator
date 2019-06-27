@@ -1,14 +1,19 @@
-package v1alpha1
+package v1
 
 import (
-	operatorv1alpha1 "github.com/openshift/api/operator/v1alpha1"
+	"os"
+
+	operatorv1 "github.com/openshift/api/operator/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 const (
-	defaultDiskMakerImageVersion = "registry.svc.ci.openshift.org/openshift/origin-v4.0:local-storage-diskmaker"
-	defaultProvisionImage        = "quay.io/external_storage/local-volume-provisioner:v2.3.0"
+	defaultDiskMakerImageVersion = "quay.io/openshift/origin-local-storage-diskmaker"
+	defaultProvisionImage        = "quay.io/openshift/origin-local-storage-static-provisioner"
+
+	DISKMAKER_IMAGE_ENV_NAME   = "DISKMAKER_IMAGE"
+	PROVISIONER_IMAGE_ENV_NAME = "PROVISIONER_IMAGE"
 )
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
@@ -30,7 +35,15 @@ type LocalVolume struct {
 
 // LocalVolumeSpec returns spec of configuration
 type LocalVolumeSpec struct {
+	// managementState indicates whether and how the operator should manage the component
+	// +optional
+	ManagementState operatorv1.ManagementState `json:"managementState"`
+	// logLevel is an intent based logging for an overall component.  It does not give fine grained control, but it is a
+	// simple way to manage coarse grained logging choices that operators have to interpret for their operands.
+	// +optional
+	LogLevel operatorv1.LogLevel `json:"logLevel"`
 	// Nodes on which the provisoner must run
+	// +optional
 	NodeSelector *corev1.NodeSelector `json:"nodeSelector,omitempty"`
 	// List of storage class and devices they can match
 	StorageClassDevices []StorageClassDevice `json:"storageClassDevices,omitempty"`
@@ -82,24 +95,44 @@ type LocalVolumeStatus struct {
 	// the operator has acted on.
 	ObservedGeneration *int64 `json:"observedGeneration,omitempty"`
 
-	// Generation of API objects that the operator has created / updated.
-	// For internal operator bookkeeping purposes.
-	Children []operatorv1alpha1.GenerationHistory `json:"children,omitempty"`
-
 	// state indicates what the operator has observed to be its current operational status.
-	State operatorv1alpha1.ManagementState `json:"state,omitempty"`
+	State operatorv1.ManagementState `json:"state,omitempty"`
 
 	// Conditions is a list of conditions and their status.
-	Conditions []operatorv1alpha1.OperatorCondition
+	Conditions []operatorv1.OperatorCondition
+
+	// readyReplicas indicates how many replicas are ready and at the desired state
+	ReadyReplicas int32 `json:"readyReplicas"`
+
+	// generations are used to determine when an item needs to be reconciled or has changed in a way that needs a reaction.
+	// +optional
+	Generations []operatorv1.GenerationStatus `json:"generations,omitempty"`
 }
 
 // SetDefaults sets image defaults
 func (local *LocalVolume) SetDefaults() {
 	if len(local.Spec.DiskMakerImageVersion.DiskMakerImage) == 0 {
-		local.Spec.DiskMakerImageVersion = DiskMakerImageVersion{defaultDiskMakerImageVersion}
+		if diskMakerImageFromEnv := os.Getenv(DISKMAKER_IMAGE_ENV_NAME); diskMakerImageFromEnv != "" {
+			local.Spec.DiskMakerImageVersion = DiskMakerImageVersion{diskMakerImageFromEnv}
+
+		} else {
+			local.Spec.DiskMakerImageVersion = DiskMakerImageVersion{defaultDiskMakerImageVersion}
+		}
 	}
 
 	if len(local.Spec.LocalProvisionerImageVersion.ProvisionerImage) == 0 {
-		local.Spec.LocalProvisionerImageVersion = LocalProvisionerImageVersion{defaultProvisionImage}
+		if provisionerImageFromEnv := os.Getenv(PROVISIONER_IMAGE_ENV_NAME); provisionerImageFromEnv != "" {
+			local.Spec.LocalProvisionerImageVersion = LocalProvisionerImageVersion{provisionerImageFromEnv}
+		} else {
+			local.Spec.LocalProvisionerImageVersion = LocalProvisionerImageVersion{defaultProvisionImage}
+		}
+	}
+
+	if len(local.Spec.LogLevel) == 0 {
+		local.Spec.LogLevel = operatorv1.Normal
+	}
+
+	if len(local.Spec.ManagementState) == 0 {
+		local.Spec.ManagementState = operatorv1.Managed
 	}
 }

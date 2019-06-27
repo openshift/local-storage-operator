@@ -112,6 +112,14 @@
   revision = "23def4e6c14b4da8ac2ed8007337bc5eb5007998"
 
 [[projects]]
+  branch = "master"
+  digest = "1:b7cb6054d3dff43b38ad2e92492f220f57ae6087ee797dca298139776749ace8"
+  name = "github.com/golang/groupcache"
+  packages = ["lru"]
+  pruneopts = "NUT"
+  revision = "5b532d6fd5efaf7fa130d4e859a2fde0fc3a9e1b"
+
+[[projects]]
   digest = "1:63ccdfbd20f7ccd2399d0647a7d100b122f79c13bb83da9660b1598396fd9f62"
   name = "github.com/golang/protobuf"
   packages = [
@@ -572,7 +580,7 @@
   revision = "2d6f90ab1293a1fb871cf149423ebb72aa7423aa"
 
 [[projects]]
-  digest = "1:76eaa7874b0113b962defce2782d0148e50381022e473ea3483c674750d7cf68"
+  digest = "1:94e763f619a3388ae501daaf81fd6920d213e6f8bb32764e5bd63031c20e81fa"
   name = "k8s.io/apimachinery"
   packages = [
     "pkg/api/equality",
@@ -604,9 +612,11 @@
     "pkg/util/framer",
     "pkg/util/intstr",
     "pkg/util/json",
+    "pkg/util/mergepatch",
     "pkg/util/net",
     "pkg/util/runtime",
     "pkg/util/sets",
+    "pkg/util/strategicpatch",
     "pkg/util/uuid",
     "pkg/util/validation",
     "pkg/util/validation/field",
@@ -614,13 +624,14 @@
     "pkg/util/yaml",
     "pkg/version",
     "pkg/watch",
+    "third_party/forked/golang/json",
     "third_party/forked/golang/reflect",
   ]
   pruneopts = "NUT"
   revision = "103fd098999dc9c0c88536f5c9ad2e5da39373ae"
 
 [[projects]]
-  digest = "1:6cca3c9f626aeb165dad88de9db9b71585a92514134f466268dd83fd449df9a7"
+  digest = "1:1dda6fbc77a291d3d18f4cf2996091c18a9133253a3c233c5cef3d8653a689ff"
   name = "k8s.io/client-go"
   packages = [
     "discovery",
@@ -675,6 +686,7 @@
     "tools/clientcmd/api/v1",
     "tools/metrics",
     "tools/pager",
+    "tools/record",
     "tools/reference",
     "transport",
     "util/buffer",
@@ -754,13 +766,14 @@
 
 [[projects]]
   branch = "master"
-  digest = "1:396d31417183c4e572d907cee379238ea343c23dde9e028465ca3692498017c1"
+  digest = "1:72ebd1873445f862a522e1afeb2f6ffc0c1bfefee22721d89fedf931427f2257"
   name = "k8s.io/kube-openapi"
   packages = [
     "cmd/openapi-gen/args",
     "pkg/common",
     "pkg/generators",
     "pkg/generators/rules",
+    "pkg/util/proto",
     "pkg/util/sets",
   ]
   pruneopts = "NUT"
@@ -771,7 +784,7 @@
   analyzer-version = 1
   input-imports = [
     "github.com/ghodss/yaml",
-    "github.com/openshift/api/operator/v1alpha1",
+    "github.com/openshift/api/operator/v1",
     "github.com/openshift/library-go/pkg/operator/resource/resourceapply",
     "github.com/openshift/library-go/pkg/operator/resource/resourcemerge",
     "github.com/operator-framework/operator-sdk/pkg/k8sclient",
@@ -793,8 +806,11 @@
     "k8s.io/apimachinery/pkg/runtime/schema",
     "k8s.io/apimachinery/pkg/util/errors",
     "k8s.io/apimachinery/pkg/util/sets",
+    "k8s.io/client-go/kubernetes/scheme",
+    "k8s.io/client-go/kubernetes/typed/core/v1",
     "k8s.io/client-go/kubernetes/typed/storage/v1",
     "k8s.io/client-go/plugin/pkg/client/auth/gcp",
+    "k8s.io/client-go/tools/record",
     "k8s.io/code-generator/cmd/client-gen",
     "k8s.io/code-generator/cmd/conversion-gen",
     "k8s.io/code-generator/cmd/deepcopy-gen",

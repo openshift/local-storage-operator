@@ -1,4 +1,4 @@
-apiVersion: "local.storage.openshift.io/v1alpha1"
+apiVersion: "local.storage.openshift.io/v1"
 kind: "LocalVolume"
 metadata:
   name: "local-disks"

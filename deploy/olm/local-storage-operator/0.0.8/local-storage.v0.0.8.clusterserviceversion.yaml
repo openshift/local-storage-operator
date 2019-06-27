@@ -140,7 +140,7 @@ spec:
                 serviceAccountName: local-storage-operator
                 containers:
                   - name: local-storage-operator
-                    image: registry.svc.ci.openshift.org/openshift/origin-v4.0:local-storage-operator
+                    image: quay.io/openshift/origin-local-storage-operator
                     ports:
                     - containerPort: 60000
                       name: metrics
@@ -154,6 +154,10 @@ spec:
                             fieldPath: metadata.namespace
                       - name: OPERATOR_NAME
                         value: "local-storage-operator"
+                      - name: PROVISIONER_IMAGE
+                        value: quay.io/openshift/origin-local-storage-static-provisioner
+                      - name: DISKMAKER_IMAGE
+                        value: quay.io/openshift/origin-local-storage-diskmaker
   customresourcedefinitions:
     owned:
       - displayName: Local Volume operator
@@ -161,6 +165,37 @@ spec:
         kind: LocalVolume
         name: localvolumes.local.storage.openshift.io
         description: Manage local storage volumes for Openshift
-        # TODO: specDescriptors
-        # TODO: statusDescriptors
-        version: v1alpha1
+        version: v1
+        specDescriptors:
+          - description: Management state of operator
+            displayName: Managementstate
+            path: managementState
+          - description: Log level of operator
+            displayName: LogLevel
+            path: logLevel
+          - description: Selected nodes for local storage
+            displayName: NodeSelector
+            path: nodeSelector
+            x-descriptors:
+              - 'urn:alm:descriptor:com.tectonic.ui:selector'
+          - description: StorageClass devices configured by the operator
+            displayName: StorageClassDevices
+            path: storageClassDevices
+          - description: Image of Local storage static provisioner
+            displayName: Local Storage Static Provisioner Image
+            path: localDiskProvisionerImage.provisionerImage
+          - description: Image version for disk Maker
+            displayName: Local storage disk discovery image
+            path: diskMakerImageVersion.diskMakerImage
+        statusDescriptors:
+          - description: Last generation of this object
+            displayName: ObservedGeneration
+            path: observedGeneration
+          - description: Management State of the operator
+            displayName: ManagementState
+            path: managementState
+          - description: Last known condition of the operator
+            displayName: Conditions
+            path: conditions
+            x-descriptors:
+              - 'urn:alm:descriptor:io.kubernetes.conditions'

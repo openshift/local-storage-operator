@@ -11,4 +11,4 @@ spec:
     plural: localvolumes
     singular: localvolumes
   scope: Namespaced
-  version: v1alpha1
+  version: v1
