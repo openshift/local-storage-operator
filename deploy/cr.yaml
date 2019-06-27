@@ -7,6 +7,6 @@ spec:
     - storageClassName: "foobar"
       volumeMode: Filesystem
       fsType: ext4
-      deviceNames:
-        - vde
-        - vdf
+      devicePaths:
+        - /dev/vde
+        - /dev/vdf
