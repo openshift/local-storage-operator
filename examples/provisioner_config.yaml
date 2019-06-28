@@ -1,21 +1,26 @@
 apiVersion: v1
 data:
   storageClassMap: |
-    fast-disks:
-      hostDir: /mnt/local-storage/ssd
-      mountDir:  /mnt/local-storage/ssd
+    local-sc:
+      fstype: xfs
+      hostDir: /mnt/local-storage/local-sc
+      mountDir: /mnt/local-storage/local-sc
       volumeMode: Filesystem
-      fsType: ext4
-    slow-disks:
-      hostDir: /mnt/local-storage/hdd
-      mountDir: /mnt/local-storage/hdd
-      volumeMode: Filesystem
-      fsType: ext4
 kind: ConfigMap
 metadata:
-  creationTimestamp: 2018-10-01T21:11:53Z
-  name: local-provisioner-config
-  namespace: default
-  resourceVersion: "18032"
-  selfLink: /api/v1/namespaces/default/configmaps/local-provisioner-config
-  uid: 9efe5c0e-c5be-11e8-a383-52540000926c
+  creationTimestamp: "2019-06-28T02:17:43Z"
+  labels:
+    app: local-volume-provisioner-local-disks
+    local.storage.openshift.io/owner-name: local-disks
+    local.storage.openshift.io/owner-namespace: local-storage
+  name: local-disks-local-provisioner-configmap
+  namespace: local-storage
+  ownerReferences:
+  - apiVersion: local.storage.openshift.io/v1
+    controller: true
+    kind: LocalVolume
+    name: local-disks
+    uid: e96db637-994a-11e9-aa0d-5254002691cd
+  resourceVersion: "1929954"
+  selfLink: /api/v1/namespaces/local-storage/configmaps/local-disks-local-provisioner-configmap
+  uid: e9771a23-994a-11e9-aa0d-5254002691cd

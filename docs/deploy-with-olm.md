@@ -61,8 +61,8 @@ spec:
     - storageClassName: "local-sc"
       volumeMode: Filesystem
       fsType: xfs
-      deviceNames:
-        - xvdf
+      devicePaths:
+        - /dev/xvdf
 ```
 
 ### CR using volumeMode - Block
@@ -86,8 +86,8 @@ spec:
   storageClassDevices:
     - storageClassName: "localblock-sc"
       volumeMode: Block 
-      deviceNames:
-        - xvdg
+      devicePaths:
+        - /dev/xvdg
 ```
 
 ### Deploy the CR
