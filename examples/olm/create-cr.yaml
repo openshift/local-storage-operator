@@ -15,4 +15,4 @@ spec:
       volumeMode: Filesystem
       fsType: xfs
       deviceNames:
-        - xvdf
+        - /dev/xvdf

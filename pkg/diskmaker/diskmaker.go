@@ -125,21 +125,26 @@ func (d *DiskMaker) symLinkDisks(diskConfig DiskConfig) {
 	}
 
 	for storageClass, deviceArray := range deviceMap {
-		for _, deviceNameLoction := range deviceArray {
+		for _, deviceNameLocation := range deviceArray {
 			symLinkDirPath := path.Join(d.symlinkLocation, storageClass)
 			err := os.MkdirAll(symLinkDirPath, 0755)
 			if err != nil {
 				logrus.Errorf("error creating symlink directory %s with %v", symLinkDirPath, err)
 				continue
 			}
-			symLinkPath := path.Join(symLinkDirPath, deviceNameLoction.diskNamePath)
+			baseDeviceName := filepath.Base(deviceNameLocation.diskNamePath)
+			symLinkPath := path.Join(symLinkDirPath, baseDeviceName)
+			if fileExists(symLinkPath) {
+				logrus.Infof("symlink %s already exists", symLinkPath)
+				continue
+			}
 			var symLinkErr error
-			if deviceNameLoction.diskID != "" {
-				logrus.Infof("symlinking to %s to %s", deviceNameLoction.diskID, symLinkPath)
-				symLinkErr = os.Symlink(deviceNameLoction.diskID, symLinkPath)
+			if deviceNameLocation.diskID != "" {
+				logrus.Infof("symlinking to %s to %s", deviceNameLocation.diskID, symLinkPath)
+				symLinkErr = os.Symlink(deviceNameLocation.diskID, symLinkPath)
 			} else {
-				logrus.Infof("symlinking to %s to %s", deviceNameLoction.diskNamePath, symLinkPath)
-				symLinkErr = os.Symlink(deviceNameLoction.diskNamePath, symLinkPath)
+				logrus.Infof("symlinking to %s to %s", deviceNameLocation.diskNamePath, symLinkPath)
+				symLinkErr = os.Symlink(deviceNameLocation.diskNamePath, symLinkPath)
 			}
 
 			if symLinkErr != nil {
@@ -244,4 +249,13 @@ func hasExactDisk(disks sets.String, device string) bool {
 		}
 	}
 	return false
+}
+
+// fileExists checks if a file exists
+func fileExists(filename string) bool {
+	_, err := os.Stat(filename)
+	if os.IsNotExist(err) {
+		return false
+	}
+	return true
 }
