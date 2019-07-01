@@ -14,5 +14,5 @@ spec:
     - storageClassName: "local-sc"
       volumeMode: Filesystem
       fsType: xfs
-      deviceNames:
+      devicePaths:
         - /dev/xvdf
