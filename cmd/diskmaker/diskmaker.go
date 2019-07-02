@@ -3,9 +3,10 @@ package main
 import (
 	"runtime"
 
+	"flag"
+
 	"github.com/openshift/local-storage-operator/pkg/diskmaker"
-	"github.com/sirupsen/logrus"
-	flag "github.com/spf13/pflag"
+	"k8s.io/klog"
 )
 
 var (
@@ -19,13 +20,16 @@ func init() {
 }
 
 func printVersion() {
-	logrus.Infof("Go Version: %s", runtime.Version())
-	logrus.Infof("Go OS/Arch: %s/%s", runtime.GOOS, runtime.GOARCH)
+	klog.Infof("Go Version: %s", runtime.Version())
+	klog.Infof("Go OS/Arch: %s/%s", runtime.GOOS, runtime.GOARCH)
 }
 
 func main() {
-	printVersion()
+	klog.InitFlags(nil)
+	flag.Set("alsologtostderr", "true")
 	flag.Parse()
+
+	printVersion()
 	diskMaker := diskmaker.NewDiskMaker(configLocation, symlinkLocation)
 	stopChannel := make(chan struct{})
 	diskMaker.Run(stopChannel)

@@ -5,7 +5,6 @@ import (
 	localv1 "github.com/openshift/local-storage-operator/pkg/apis/local/v1"
 	"github.com/operator-framework/operator-sdk/pkg/k8sclient"
 	"github.com/operator-framework/operator-sdk/pkg/sdk"
-	"github.com/sirupsen/logrus"
 	appsv1 "k8s.io/api/apps/v1"
 	"k8s.io/api/core/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -17,6 +16,7 @@ import (
 	"k8s.io/client-go/kubernetes/scheme"
 	v1core "k8s.io/client-go/kubernetes/typed/core/v1"
 	"k8s.io/client-go/tools/record"
+	"k8s.io/klog"
 )
 
 type apiUpdater interface {
@@ -47,10 +47,10 @@ func newAPIUpdater() apiUpdater {
 var _ apiUpdater = &sdkAPIUpdater{}
 
 func (s *sdkAPIUpdater) syncStatus(oldInstance, newInstance *localv1.LocalVolume) error {
-	logrus.Info("Syncing LocalVolume.Status")
+	klog.Info("Syncing LocalVolume.Status")
 
 	if !equality.Semantic.DeepEqual(oldInstance.Status, newInstance.Status) {
-		logrus.Info("Updating LocalVolume.Status")
+		klog.Info("Updating LocalVolume.Status")
 		err := sdk.Update(newInstance)
 		if err != nil && errors.IsConflict(err) {
 			s.recordEvent(newInstance, corev1.EventTypeWarning, localVolumeUpdateFailed, "updating localvolume failed with %v", err)

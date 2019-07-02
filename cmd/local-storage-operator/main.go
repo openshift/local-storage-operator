@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"runtime"
 	"time"
 
@@ -10,18 +11,22 @@ import (
 	k8sutil "github.com/operator-framework/operator-sdk/pkg/util/k8sutil"
 	sdkVersion "github.com/operator-framework/operator-sdk/version"
 
-	"github.com/sirupsen/logrus"
 	corev1 "k8s.io/api/core/v1"
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
+	"k8s.io/klog"
 )
 
 func printVersion() {
-	logrus.Infof("Go Version: %s", runtime.Version())
-	logrus.Infof("Go OS/Arch: %s/%s", runtime.GOOS, runtime.GOARCH)
-	logrus.Infof("operator-sdk Version: %v", sdkVersion.Version)
+	klog.Infof("Go Version: %s", runtime.Version())
+	klog.Infof("Go OS/Arch: %s/%s", runtime.GOOS, runtime.GOARCH)
+	klog.Infof("operator-sdk Version: %v", sdkVersion.Version)
 }
 
 func main() {
+	klog.InitFlags(nil)
+	flag.Set("alsologtostderr", "true")
+	flag.Parse()
+
 	printVersion()
 
 	sdk.ExposeMetricsPort()
@@ -29,12 +34,12 @@ func main() {
 	resource := "local.storage.openshift.io/v1"
 	kind := "LocalVolume"
 	namespace, err := k8sutil.GetWatchNamespace()
-	logrus.Infof("Watching %s, %s", resource, kind)
+	klog.Infof("Watching %s, %s", resource, kind)
 	if err != nil {
-		logrus.Fatalf("failed to get watch namespace: %v", err)
+		klog.Fatalf("failed to get watch namespace: %v", err)
 	}
 	resyncPeriod := time.Duration(5) * time.Second
-	logrus.Infof("Watching %s, %s, %s, %d", resource, kind, namespace, resyncPeriod)
+	klog.Infof("Watching %s, %s, %s, %d", resource, kind, namespace, resyncPeriod)
 	sdk.Watch(resource, kind, namespace, resyncPeriod)
 	sdk.Watch("v1", "ConfigMap", namespace, resyncPeriod)
 	sdk.Watch("apps/v1", "DaemonSet", namespace, resyncPeriod)
