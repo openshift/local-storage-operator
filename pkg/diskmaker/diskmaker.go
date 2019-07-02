@@ -102,7 +102,7 @@ func (d *DiskMaker) symLinkDisks(diskConfig DiskConfig) {
 	}
 
 	if len(deviceSet) == 0 {
-		klog.Infof("unable to find any new disks")
+		klog.V(3).Infof("unable to find any new disks")
 		return
 	}
 
@@ -135,15 +135,15 @@ func (d *DiskMaker) symLinkDisks(diskConfig DiskConfig) {
 			baseDeviceName := filepath.Base(deviceNameLocation.diskNamePath)
 			symLinkPath := path.Join(symLinkDirPath, baseDeviceName)
 			if fileExists(symLinkPath) {
-				klog.Infof("symlink %s already exists", symLinkPath)
+				klog.V(4).Infof("symlink %s already exists", symLinkPath)
 				continue
 			}
 			var symLinkErr error
 			if deviceNameLocation.diskID != "" {
-				klog.Infof("symlinking to %s to %s", deviceNameLocation.diskID, symLinkPath)
+				klog.V(3).Infof("symlinking to %s to %s", deviceNameLocation.diskID, symLinkPath)
 				symLinkErr = os.Symlink(deviceNameLocation.diskID, symLinkPath)
 			} else {
-				klog.Infof("symlinking to %s to %s", deviceNameLocation.diskNamePath, symLinkPath)
+				klog.V(3).Infof("symlinking to %s to %s", deviceNameLocation.diskNamePath, symLinkPath)
 				symLinkErr = os.Symlink(deviceNameLocation.diskNamePath, symLinkPath)
 			}
 
@@ -174,8 +174,9 @@ func (d *DiskMaker) findMatchingDisks(diskConfig DiskConfig, deviceSet sets.Stri
 			baseDeviceName := filepath.Base(diskName)
 			if hasExactDisk(deviceSet, baseDeviceName) {
 				matchedDeviceID, err := d.findStableDeviceID(baseDeviceName, allDiskIds)
+				// This means no /dev/disk/by-id entry was created for requested device.
 				if err != nil {
-					klog.Errorf("Unable to find disk ID %s for local pool %v", diskName, err)
+					klog.V(4).Infof("unable to find disk ID %s for local pool %v", diskName, err)
 					addDiskToMap(storageClass, "", diskName)
 					continue
 				}

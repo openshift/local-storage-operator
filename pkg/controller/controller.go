@@ -79,11 +79,11 @@ func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
 		}
 		localStorageProvider = o
 	case *appsv1.DaemonSet, *corev1.ConfigMap:
-		klog.Infof("Received configmap or daemonset set")
+		klog.V(4).Infof("Received configmap or daemonset set")
 	case *storagev1.StorageClass:
-		klog.Infof("received storageClass")
+		klog.V(4).Infof("received storageClass")
 	default:
-		klog.Infof("Unexpected kind of object : %+v", o)
+		klog.V(2).Infof("Unexpected kind of object : %+v", o)
 		return fmt.Errorf("expected object : %+v", o)
 	}
 
