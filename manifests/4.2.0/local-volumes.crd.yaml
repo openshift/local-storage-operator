@@ -31,6 +31,14 @@ spec:
             nodeSelector:
               description: Nodes on which the provisioner must run
               type: object
+            managementState:
+              description: Indicates whether and how the operator should manage the component
+              type: string
+              enum: ["Managed", "Unmanaged", "Removed", "Force"]
+            logLevel:
+              description: logLevel configures log level for the operator
+              type: string
+              enum: ["Normal", "Debug", "Trace", "TraceAll"]
             storageClassDevices:
               description: List of storage class and devices they can match
               items:
@@ -85,12 +93,31 @@ spec:
                 - lastGeneration
                 type: object
               type: array
+            conditions:
+              type: array
+              items:
+                properties:
+                  type:
+                    type: string
+                  status:
+                    type: string
+                    enum: ["True", "False", "Unknown"]
+                  lastTransitionTime:
+                    type: dateTime
+                    format: date-time
+                  reason:
+                    type: string
+                  message:
+                    type: string
             observedGeneration:
               format: int64
               type: integer
             managementState:
               type: string
               enum: ["Managed", "Unmanaged", "Removed", "Force"]
+            readyReplicas:
+              type: integer
+              format: int32
           type: object
       required:
         - spec

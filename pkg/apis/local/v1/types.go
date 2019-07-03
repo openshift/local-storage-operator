@@ -27,11 +27,11 @@ type LocalVolume struct {
 type LocalVolumeSpec struct {
 	// managementState indicates whether and how the operator should manage the component
 	// +optional
-	ManagementState operatorv1.ManagementState `json:"managementState"`
+	ManagementState operatorv1.ManagementState `json:"managementState,omitempty"`
 	// logLevel is an intent based logging for an overall component.  It does not give fine grained control, but it is a
 	// simple way to manage coarse grained logging choices that operators have to interpret for their operands.
 	// +optional
-	LogLevel operatorv1.LogLevel `json:"logLevel"`
+	LogLevel operatorv1.LogLevel `json:"logLevel,omitempty"`
 	// Nodes on which the provisoner must run
 	// +optional
 	NodeSelector *corev1.NodeSelector `json:"nodeSelector,omitempty"`
@@ -54,9 +54,11 @@ type StorageClassDevice struct {
 	// StorageClass name to use for set of matched devices
 	StorageClassName string `json:"storageClassName"`
 	// Volume mode. Raw or with file system
-	VolumeMode PersistentVolumeMode `json:"volumeMode"`
+	// + optional
+	VolumeMode PersistentVolumeMode `json:"volumeMode,omitempty"`
 	// File system type
-	FSType string `json:"fsType"`
+	// +optional
+	FSType string `json:"fsType,omitempty"`
 	// A list of device paths which would be chosen for local storage.
 	// For example - ["/dev/sda", "/dev/sdb", "/dev/disk/by-id/ata-crucial"]
 	DevicePaths []string `json:"devicePaths,omitempty"`
@@ -71,7 +73,7 @@ type LocalVolumeStatus struct {
 	State operatorv1.ManagementState `json:"managementState,omitempty"`
 
 	// Conditions is a list of conditions and their status.
-	Conditions []operatorv1.OperatorCondition
+	Conditions []operatorv1.OperatorCondition `json:"conditions,omitempty"`
 
 	// readyReplicas indicates how many replicas are ready and at the desired state
 	ReadyReplicas int32 `json:"readyReplicas"`

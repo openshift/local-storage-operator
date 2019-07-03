@@ -173,9 +173,10 @@ func (h *Handler) syncLocalVolumeProvider(instance *localv1.LocalVolume) error {
 	o.Status.ObservedGeneration = &o.Generation
 	o.Status.State = operatorv1.Managed
 	condition := operatorv1.OperatorCondition{
-		Type:    operatorv1.OperatorStatusTypeAvailable,
-		Status:  operatorv1.ConditionTrue,
-		Message: "Ready",
+		Type:               operatorv1.OperatorStatusTypeAvailable,
+		Status:             operatorv1.ConditionTrue,
+		Message:            "Ready",
+		LastTransitionTime: metav1.Now(),
 	}
 	newConditions := []operatorv1.OperatorCondition{condition}
 	o.Status.Conditions = newConditions
@@ -190,9 +191,10 @@ func (h *Handler) syncLocalVolumeProvider(instance *localv1.LocalVolume) error {
 func (h *Handler) addFailureCondition(oldLv *localv1.LocalVolume, lv *localv1.LocalVolume, err error) error {
 	message := fmt.Sprintf("error syncing local storage : %+v", err)
 	condition := operatorv1.OperatorCondition{
-		Type:    operatorv1.OperatorStatusTypeAvailable,
-		Status:  operatorv1.ConditionFalse,
-		Message: message,
+		Type:               operatorv1.OperatorStatusTypeAvailable,
+		Status:             operatorv1.ConditionFalse,
+		Message:            message,
+		LastTransitionTime: metav1.Now(),
 	}
 	newConditions := []operatorv1.OperatorCondition{condition}
 	lv.Status.Conditions = newConditions
