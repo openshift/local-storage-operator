@@ -12,7 +12,6 @@ import (
 	"github.com/openshift/local-storage-operator/pkg/diskmaker"
 	"github.com/operator-framework/operator-sdk/pkg/k8sclient"
 	"github.com/operator-framework/operator-sdk/pkg/sdk"
-	"github.com/sirupsen/logrus"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
@@ -24,6 +23,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/klog"
 )
 
 // Handler returns a Handler for running the operator
@@ -79,11 +79,11 @@ func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
 		}
 		localStorageProvider = o
 	case *appsv1.DaemonSet, *corev1.ConfigMap:
-		logrus.Infof("Received configmap or daemonset set")
+		klog.V(4).Infof("Received configmap or daemonset set")
 	case *storagev1.StorageClass:
-		logrus.Infof("received storageClass")
+		klog.V(4).Infof("received storageClass")
 	default:
-		logrus.Infof("Unexpected kind of object : %+v", o)
+		klog.V(2).Infof("Unexpected kind of object : %+v", o)
 		return fmt.Errorf("expected object : %+v", o)
 	}
 
@@ -104,7 +104,7 @@ func (h *Handler) syncLocalVolumeProvider(instance *localv1.LocalVolume) error {
 	o.SetDefaults()
 
 	if o.Spec.ManagementState != operatorv1.Managed && o.Spec.ManagementState != operatorv1.Force {
-		logrus.Infof("operator is not managing local volumes : %v", o.Spec.ManagementState)
+		klog.Infof("operator is not managing local volumes : %v", o.Spec.ManagementState)
 		o.Status.State = o.Spec.ManagementState
 		err = h.apiClient.syncStatus(instance, o)
 		if err != nil {
@@ -115,25 +115,25 @@ func (h *Handler) syncLocalVolumeProvider(instance *localv1.LocalVolume) error {
 
 	err = h.syncRBACPolicies(o)
 	if err != nil {
-		logrus.Error(err)
+		klog.Error(err)
 		return h.addFailureCondition(instance, o, err)
 	}
 
 	provisionerConfigMapModified, err := h.syncProvisionerConfigMap(o)
 	if err != nil {
-		logrus.Errorf("error creating provisioner configmap %s with %v", o.Name, err)
+		klog.Errorf("error creating provisioner configmap %s with %v", o.Name, err)
 		return h.addFailureCondition(instance, o, err)
 	}
 
 	diskMakerConfigMapModified, err := h.syncDiskMakerConfigMap(o)
 	if err != nil {
-		logrus.Errorf("error creating diskmaker configmap %s with %v", o.Name, err)
+		klog.Errorf("error creating diskmaker configmap %s with %v", o.Name, err)
 		return h.addFailureCondition(instance, o, err)
 	}
 
 	err = h.syncStorageClass(o)
 	if err != nil {
-		logrus.Errorf("failed to create storageClass %v", err)
+		klog.Errorf("failed to create storageClass %v", err)
 		return h.addFailureCondition(instance, o, err)
 	}
 
@@ -141,7 +141,7 @@ func (h *Handler) syncLocalVolumeProvider(instance *localv1.LocalVolume) error {
 
 	provisionerDS, err := h.syncProvisionerDaemonset(o, provisionerConfigMapModified)
 	if err != nil {
-		logrus.Errorf("failed to create daemonset for provisioner %s with %v", o.Name, err)
+		klog.Errorf("failed to create daemonset for provisioner %s with %v", o.Name, err)
 		return h.addFailureCondition(instance, o, err)
 	}
 
@@ -157,7 +157,7 @@ func (h *Handler) syncLocalVolumeProvider(instance *localv1.LocalVolume) error {
 
 	diskMakerDaemonset, err := h.syncDiskMakerDaemonset(o, diskMakerConfigMapModified)
 	if err != nil {
-		logrus.Errorf("failed to create daemonset for diskmaker %s with %v", o.Name, err)
+		klog.Errorf("failed to create daemonset for diskmaker %s with %v", o.Name, err)
 		return h.addFailureCondition(instance, o, err)
 	}
 	if diskMakerDaemonset != nil {
@@ -197,7 +197,7 @@ func (h *Handler) addFailureCondition(oldLv *localv1.LocalVolume, lv *localv1.Lo
 	lv.Status.Conditions = newConditions
 	syncErr := h.apiClient.syncStatus(oldLv, lv)
 	if syncErr != nil {
-		logrus.Errorf("error syncing condition : %v", syncErr)
+		klog.Errorf("error syncing condition : %v", syncErr)
 	}
 	return err
 }
@@ -225,7 +225,7 @@ func (h *Handler) cleanupLocalVolumeDeployment(o *localv1.LocalVolume) error {
 func (h *Handler) syncProvisionerConfigMap(o *localv1.LocalVolume) (bool, error) {
 	provisionerConfigMap, err := h.generateProvisionerConfigMap(o)
 	if err != nil {
-		logrus.Errorf("error generating provisioner configmap %s with %v", o.Name, err)
+		klog.Errorf("error generating provisioner configmap %s with %v", o.Name, err)
 		return false, err
 	}
 	_, modified, err := h.apiClient.applyConfigMap(provisionerConfigMap)
@@ -385,7 +385,7 @@ func (h *Handler) syncStorageClass(cr *localv1.LocalVolume) error {
 	removeErrors := h.removeUnExpectedStorageClasses(cr, expectedStorageClasses)
 	// For now we will ignore errors while removing unexpected storageClasses
 	if removeErrors != nil {
-		logrus.Errorf("error removing unexpected storageclasses : %v", removeErrors)
+		klog.Errorf("error removing unexpected storageclasses : %v", removeErrors)
 	}
 	return nil
 }
@@ -398,7 +398,7 @@ func (h *Handler) removeUnExpectedStorageClasses(cr *localv1.LocalVolume, expect
 	removeErrors := []error{}
 	for _, sc := range list.Items {
 		if !expectedStorageClasses.Has(sc.Name) {
-			logrus.Infof("removing storageClass %s", sc.Name)
+			klog.Infof("removing storageClass %s", sc.Name)
 			scDeleteErr := k8sclient.GetKubeClient().StorageV1().StorageClasses().Delete(sc.Name, nil)
 			if scDeleteErr != nil && !errors.IsNotFound(scDeleteErr) {
 				removeErrors = append(removeErrors, fmt.Errorf("error deleting storageclass %s with %v", sc.Name, scDeleteErr))

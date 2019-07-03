@@ -12,8 +12,8 @@ import (
 	"time"
 
 	"github.com/ghodss/yaml"
-	"github.com/sirupsen/logrus"
 	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/klog"
 )
 
 // DiskMaker is a small utility that reads configmap and
@@ -65,7 +65,7 @@ func (d *DiskMaker) Run(stop <-chan struct{}) {
 
 	err := os.MkdirAll(d.symlinkLocation, 0755)
 	if err != nil {
-		logrus.Errorf("error creating local-storage directory %s with %v", d.symlinkLocation, err)
+		klog.Errorf("error creating local-storage directory %s with %v", d.symlinkLocation, err)
 		os.Exit(-1)
 	}
 
@@ -74,12 +74,12 @@ func (d *DiskMaker) Run(stop <-chan struct{}) {
 		case <-ticker.C:
 			diskConfig, err := d.loadConfig()
 			if err != nil {
-				logrus.Errorf("error loading configuration with %v", err)
+				klog.Errorf("error loading configuration with %v", err)
 				break
 			}
 			d.symLinkDisks(diskConfig)
 		case <-stop:
-			logrus.Infof("exiting, received message on stop channel")
+			klog.Infof("exiting, received message on stop channel")
 			os.Exit(0)
 		}
 	}
@@ -92,35 +92,35 @@ func (d *DiskMaker) symLinkDisks(diskConfig DiskConfig) {
 	cmd.Stdout = &out
 	err = cmd.Run()
 	if err != nil {
-		logrus.Errorf("error running lsblk %v", err)
+		klog.Errorf("error running lsblk %v", err)
 		return
 	}
 	deviceSet, err := d.findNewDisks(out.String())
 	if err != nil {
-		logrus.Errorf("error unmrashalling json %v", err)
+		klog.Errorf("error unmrashalling json %v", err)
 		return
 	}
 
 	if len(deviceSet) == 0 {
-		logrus.Infof("unable to find any new disks")
+		klog.V(3).Infof("unable to find any new disks")
 		return
 	}
 
 	// read all available disks from /dev/disk/by-id/*
 	allDiskIds, err := filepath.Glob(diskByIDPath)
 	if err != nil {
-		logrus.Errorf("error listing disks in /dev/disk/by-id : %v", err)
+		klog.Errorf("error listing disks in /dev/disk/by-id : %v", err)
 		return
 	}
 
 	deviceMap, err := d.findMatchingDisks(diskConfig, deviceSet, allDiskIds)
 	if err != nil {
-		logrus.Errorf("error matching finding disks : %v", err)
+		klog.Errorf("error matching finding disks : %v", err)
 		return
 	}
 
 	if len(deviceMap) == 0 {
-		logrus.Errorf("unable to find any matching disks")
+		klog.Errorf("unable to find any matching disks")
 		return
 	}
 
@@ -129,26 +129,26 @@ func (d *DiskMaker) symLinkDisks(diskConfig DiskConfig) {
 			symLinkDirPath := path.Join(d.symlinkLocation, storageClass)
 			err := os.MkdirAll(symLinkDirPath, 0755)
 			if err != nil {
-				logrus.Errorf("error creating symlink directory %s with %v", symLinkDirPath, err)
+				klog.Errorf("error creating symlink directory %s with %v", symLinkDirPath, err)
 				continue
 			}
 			baseDeviceName := filepath.Base(deviceNameLocation.diskNamePath)
 			symLinkPath := path.Join(symLinkDirPath, baseDeviceName)
 			if fileExists(symLinkPath) {
-				logrus.Infof("symlink %s already exists", symLinkPath)
+				klog.V(4).Infof("symlink %s already exists", symLinkPath)
 				continue
 			}
 			var symLinkErr error
 			if deviceNameLocation.diskID != "" {
-				logrus.Infof("symlinking to %s to %s", deviceNameLocation.diskID, symLinkPath)
+				klog.V(3).Infof("symlinking to %s to %s", deviceNameLocation.diskID, symLinkPath)
 				symLinkErr = os.Symlink(deviceNameLocation.diskID, symLinkPath)
 			} else {
-				logrus.Infof("symlinking to %s to %s", deviceNameLocation.diskNamePath, symLinkPath)
+				klog.V(3).Infof("symlinking to %s to %s", deviceNameLocation.diskNamePath, symLinkPath)
 				symLinkErr = os.Symlink(deviceNameLocation.diskNamePath, symLinkPath)
 			}
 
 			if symLinkErr != nil {
-				logrus.Errorf("error creating symlink %s with %v", symLinkPath, err)
+				klog.Errorf("error creating symlink %s with %v", symLinkPath, err)
 			}
 		}
 	}
@@ -174,8 +174,9 @@ func (d *DiskMaker) findMatchingDisks(diskConfig DiskConfig, deviceSet sets.Stri
 			baseDeviceName := filepath.Base(diskName)
 			if hasExactDisk(deviceSet, baseDeviceName) {
 				matchedDeviceID, err := d.findStableDeviceID(baseDeviceName, allDiskIds)
+				// This means no /dev/disk/by-id entry was created for requested device.
 				if err != nil {
-					logrus.Errorf("Unable to find disk ID %s for local pool %v", diskName, err)
+					klog.V(4).Infof("unable to find disk ID %s for local pool %v", diskName, err)
 					addDiskToMap(storageClass, "", diskName)
 					continue
 				}
@@ -189,7 +190,7 @@ func (d *DiskMaker) findMatchingDisks(diskConfig DiskConfig, deviceSet sets.Stri
 		for _, deviceID := range deviceIds {
 			matchedDeviceID, matchedDiskName, err := d.findDeviceByID(deviceID)
 			if err != nil {
-				logrus.Errorf("unable to add disk-id %s to local disk pool %v", deviceID, err)
+				klog.Errorf("unable to add disk-id %s to local disk pool %v", deviceID, err)
 				continue
 			}
 			baseDeviceName := filepath.Base(matchedDiskName)
