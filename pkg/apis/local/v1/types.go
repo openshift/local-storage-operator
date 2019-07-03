@@ -68,7 +68,7 @@ type LocalVolumeStatus struct {
 	ObservedGeneration *int64 `json:"observedGeneration,omitempty"`
 
 	// state indicates what the operator has observed to be its current operational status.
-	State operatorv1.ManagementState `json:"state,omitempty"`
+	State operatorv1.ManagementState `json:"managementState,omitempty"`
 
 	// Conditions is a list of conditions and their status.
 	Conditions []operatorv1.OperatorCondition

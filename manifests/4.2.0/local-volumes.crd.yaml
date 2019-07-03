@@ -11,3 +11,86 @@ spec:
     singular: localvolume
   scope: Namespaced
   version: v1
+  validation:
+    openAPIV3Schema:
+      properties:
+        apiVersion:
+          description: 'APIVersion defines the versioned schema of this representation
+            of an object. Servers should convert recognized schemas to the latest
+            internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#resources'
+          type: string
+        kind:
+          description: 'Kind is a string value representing the REST resource this
+            object represents. Servers may infer this from the endpoint the client
+            submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#types-kinds'
+          type: string
+        metadata:
+          type: object
+        spec:
+          properties:
+            nodeSelector:
+              description: Nodes on which the provisioner must run
+              type: object
+            storageClassDevices:
+              description: List of storage class and devices they can match
+              items:
+                properties:
+                  storageClassName:
+                    description: StorageClass name to use for set of matched devices
+                    type: string
+                  volumeMode:
+                    description: Volume mode. Block or Filesystem
+                    enum:
+                      - Block
+                      - Filesystem
+                    type: string
+                  fsType:
+                    description: File system type
+                    type: string
+                  devicePaths:
+                    description: 'A list of devices which would be chosen for local storage.
+                    For example - ["/dev/sda", "/dev/sdb", "/dev/disk/by-id/ata-crucial"]'
+                    items:
+                      type: string
+                    type: array
+                required:
+                  - storageClassName
+                  - devicePaths
+                type: object
+              type: array
+          required:
+            - storageClassDevices
+          type: object
+        status:
+          properties:
+            generations:
+              items:
+                properties:
+                  group:
+                    type: string
+                  resource:
+                    type: string
+                  lastGeneration:
+                    format: int64
+                    type: integer
+                  name:
+                    type: string
+                  namespace:
+                    type: string
+                required:
+                - group
+                - resource
+                - namespace
+                - name
+                - lastGeneration
+                type: object
+              type: array
+            observedGeneration:
+              format: int64
+              type: integer
+            managementState:
+              type: string
+              enum: ["Managed", "Unmanaged", "Removed", "Force"]
+          type: object
+      required:
+        - spec

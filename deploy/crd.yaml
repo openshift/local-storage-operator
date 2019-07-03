@@ -1,14 +1,1 @@
-apiVersion: apiextensions.k8s.io/v1beta1
-kind: CustomResourceDefinition
-metadata:
-  name: localvolumes.local.storage.openshift.io
-
-spec:
-  group: local.storage.openshift.io
-  names:
-    kind: LocalVolume
-    listKind: LocalVolumeList
-    plural: localvolumes
-    singular: localvolumes
-  scope: Namespaced
-  version: v1
+../manifests/4.2.0/local-volumes.crd.yaml

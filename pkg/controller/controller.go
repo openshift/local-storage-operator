@@ -181,6 +181,7 @@ func (h *Handler) syncLocalVolumeProvider(instance *localv1.LocalVolume) error {
 	o.Status.Conditions = newConditions
 	err = h.apiClient.syncStatus(instance, o)
 	if err != nil {
+		klog.Errorf("error syncing status : %v", err)
 		return fmt.Errorf("error syncing status %v", err)
 	}
 	return nil
