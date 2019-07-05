@@ -23,7 +23,8 @@ func printVersion() {
 }
 
 func main() {
-	klog.InitFlags(nil)
+	klogFlags := flag.NewFlagSet("local-storage-operator", flag.ExitOnError)
+	klog.InitFlags(klogFlags)
 	flag.Set("alsologtostderr", "true")
 	flag.Parse()
 

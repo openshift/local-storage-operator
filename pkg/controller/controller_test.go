@@ -121,8 +121,14 @@ func TestSyncLocalVolumeProvider(t *testing.T) {
 		t.Fatalf("expected local volume to be available")
 	}
 
-	if localVolumeConditions[0].Type != operatorv1.OperatorStatusTypeAvailable {
+	c := localVolumeConditions[0]
+
+	if c.Type != operatorv1.OperatorStatusTypeAvailable || c.Status != operatorv1.ConditionTrue {
 		t.Fatalf("expected available operator condition got %v", localVolumeConditions)
+	}
+
+	if c.LastTransitionTime.IsZero() {
+		t.Fatalf("expect last transition time to be set")
 	}
 
 	provisionedDaemonSets := apiClient.daemonSets
