@@ -800,15 +800,15 @@
   revision = "e3762e86a74c878ffed47484592986685639c2cd"
 
 [[projects]]
-  digest = "1:8f87a12b4d6f63f7787a8b5ca06348741321048d08023f5fda3ddf63e3ca2e6a"
+  digest = "1:8131554e28cf80cddfaceaf2339153db5985a12a3da2187c80cc59149f21ee0c"
   name = "sigs.k8s.io/controller-runtime"
   packages = [
     "pkg/client",
     "pkg/client/apiutil",
   ]
   pruneopts = "NUT"
-  revision = "f1eaba5087d69cebb154c6a48193e6667f5b512c"
-  version = "v0.1.12"
+  revision = "5fd1e9e9fac5261e9ad9d47c375afc014fc31d21"
+  version = "v0.1.7"
 
 [solve-meta]
   analyzer-name = "dep"
