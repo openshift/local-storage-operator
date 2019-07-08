@@ -6,14 +6,16 @@ ifeq ($(VERSION),)
 	VERSION = latest
 endif
 
+CURPATH=$(PWD)
+TARGET_DIR=$(CURPATH)/_output/bin
 IMAGE = $(REGISTRY)local-volume-provisioner:$(VERSION)
 MUTABLE_IMAGE = $(REGISTRY)local-volume-provisioner:$(VERSION)
 DISKMAKER_IMAGE = $(REGISTRY)local-diskmaker:$(VERSION)
 OPERATOR_IMAGE= $(REGISTRY)local-storage-operator:$(VERSION)
 
 all build:
-	CGO_ENABLED=0 GOOS=linux go build -a -ldflags '-extldflags "-static"' -o diskmaker ./cmd/diskmaker
-	CGO_ENABLED=0 GOOS=linux go build -a -ldflags '-extldflags "-static"' -o local-storage-operator ./cmd/local-storage-operator
+	CGO_ENABLED=0 GOOS=linux go build -a -ldflags '-extldflags "-static"' -o $(TARGET_DIR)/diskmaker ./cmd/diskmaker
+	CGO_ENABLED=0 GOOS=linux go build -a -ldflags '-extldflags "-static"' -o $(TARGET_DIR)/local-storage-operator ./cmd/local-storage-operator
 .PHONY: all build
 
 images: diskmaker-container operator-container

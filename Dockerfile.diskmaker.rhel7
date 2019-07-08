@@ -4,7 +4,7 @@ COPY . .
 RUN make build
 
 FROM registry.svc.ci.openshift.org/ocp/4.0:base
-COPY --from=builder /go/src/github.com/openshift/local-storage-operator/diskmaker /usr/bin/
+COPY --from=builder /go/src/github.com/openshift/local-storage-operator/_output/bin/diskmaker /usr/bin/
 COPY manifests /manifests
 ENTRYPOINT ["/usr/bin/diskmaker"]
 LABEL io.k8s.display-name="OpenShift local storage diskmaker" \
