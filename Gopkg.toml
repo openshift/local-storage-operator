@@ -61,6 +61,10 @@ required = [
     non-go = false
     unused-packages = false
 
+  [[prune.project]]
+    name = "k8s.io/client-go"
+    non-go = false
+
 [[constraint]]
   name = "github.com/operator-framework/operator-sdk"
   # The version rule is used for a specific release and the master branch for in between releases.

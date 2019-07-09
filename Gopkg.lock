@@ -316,13 +316,14 @@
   revision = "dd6554843a719fcb151deb612e2116371adedcb6"
 
 [[projects]]
-  digest = "1:711e23d4f4a55b094616565664a2e38d4fd04205690b6e0b634740d490b589bc"
+  digest = "1:849835cff411090d517da03b18b08d7eb832ec62fdaf44d6e999e3dd5d9e83bb"
   name = "github.com/operator-framework/operator-sdk"
   packages = [
     "pkg/k8sclient",
     "pkg/sdk",
     "pkg/sdk/internal/metrics",
     "pkg/test",
+    "pkg/test/e2eutil",
     "pkg/util/k8sutil",
     "version",
   ]
@@ -643,7 +644,7 @@
   revision = "103fd098999dc9c0c88536f5c9ad2e5da39373ae"
 
 [[projects]]
-  digest = "1:1dda6fbc77a291d3d18f4cf2996091c18a9133253a3c233c5cef3d8653a689ff"
+  digest = "1:21b6fe288045965708dfd8bd144c2f73b9a9e55a6e7826162939ebc8028d9e17"
   name = "k8s.io/client-go"
   packages = [
     "discovery",
@@ -711,7 +712,7 @@
     "util/retry",
     "util/workqueue",
   ]
-  pruneopts = "NUT"
+  pruneopts = "UT"
   revision = "1f13a808da65775f22cbf47862c4e5898d8f4ca1"
 
 [[projects]]
@@ -821,6 +822,7 @@
     "github.com/operator-framework/operator-sdk/pkg/k8sclient",
     "github.com/operator-framework/operator-sdk/pkg/sdk",
     "github.com/operator-framework/operator-sdk/pkg/test",
+    "github.com/operator-framework/operator-sdk/pkg/test/e2eutil",
     "github.com/operator-framework/operator-sdk/pkg/util/k8sutil",
     "github.com/operator-framework/operator-sdk/version",
     "k8s.io/api/apps/v1",

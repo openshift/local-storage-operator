@@ -40,4 +40,7 @@ clean:
 
 test:
 	go test ./pkg/... ./cmd/... -coverprofile cover.out
+
+test_e2e:
+	./hack/test-e2e.sh
 .PHONY: test

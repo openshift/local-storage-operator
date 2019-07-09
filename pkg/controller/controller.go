@@ -261,6 +261,8 @@ func (h *Handler) syncRBACPolicies(o *localv1.LocalVolume) error {
 			Labels:    operatorLabel,
 		},
 	}
+	addOwner(&serviceAccount.ObjectMeta, o)
+
 	_, _, err := h.apiClient.applyServiceAccount(serviceAccount)
 	if err != nil {
 		return fmt.Errorf("error applying service account %s with %v", serviceAccount.Name, err)
@@ -280,6 +282,7 @@ func (h *Handler) syncRBACPolicies(o *localv1.LocalVolume) error {
 			},
 		},
 	}
+	addOwner(&provisionerClusterRole.ObjectMeta, o)
 	_, _, err = h.apiClient.applyClusterRole(provisionerClusterRole)
 	if err != nil {
 		return fmt.Errorf("error applying cluster role %s with %v", provisionerClusterRole.Name, err)
@@ -304,6 +307,7 @@ func (h *Handler) syncRBACPolicies(o *localv1.LocalVolume) error {
 			Name:     defaultPVClusterRole,
 		},
 	}
+	addOwner(&pvClusterRoleBinding.ObjectMeta, o)
 
 	_, _, err = h.apiClient.applyClusterRoleBinding(pvClusterRoleBinding)
 	if err != nil {
@@ -329,6 +333,8 @@ func (h *Handler) syncRBACPolicies(o *localv1.LocalVolume) error {
 			Name:     provisionerClusterRole.Name,
 		},
 	}
+	addOwner(&nodeRoleBinding.ObjectMeta, o)
+
 	_, _, err = h.apiClient.applyClusterRoleBinding(nodeRoleBinding)
 	if err != nil {
 		return fmt.Errorf("error creating node role binding %s with %v", nodeRoleBinding.Name, err)
