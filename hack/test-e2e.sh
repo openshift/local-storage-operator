@@ -19,7 +19,7 @@ trap cleanup exit
 if [ -n "${IMAGE_FORMAT:-}" ] ; then
   IMAGE_LOCAL_STORAGE_OPERATOR=$(sed -e "s,\${component},local-storage-operator," <(echo $IMAGE_FORMAT))
 else
-  IMAGE_LOCAL_STORAGE_OPERATOR=${IMAGE_LOCAL_STORAGE_OPERATOR:-quay.io/openshift/origin-local-storage-operator:latest}
+  IMAGE_LOCAL_STORAGE_OPERATOR=${IMAGE_LOCAL_STORAGE_OPERATOR:-quay.io/openshift/origin-local-storage-operator}
 fi
 
 KUBECONFIG=${KUBECONFIG:-$HOME/.kube/config}
@@ -29,7 +29,7 @@ cat ${repo_dir}/deploy/rbac.yaml >> ${manifest}
 cat ${repo_dir}/deploy/operator.yaml >> ${manifest}
 cat ${repo_dir}/deploy/crd.yaml >> ${global_manifest}
 
-sed -i "s,quay.io/openshift/origin-local-storage-operator:latest,${IMAGE_LOCAL_STORAGE_OPERATOR}," ${manifest}
+sed -i "s,quay.io/openshift/origin-local-storage-operator,${IMAGE_LOCAL_STORAGE_OPERATOR}," ${manifest}
 
 TEST_NAMESPACE=${NAMESPACE} go test ./test/e2e/... \
   -root=$(pwd) \
