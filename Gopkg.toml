@@ -39,7 +39,7 @@ required = [
 
 [[override]]
   name = "sigs.k8s.io/controller-runtime"
-  version = "v0.1.3"
+  version = "=v0.1.7"
 
 [[override]]
   name = "k8s.io/kube-aggregator"
@@ -60,6 +60,10 @@ required = [
     name = "k8s.io/code-generator"
     non-go = false
     unused-packages = false
+
+  [[prune.project]]
+    name = "k8s.io/client-go"
+    non-go = false
 
 [[constraint]]
   name = "github.com/operator-framework/operator-sdk"

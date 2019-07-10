@@ -4,7 +4,7 @@ COPY . .
 RUN make build
 
 FROM registry.svc.ci.openshift.org/openshift/origin-v4.0:base
-COPY --from=builder /go/src/github.com/openshift/local-storage-operator/local-storage-operator /usr/bin/
+COPY --from=builder /go/src/github.com/openshift/local-storage-operator/_output/bin/local-storage-operator /usr/bin/
 COPY manifests /manifests
 ENTRYPOINT ["/usr/bin/local-storage-operator"]
 LABEL com.redhat.delivery.appregistry=true

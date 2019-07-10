@@ -316,12 +316,14 @@
   revision = "dd6554843a719fcb151deb612e2116371adedcb6"
 
 [[projects]]
-  digest = "1:ce6ed8da0816d327c1d586722a13c05a3fd26cf9b8649cdcda300c16f026feca"
+  digest = "1:849835cff411090d517da03b18b08d7eb832ec62fdaf44d6e999e3dd5d9e83bb"
   name = "github.com/operator-framework/operator-sdk"
   packages = [
     "pkg/k8sclient",
     "pkg/sdk",
     "pkg/sdk/internal/metrics",
+    "pkg/test",
+    "pkg/test/e2eutil",
     "pkg/util/k8sutil",
     "version",
   ]
@@ -580,6 +582,17 @@
   revision = "2d6f90ab1293a1fb871cf149423ebb72aa7423aa"
 
 [[projects]]
+  digest = "1:8407b3e64b4d61ea830fcf3f0417bbd1726f744b7fc13cb8c5d70dcda88749b8"
+  name = "k8s.io/apiextensions-apiserver"
+  packages = [
+    "pkg/apis/apiextensions",
+    "pkg/apis/apiextensions/v1beta1",
+    "pkg/client/clientset/clientset/scheme",
+  ]
+  pruneopts = "NUT"
+  revision = "408db4a50408e2149acbd657bceb2480c13cb0a4"
+
+[[projects]]
   digest = "1:94e763f619a3388ae501daaf81fd6920d213e6f8bb32764e5bd63031c20e81fa"
   name = "k8s.io/apimachinery"
   packages = [
@@ -631,7 +644,7 @@
   revision = "103fd098999dc9c0c88536f5c9ad2e5da39373ae"
 
 [[projects]]
-  digest = "1:1dda6fbc77a291d3d18f4cf2996091c18a9133253a3c233c5cef3d8653a689ff"
+  digest = "1:21b6fe288045965708dfd8bd144c2f73b9a9e55a6e7826162939ebc8028d9e17"
   name = "k8s.io/client-go"
   packages = [
     "discovery",
@@ -699,7 +712,7 @@
     "util/retry",
     "util/workqueue",
   ]
-  pruneopts = "NUT"
+  pruneopts = "UT"
   revision = "1f13a808da65775f22cbf47862c4e5898d8f4ca1"
 
 [[projects]]
@@ -787,6 +800,17 @@
   pruneopts = "NUT"
   revision = "e3762e86a74c878ffed47484592986685639c2cd"
 
+[[projects]]
+  digest = "1:8131554e28cf80cddfaceaf2339153db5985a12a3da2187c80cc59149f21ee0c"
+  name = "sigs.k8s.io/controller-runtime"
+  packages = [
+    "pkg/client",
+    "pkg/client/apiutil",
+  ]
+  pruneopts = "NUT"
+  revision = "5fd1e9e9fac5261e9ad9d47c375afc014fc31d21"
+  version = "v0.1.7"
+
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
@@ -797,6 +821,8 @@
     "github.com/openshift/library-go/pkg/operator/resource/resourcemerge",
     "github.com/operator-framework/operator-sdk/pkg/k8sclient",
     "github.com/operator-framework/operator-sdk/pkg/sdk",
+    "github.com/operator-framework/operator-sdk/pkg/test",
+    "github.com/operator-framework/operator-sdk/pkg/test/e2eutil",
     "github.com/operator-framework/operator-sdk/pkg/util/k8sutil",
     "github.com/operator-framework/operator-sdk/version",
     "k8s.io/api/apps/v1",
