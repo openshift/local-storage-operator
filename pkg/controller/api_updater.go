@@ -25,6 +25,8 @@ type apiUpdater interface {
 	applyConfigMap(configmap *corev1.ConfigMap) (*corev1.ConfigMap, bool, error)
 	applyClusterRole(clusterRole *rbacv1.ClusterRole) (*rbacv1.ClusterRole, bool, error)
 	applyClusterRoleBinding(roleBinding *rbacv1.ClusterRoleBinding) (*rbacv1.ClusterRoleBinding, bool, error)
+	applyRole(role *rbacv1.Role) (*rbacv1.Role, bool, error)
+	applyRoleBinding(roleBinding *rbacv1.RoleBinding) (*rbacv1.RoleBinding, bool, error)
 	applyStorageClass(required *storagev1.StorageClass) (*storagev1.StorageClass, bool, error)
 	applyDaemonSet(ds *appsv1.DaemonSet, expectedGeneration int64, forceRollout bool) (*appsv1.DaemonSet, bool, error)
 	listStorageClasses(listOptions metav1.ListOptions) (*storagev1.StorageClassList, error)
@@ -66,6 +68,14 @@ func (s *sdkAPIUpdater) applyServiceAccount(sa *corev1.ServiceAccount) (*corev1.
 
 func (s *sdkAPIUpdater) applyConfigMap(configmap *corev1.ConfigMap) (*corev1.ConfigMap, bool, error) {
 	return resourceapply.ApplyConfigMap(k8sclient.GetKubeClient().CoreV1(), configmap)
+}
+
+func (s *sdkAPIUpdater) applyRole(role *rbacv1.Role) (*rbacv1.Role, bool, error) {
+	return resourceapply.ApplyRole(k8sclient.GetKubeClient().RbacV1(), role)
+}
+
+func (s *sdkAPIUpdater) applyRoleBinding(roleBinding *rbacv1.RoleBinding) (*rbacv1.RoleBinding, bool, error) {
+	return resourceapply.ApplyRoleBinding(k8sclient.GetKubeClient().RbacV1(), roleBinding)
 }
 
 func (s *sdkAPIUpdater) applyClusterRole(clusterRole *rbacv1.ClusterRole) (*rbacv1.ClusterRole, bool, error) {

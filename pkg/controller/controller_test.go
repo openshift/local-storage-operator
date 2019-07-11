@@ -9,6 +9,7 @@ import (
 	operatorv1 "github.com/openshift/api/operator/v1"
 	localv1 "github.com/openshift/local-storage-operator/pkg/apis/local/v1"
 	appsv1 "k8s.io/api/apps/v1"
+	"k8s.io/api/core/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	storagev1 "k8s.io/api/storage/v1"
@@ -20,6 +21,8 @@ type fakeApiUpdater struct {
 	oldInstance         *localv1.LocalVolume
 	sas                 []*corev1.ServiceAccount
 	configMaps          []*corev1.ConfigMap
+	roles               []*rbacv1.Role
+	roleBindings        []*rbacv1.RoleBinding
 	clusterRoles        []*rbacv1.ClusterRole
 	clusterRoleBindings []*rbacv1.ClusterRoleBinding
 	storageClasses      []*storagev1.StorageClass
@@ -40,6 +43,16 @@ func (s *fakeApiUpdater) applyServiceAccount(sa *corev1.ServiceAccount) (*corev1
 func (s *fakeApiUpdater) applyConfigMap(configmap *corev1.ConfigMap) (*corev1.ConfigMap, bool, error) {
 	s.configMaps = append(s.configMaps, configmap)
 	return configmap, true, nil
+}
+
+func (s *fakeApiUpdater) applyRole(role *rbacv1.Role) (*rbacv1.Role, bool, error) {
+	s.roles = append(s.roles, role)
+	return role, true, nil
+}
+
+func (s *fakeApiUpdater) applyRoleBinding(roleBinding *rbacv1.RoleBinding) (*rbacv1.RoleBinding, bool, error) {
+	s.roleBindings = append(s.roleBindings, roleBinding)
+	return roleBinding, true, nil
 }
 
 func (s *fakeApiUpdater) applyClusterRole(clusterRole *rbacv1.ClusterRole) (*rbacv1.ClusterRole, bool, error) {
@@ -129,6 +142,32 @@ func TestSyncLocalVolumeProvider(t *testing.T) {
 
 	if c.LastTransitionTime.IsZero() {
 		t.Fatalf("expect last transition time to be set")
+	}
+
+	configMaps := apiClient.configMaps
+	var provisionerConfigMap *v1.ConfigMap
+
+	for _, c := range configMaps {
+		if c.Name == "local-disks-local-provisioner-configmap" {
+			provisionerConfigMap = c
+		}
+	}
+
+	provisionerConfigMapData := provisionerConfigMap.Data
+	labelsForPV, ok := provisionerConfigMapData["labelsForPV"]
+	if !ok {
+		t.Fatalf("expected labels for pv got nothing")
+	}
+
+	var labelsForPVMap map[string]string
+	err = yaml.Unmarshal([]byte(labelsForPV), &labelsForPVMap)
+	if err != nil {
+		t.Fatalf("error unmarshalling pv labels : %v", err)
+	}
+
+	crOwnerValue, ok := labelsForPVMap["local-volume-owner"]
+	if crOwnerValue != "local-disks" {
+		t.Fatalf("expected cr owner to be %s got %s", "local-disks", crOwnerValue)
 	}
 
 	provisionedDaemonSets := apiClient.daemonSets

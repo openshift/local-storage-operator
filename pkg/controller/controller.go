@@ -43,10 +43,14 @@ const (
 	// Name of the component
 	componentName = "local-storage-operator"
 
-	localDiskLocation              = "/mnt/local-storage"
-	provisionerServiceAccount      = "local-storage-admin"
-	provisionerPVRoleBindingName   = "local-storage-provisioner-pv-binding"
-	provisionerNodeRoleName        = "local-storage-provisioner-node-clusterrole"
+	localDiskLocation            = "/mnt/local-storage"
+	provisionerServiceAccount    = "local-storage-admin"
+	provisionerPVRoleBindingName = "local-storage-provisioner-pv-binding"
+	provisionerNodeRoleName      = "local-storage-provisioner-node-clusterrole"
+
+	localVolumeRoleName        = "local-storage-provisioner-cr-role"
+	localVolumeRoleBindingName = "local-storage-provisioner-cr-rolebinding"
+
 	defaultPVClusterRole           = "system:persistent-volume-provisioner"
 	provisionerNodeRoleBindingName = "local-storage-provisioner-node-binding"
 	ownerNamespaceLabel            = "local.storage.openshift.io/owner-namespace"
@@ -339,6 +343,52 @@ func (h *Handler) syncRBACPolicies(o *localv1.LocalVolume) error {
 	if err != nil {
 		return fmt.Errorf("error creating node role binding %s with %v", nodeRoleBinding.Name, err)
 	}
+
+	localVolumeRole := &rbacv1.Role{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      localVolumeRoleName,
+			Namespace: o.Namespace,
+			Labels:    operatorLabel,
+		},
+		Rules: []rbacv1.PolicyRule{
+			{
+				Verbs:     []string{"get"},
+				APIGroups: []string{"local.storage.openshift.io"},
+				Resources: []string{"*"},
+			},
+		},
+	}
+	addOwner(&localVolumeRole.ObjectMeta, o)
+	_, _, err = h.apiClient.applyRole(localVolumeRole)
+	if err != nil {
+		return fmt.Errorf("error applying localvolume role %s with %v", localVolumeRole.Name, err)
+	}
+
+	localVolumeRoleBinding := &rbacv1.RoleBinding{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      localVolumeRoleBindingName,
+			Namespace: o.Namespace,
+			Labels:    operatorLabel,
+		},
+		Subjects: []rbacv1.Subject{
+			{
+				Kind:      "ServiceAccount",
+				Name:      serviceAccount.Name,
+				Namespace: serviceAccount.Namespace,
+			},
+		},
+		RoleRef: rbacv1.RoleRef{
+			APIGroup: "rbac.authorization.k8s.io",
+			Kind:     "Role",
+			Name:     localVolumeRole.Name,
+		},
+	}
+
+	addOwner(&localVolumeRoleBinding.ObjectMeta, o)
+	_, _, err = h.apiClient.applyRoleBinding(localVolumeRoleBinding)
+	if err != nil {
+		return fmt.Errorf("error applying localvolume rolebinding %s with %v", localVolumeRoleBinding.Name, err)
+	}
 	return nil
 }
 
@@ -371,8 +421,15 @@ func (h *Handler) generateProvisionerConfigMap(cr *localv1.LocalVolume) (*corev1
 	if err != nil {
 		return nil, fmt.Errorf("error creating configmap while marshalling yaml %v", err)
 	}
+
+	pvLabelString, err := yaml.Marshal(pvLabels(cr.Name))
+	if err != nil {
+		return nil, fmt.Errorf("error generating pv labels : %v", err)
+	}
+
 	configmap.Data = map[string]string{
 		"storageClassMap": string(y),
+		"labelsForPV":     string(pvLabelString),
 	}
 	addOwnerLabels(&configmap.ObjectMeta, cr)
 	addOwner(&configmap.ObjectMeta, cr)
@@ -728,6 +785,13 @@ func diskMakerLabels(crName string) map[string]string {
 func provisionerLabels(crName string) map[string]string {
 	return map[string]string{
 		"app": fmt.Sprintf("local-volume-provisioner-%s", crName),
+	}
+}
+
+// name of the CR that owns this local volume
+func pvLabels(crName string) map[string]string {
+	return map[string]string{
+		"local-volume-owner": crName,
 	}
 }
 
