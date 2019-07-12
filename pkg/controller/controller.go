@@ -16,6 +16,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	storagev1 "k8s.io/api/storage/v1"
+	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -174,20 +175,19 @@ func (h *Handler) syncLocalVolumeProvider(instance *localv1.LocalVolume) error {
 		})
 	}
 	o.Status.Generations = children
-	o.Status.ObservedGeneration = &o.Generation
 	o.Status.State = operatorv1.Managed
-	condition := operatorv1.OperatorCondition{
-		Type:               operatorv1.OperatorStatusTypeAvailable,
-		Status:             operatorv1.ConditionTrue,
-		Message:            "Ready",
-		LastTransitionTime: metav1.Now(),
-	}
-	newConditions := []operatorv1.OperatorCondition{condition}
-	o.Status.Conditions = newConditions
-	err = h.apiClient.syncStatus(instance, o)
-	if err != nil {
-		klog.Errorf("error syncing status : %v", err)
-		return fmt.Errorf("error syncing status %v", err)
+	o = h.addSuccessCondition(o)
+
+	if !equality.Semantic.DeepEqual(instance.Status, o.Status) {
+		// A generation update can cause frivolous updates to LocalVolume object
+		// we are only going to update generation when something in LocalVolume object
+		// changes.
+		o.Status.ObservedGeneration = &o.Generation
+		err = h.apiClient.syncStatus(instance, o)
+		if err != nil {
+			klog.Errorf("error syncing status : %v", err)
+			return fmt.Errorf("error syncing status %v", err)
+		}
 	}
 	return nil
 }
@@ -207,6 +207,27 @@ func (h *Handler) addFailureCondition(oldLv *localv1.LocalVolume, lv *localv1.Lo
 		klog.Errorf("error syncing condition : %v", syncErr)
 	}
 	return err
+}
+
+func (h *Handler) addSuccessCondition(lv *localv1.LocalVolume) *localv1.LocalVolume {
+	condition := operatorv1.OperatorCondition{
+		Type:               operatorv1.OperatorStatusTypeAvailable,
+		Status:             operatorv1.ConditionTrue,
+		Message:            "Ready",
+		LastTransitionTime: metav1.Now(),
+	}
+	newConditions := []operatorv1.OperatorCondition{condition}
+	oldConditions := lv.Status.Conditions
+	for _, c := range oldConditions {
+		// if operator already has success condition - don't add again
+		if c.Type == operatorv1.OperatorStatusTypeAvailable &&
+			c.Status == operatorv1.ConditionTrue &&
+			c.Message == "Ready" {
+			return lv
+		}
+	}
+	lv.Status.Conditions = newConditions
+	return lv
 }
 
 func (h *Handler) localProvisionerImage() string {
@@ -476,14 +497,22 @@ func (h *Handler) removeUnExpectedStorageClasses(cr *localv1.LocalVolume, expect
 
 func (h *Handler) generateDiskMakerConfig(cr *localv1.LocalVolume) (*corev1.ConfigMap, error) {
 	h.diskMakerConfigName = cr.Name + "-diskmaker-configmap"
-	configMapData := make(diskmaker.DiskConfig)
+	configMapData := &diskmaker.DiskConfig{
+		Disks:           map[string]*diskmaker.Disks{},
+		OwnerName:       cr.Name,
+		OwnerNamespace:  cr.Namespace,
+		OwnerKind:       localv1.LocalVolumeKind,
+		OwnerUID:        string(cr.UID),
+		OwnerAPIVersion: localv1.SchemeGroupVersion.String(),
+	}
+
 	storageClassDevices := cr.Spec.StorageClassDevices
 	for _, storageClassDevice := range storageClassDevices {
 		disks := new(diskmaker.Disks)
 		if len(storageClassDevice.DevicePaths) > 0 {
 			disks.DevicePaths = storageClassDevice.DevicePaths
 		}
-		configMapData[storageClassDevice.StorageClassName] = disks
+		configMapData.Disks[storageClassDevice.StorageClassName] = disks
 	}
 
 	configMap := &corev1.ConfigMap{

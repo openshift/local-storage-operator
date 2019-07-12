@@ -8,6 +8,7 @@ import (
 	"github.com/ghodss/yaml"
 	operatorv1 "github.com/openshift/api/operator/v1"
 	localv1 "github.com/openshift/local-storage-operator/pkg/apis/local/v1"
+	"github.com/openshift/local-storage-operator/pkg/diskmaker"
 	appsv1 "k8s.io/api/apps/v1"
 	"k8s.io/api/core/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -146,12 +147,19 @@ func TestSyncLocalVolumeProvider(t *testing.T) {
 
 	configMaps := apiClient.configMaps
 	var provisionerConfigMap *v1.ConfigMap
+	var diskMakeConfigMap *v1.ConfigMap
 
 	for _, c := range configMaps {
 		if c.Name == "local-disks-local-provisioner-configmap" {
 			provisionerConfigMap = c
 		}
+
+		if c.Name == "local-disks-diskmaker-configmap" {
+			diskMakeConfigMap = c
+		}
 	}
+
+	err = verifyDiskMakerConfigmap(diskMakeConfigMap, localStorageProvider)
 
 	provisionerConfigMapData := provisionerConfigMap.Data
 	labelsForPV, ok := provisionerConfigMapData["labelsForPV"]
@@ -193,6 +201,29 @@ func TestSyncLocalVolumeProvider(t *testing.T) {
 	if provisionerContainerImage != provisionerImage {
 		t.Fatalf("expected provisioner image %v got %v", provisionerImage, provisionerContainerImage)
 	}
+}
+
+func verifyDiskMakerConfigmap(configMap *v1.ConfigMap, lv *localv1.LocalVolume) error {
+	makerData, ok := configMap.Data["diskMakerConfig"]
+	if !ok {
+		return fmt.Errorf("error getting diskmaker data")
+	}
+
+	diskMakerConfig := &diskmaker.DiskConfig{}
+	err := yaml.Unmarshal([]byte(makerData), diskMakerConfig)
+	if err != nil {
+		return fmt.Errorf("error unmarshalling the configmap %v", err)
+	}
+
+	disks := diskMakerConfig.Disks
+	if len(disks) != len(lv.Spec.StorageClassDevices) {
+		return fmt.Errorf("expected %d devices got %d", len(lv.Spec.StorageClassDevices), len(disks))
+	}
+
+	if diskMakerConfig.OwnerName != lv.Name {
+		return fmt.Errorf("expected owner to be %s got %s", lv.Name, diskMakerConfig.OwnerName)
+	}
+	return nil
 }
 
 func getLocalVolume() *localv1.LocalVolume {
