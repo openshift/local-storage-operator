@@ -8,6 +8,7 @@ import (
 	"github.com/ghodss/yaml"
 	operatorv1 "github.com/openshift/api/operator/v1"
 	localv1 "github.com/openshift/local-storage-operator/pkg/apis/local/v1"
+	commontypes "github.com/openshift/local-storage-operator/pkg/common"
 	"github.com/openshift/local-storage-operator/pkg/diskmaker"
 	appsv1 "k8s.io/api/apps/v1"
 	"k8s.io/api/core/v1"
@@ -79,8 +80,17 @@ func (s *fakeApiUpdater) listStorageClasses(listOptions metav1.ListOptions) (*st
 	return &storagev1.StorageClassList{Items: []storagev1.StorageClass{}}, nil
 }
 
+func (s *fakeApiUpdater) listPersistentVolumes(listOptions metav1.ListOptions) (*corev1.PersistentVolumeList, error) {
+	return &corev1.PersistentVolumeList{Items: []corev1.PersistentVolume{}}, nil
+}
+
 func (s *fakeApiUpdater) recordEvent(lv *localv1.LocalVolume, eventType, reason, messageFmt string, args ...interface{}) {
 	fmt.Printf("Recording event : %v", eventType)
+}
+
+func (s *fakeApiUpdater) updateLocalVolume(lv *localv1.LocalVolume) error {
+	s.latestInstance = lv
+	return nil
 }
 
 func TestCreateDiskMakerConfig(t *testing.T) {
@@ -173,7 +183,7 @@ func TestSyncLocalVolumeProvider(t *testing.T) {
 		t.Fatalf("error unmarshalling pv labels : %v", err)
 	}
 
-	crOwnerValue, ok := labelsForPVMap["local-volume-owner"]
+	crOwnerValue, ok := labelsForPVMap[commontypes.LocalVolumeOwnerNameForPV]
 	if crOwnerValue != "local-disks" {
 		t.Fatalf("expected cr owner to be %s got %s", "local-disks", crOwnerValue)
 	}

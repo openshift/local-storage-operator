@@ -9,6 +9,7 @@ import (
 	"time"
 
 	localv1 "github.com/openshift/local-storage-operator/pkg/apis/local/v1"
+	commontypes "github.com/openshift/local-storage-operator/pkg/common"
 	framework "github.com/operator-framework/operator-sdk/pkg/test"
 	"github.com/operator-framework/operator-sdk/pkg/test/e2eutil"
 	"k8s.io/api/core/v1"
@@ -115,25 +116,25 @@ func TestLocalStorageOperator(t *testing.T) {
 	}
 
 	if waitForPVCreation {
-		err = waitForCreatedPV(f.KubeClient)
+		err = waitForCreatedPV(f.KubeClient, localVolume)
 		if err != nil {
 			t.Fatalf("error waiting for creation of pv : %v", err)
 		}
-		err = deleteCreatedPV(f.KubeClient)
+		err = deleteCreatedPV(f.KubeClient, localVolume)
 		if err != nil {
 			t.Errorf("error deleting created PV : %v", err)
 		}
 	}
 }
 
-func deleteCreatedPV(kubeClient kubernetes.Interface) error {
-	err := kubeClient.Core().PersistentVolumes().DeleteCollection(nil, metav1.ListOptions{LabelSelector: "local-volume-owner"})
+func deleteCreatedPV(kubeClient kubernetes.Interface, lv *localv1.LocalVolume) error {
+	err := kubeClient.Core().PersistentVolumes().DeleteCollection(nil, metav1.ListOptions{LabelSelector: commontypes.GetPVOwnerSelector(lv).String()})
 	return err
 }
 
-func waitForCreatedPV(kubeClient kubernetes.Interface) error {
+func waitForCreatedPV(kubeClient kubernetes.Interface, lv *localv1.LocalVolume) error {
 	waitErr := wait.PollImmediate(retryInterval, timeout, func() (bool, error) {
-		pvs, err := kubeClient.Core().PersistentVolumes().List(metav1.ListOptions{LabelSelector: "local-volume-owner"})
+		pvs, err := kubeClient.Core().PersistentVolumes().List(metav1.ListOptions{LabelSelector: commontypes.GetPVOwnerSelector(lv).String()})
 		if err != nil {
 			if isRetryableAPIError(err) {
 				return false, nil
@@ -146,7 +147,6 @@ func waitForCreatedPV(kubeClient kubernetes.Interface) error {
 		return false, nil
 	})
 	return waitErr
-
 }
 
 func selectNode(t *testing.T, kubeClient kubernetes.Interface) v1.Node {

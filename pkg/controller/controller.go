@@ -9,10 +9,12 @@ import (
 	"github.com/ghodss/yaml"
 	operatorv1 "github.com/openshift/api/operator/v1"
 	localv1 "github.com/openshift/local-storage-operator/pkg/apis/local/v1"
+	commontypes "github.com/openshift/local-storage-operator/pkg/common"
 	"github.com/openshift/local-storage-operator/pkg/diskmaker"
 	"github.com/operator-framework/operator-sdk/pkg/k8sclient"
 	"github.com/operator-framework/operator-sdk/pkg/sdk"
 	appsv1 "k8s.io/api/apps/v1"
+	"k8s.io/api/core/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	storagev1 "k8s.io/api/storage/v1"
@@ -62,6 +64,8 @@ const (
 
 	diskMakerImageEnv   = "DISKMAKER_IMAGE"
 	provisionerImageEnv = "PROVISIONER_IMAGE"
+
+	localVolumeFinalizer = "storage.openshift.com/local-volume-protection"
 )
 
 // NewHandler returns a controller handler
@@ -79,14 +83,9 @@ func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
 	switch o := event.Object.(type) {
 	case *localv1.LocalVolume:
 		if event.Deleted {
-			h.cleanupLocalVolumeDeployment(o)
 			return nil
 		}
 		localStorageProvider = o
-	case *appsv1.DaemonSet, *corev1.ConfigMap:
-		klog.V(4).Infof("Received configmap or daemonset set")
-	case *storagev1.StorageClass:
-		klog.V(4).Infof("received storageClass")
 	default:
 		klog.V(2).Infof("Unexpected kind of object : %+v", o)
 		return fmt.Errorf("expected object : %+v", o)
@@ -107,6 +106,10 @@ func (h *Handler) syncLocalVolumeProvider(instance *localv1.LocalVolume) error {
 	o := instance.DeepCopy()
 	// set default image version etc
 	o.SetDefaults()
+
+	if isDeletionCandidate(o, localVolumeFinalizer) {
+		return h.cleanupLocalVolumeDeployment(o)
+	}
 
 	if o.Spec.ManagementState != operatorv1.Managed && o.Spec.ManagementState != operatorv1.Force {
 		klog.Infof("operator is not managing local volumes : %v", o.Spec.ManagementState)
@@ -177,13 +180,14 @@ func (h *Handler) syncLocalVolumeProvider(instance *localv1.LocalVolume) error {
 	o.Status.Generations = children
 	o.Status.State = operatorv1.Managed
 	o = h.addSuccessCondition(o)
+	o, modified := addFinalizer(o)
 
-	if !equality.Semantic.DeepEqual(instance.Status, o.Status) {
+	if modified || !equality.Semantic.DeepEqual(instance.Status, o.Status) {
 		// A generation update can cause frivolous updates to LocalVolume object
 		// we are only going to update generation when something in LocalVolume object
 		// changes.
 		o.Status.ObservedGeneration = &o.Generation
-		err = h.apiClient.syncStatus(instance, o)
+		err = h.apiClient.updateLocalVolume(o)
 		if err != nil {
 			klog.Errorf("error syncing status : %v", err)
 			return fmt.Errorf("error syncing status %v", err)
@@ -244,9 +248,28 @@ func (h *Handler) diskMakerImage() string {
 	return defaultDiskMakerImageVersion
 }
 
-func (h *Handler) cleanupLocalVolumeDeployment(o *localv1.LocalVolume) error {
-	// TODO: Handle deletion later
-	return nil
+func (h *Handler) cleanupLocalVolumeDeployment(lv *localv1.LocalVolume) error {
+	klog.Infof("Deleting localvolume : %s", commontypes.LocalVolumeKey(lv))
+	childPersistentVolumes, err := h.apiClient.listPersistentVolumes(metav1.ListOptions{LabelSelector: commontypes.GetPVOwnerSelector(lv).String()})
+	if err != nil {
+		msg := fmt.Sprintf("error listing persistent volumes for localvolume %s: %v", commontypes.LocalVolumeKey(lv), err)
+		h.apiClient.recordEvent(lv, corev1.EventTypeWarning, listingPersistentVolumesFailed, msg)
+		return fmt.Errorf(msg)
+	}
+	boundPVs := []v1.PersistentVolume{}
+	for _, pv := range childPersistentVolumes.Items {
+		if pv.Status.Phase == corev1.VolumeBound {
+			boundPVs = append(boundPVs, pv)
+		}
+	}
+	if len(boundPVs) > 0 {
+		msg := fmt.Sprintf("localvolume %s has bound persistentvolumes in use", commontypes.LocalVolumeKey(lv))
+		h.apiClient.recordEvent(lv, corev1.EventTypeWarning, localVolumeDeletionFailed, msg)
+		return fmt.Errorf(msg)
+	}
+
+	lv = removeFinalizer(lv)
+	return h.apiClient.updateLocalVolume(lv)
 }
 
 // syncProvisionerConfigMap syncs the configmap and returns true if configmap was modified
@@ -443,7 +466,7 @@ func (h *Handler) generateProvisionerConfigMap(cr *localv1.LocalVolume) (*corev1
 		return nil, fmt.Errorf("error creating configmap while marshalling yaml %v", err)
 	}
 
-	pvLabelString, err := yaml.Marshal(pvLabels(cr.Name))
+	pvLabelString, err := yaml.Marshal(pvLabels(cr))
 	if err != nil {
 		return nil, fmt.Errorf("error generating pv labels : %v", err)
 	}
@@ -774,6 +797,25 @@ func (h *Handler) generateDiskMakerDaemonSet(cr *localv1.LocalVolume) *appsv1.Da
 	return ds
 }
 
+func addFinalizer(lv *localv1.LocalVolume) (*localv1.LocalVolume, bool) {
+	currentFinalizers := lv.GetFinalizers()
+	if contains(currentFinalizers, localVolumeFinalizer) {
+		return lv, false
+	}
+	lv.SetFinalizers(append(currentFinalizers, localVolumeFinalizer))
+	return lv, true
+}
+
+func removeFinalizer(lv *localv1.LocalVolume) *localv1.LocalVolume {
+	currentFinalizers := lv.GetFinalizers()
+	if !contains(currentFinalizers, localVolumeFinalizer) {
+		return lv
+	}
+	newFinalizers := remove(currentFinalizers, localVolumeFinalizer)
+	lv.SetFinalizers(newFinalizers)
+	return lv
+}
+
 func addOwner(meta *metav1.ObjectMeta, cr *localv1.LocalVolume) {
 	trueVal := true
 	meta.OwnerReferences = []metav1.OwnerReference{
@@ -818,9 +860,10 @@ func provisionerLabels(crName string) map[string]string {
 }
 
 // name of the CR that owns this local volume
-func pvLabels(crName string) map[string]string {
+func pvLabels(lv *localv1.LocalVolume) map[string]string {
 	return map[string]string{
-		"local-volume-owner": crName,
+		commontypes.LocalVolumeOwnerNameForPV:      lv.Name,
+		commontypes.LocalVolumeOwnerNamespaceForPV: lv.Namespace,
 	}
 }
 
@@ -869,4 +912,27 @@ func getExpectedGeneration(cr *localv1.LocalVolume, obj runtime.Object) int64 {
 		lastGeneration = child.LastGeneration
 	}
 	return lastGeneration
+}
+
+func contains(list []string, s string) bool {
+	for _, v := range list {
+		if v == s {
+			return true
+		}
+	}
+	return false
+}
+
+func remove(list []string, s string) []string {
+	for i, v := range list {
+		if v == s {
+			list = append(list[:i], list[i+1:]...)
+		}
+	}
+	return list
+}
+
+// isDeletionCandidate checks if object is candidate to be deleted
+func isDeletionCandidate(obj metav1.Object, finalizer string) bool {
+	return obj.GetDeletionTimestamp() != nil && contains(obj.GetFinalizers(), finalizer)
 }

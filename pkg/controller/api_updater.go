@@ -1,6 +1,8 @@
 package controller
 
 import (
+	"fmt"
+
 	"github.com/openshift/library-go/pkg/operator/resource/resourceapply"
 	localv1 "github.com/openshift/local-storage-operator/pkg/apis/local/v1"
 	"github.com/operator-framework/operator-sdk/pkg/k8sclient"
@@ -21,6 +23,7 @@ import (
 
 type apiUpdater interface {
 	syncStatus(oldInstance, newInstance *localv1.LocalVolume) error
+	updateLocalVolume(lv *localv1.LocalVolume) error
 	applyServiceAccount(serviceAccount *corev1.ServiceAccount) (*corev1.ServiceAccount, bool, error)
 	applyConfigMap(configmap *corev1.ConfigMap) (*corev1.ConfigMap, bool, error)
 	applyClusterRole(clusterRole *rbacv1.ClusterRole) (*rbacv1.ClusterRole, bool, error)
@@ -30,6 +33,7 @@ type apiUpdater interface {
 	applyStorageClass(required *storagev1.StorageClass) (*storagev1.StorageClass, bool, error)
 	applyDaemonSet(ds *appsv1.DaemonSet, expectedGeneration int64, forceRollout bool) (*appsv1.DaemonSet, bool, error)
 	listStorageClasses(listOptions metav1.ListOptions) (*storagev1.StorageClassList, error)
+	listPersistentVolumes(listOptions metav1.ListOptions) (*corev1.PersistentVolumeList, error)
 	recordEvent(lv *localv1.LocalVolume, eventType, reason, messageFmt string, args ...interface{})
 }
 
@@ -48,14 +52,25 @@ func newAPIUpdater() apiUpdater {
 
 var _ apiUpdater = &sdkAPIUpdater{}
 
+func (s *sdkAPIUpdater) updateLocalVolume(lv *localv1.LocalVolume) error {
+	klog.Infof("Updating localvolume %s", lv.Name)
+	err := sdk.Update(lv)
+	if err != nil && errors.IsConflict(err) {
+		msg := fmt.Sprintf("updating localvolume %s failed with %v", lv.Name, err)
+		s.recordEvent(lv, corev1.EventTypeWarning, localVolumeUpdateFailed, msg)
+	}
+	return err
+}
+
 func (s *sdkAPIUpdater) syncStatus(oldInstance, newInstance *localv1.LocalVolume) error {
-	klog.Info("Syncing LocalVolume.Status")
+	klog.V(4).Infof("Syncing LocalVolume.Status of %s/%s", newInstance.Namespace, newInstance.Name)
 
 	if !equality.Semantic.DeepEqual(oldInstance.Status, newInstance.Status) {
-		klog.Info("Updating LocalVolume.Status")
+		klog.V(4).Infof("Updating LocalVolume.Status of %s/%s", newInstance.Namespace, newInstance.Name)
 		err := sdk.Update(newInstance)
 		if err != nil && errors.IsConflict(err) {
-			s.recordEvent(newInstance, corev1.EventTypeWarning, localVolumeUpdateFailed, "updating localvolume failed with %v", err)
+			msg := fmt.Sprintf("updating localvolume %s failed with %v", newInstance.Name, err)
+			s.recordEvent(newInstance, corev1.EventTypeWarning, localVolumeUpdateFailed, msg)
 		}
 		return err
 	}
@@ -98,6 +113,10 @@ func (s *sdkAPIUpdater) listStorageClasses(listOptions metav1.ListOptions) (*sto
 	return k8sclient.
 		GetKubeClient().StorageV1().
 		StorageClasses().List(listOptions)
+}
+
+func (s *sdkAPIUpdater) listPersistentVolumes(listOptions metav1.ListOptions) (*corev1.PersistentVolumeList, error) {
+	return k8sclient.GetKubeClient().CoreV1().PersistentVolumes().List(listOptions)
 }
 
 func (s *sdkAPIUpdater) recordEvent(lv *localv1.LocalVolume, eventType, reason, messageFmt string, args ...interface{}) {
