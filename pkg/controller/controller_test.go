@@ -140,6 +140,18 @@ func TestSyncLocalVolumeProvider(t *testing.T) {
 	}
 	newInstance := apiClient.latestInstance
 
+	if len(newInstance.GetFinalizers()) == 0 {
+		t.Fatalf("expected local volume to have finalizers")
+	}
+
+	// rerun the sync again so as rest of the code can run
+	err = handler.syncLocalVolumeProvider(newInstance)
+	if err != nil {
+		t.Fatalf("unexpected error while syncing localvolume: %v", err)
+	}
+
+	newInstance = apiClient.latestInstance
+
 	localVolumeConditions := newInstance.Status.Conditions
 	if len(localVolumeConditions) == 0 {
 		t.Fatalf("expected local volume to be available")

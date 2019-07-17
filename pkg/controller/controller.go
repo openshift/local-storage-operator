@@ -18,7 +18,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	storagev1 "k8s.io/api/storage/v1"
-	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -73,8 +72,12 @@ func NewHandler(namespace string) sdk.Handler {
 	handler := &Handler{
 		localStorageNameSpace: namespace,
 		localDiskLocation:     localDiskLocation,
-		apiClient:             newAPIUpdater(),
 	}
+	apiClient, err := newAPIUpdater(namespace)
+	if err != nil {
+		klog.Fatalf("error creating API client for api-server: %v", err)
+	}
+	handler.apiClient = apiClient
 	return handler
 }
 
@@ -87,8 +90,8 @@ func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
 		}
 		localStorageProvider = o
 	default:
-		klog.V(2).Infof("Unexpected kind of object : %+v", o)
-		return fmt.Errorf("expected object : %+v", o)
+		klog.V(2).Infof("Unexpected kind of object: %+v", o)
+		return fmt.Errorf("expected object: %+v", o)
 	}
 
 	if localStorageProvider != nil {
@@ -111,12 +114,18 @@ func (h *Handler) syncLocalVolumeProvider(instance *localv1.LocalVolume) error {
 		return h.cleanupLocalVolumeDeployment(o)
 	}
 
+	// Lets add a finalizer to the LocalVolume object first
+	o, modified := addFinalizer(o)
+	if modified {
+		return h.apiClient.updateLocalVolume(o)
+	}
+
 	if o.Spec.ManagementState != operatorv1.Managed && o.Spec.ManagementState != operatorv1.Force {
-		klog.Infof("operator is not managing local volumes : %v", o.Spec.ManagementState)
+		klog.Infof("operator is not managing local volumes: %v", o.Spec.ManagementState)
 		o.Status.State = o.Spec.ManagementState
 		err = h.apiClient.syncStatus(instance, o)
 		if err != nil {
-			return fmt.Errorf("error syncing status %v", err)
+			return fmt.Errorf("error syncing status: %v", err)
 		}
 		return nil
 	}
@@ -129,19 +138,19 @@ func (h *Handler) syncLocalVolumeProvider(instance *localv1.LocalVolume) error {
 
 	provisionerConfigMapModified, err := h.syncProvisionerConfigMap(o)
 	if err != nil {
-		klog.Errorf("error creating provisioner configmap %s with %v", o.Name, err)
+		klog.Errorf("error creating provisioner configmap %s: %v", o.Name, err)
 		return h.addFailureCondition(instance, o, err)
 	}
 
 	diskMakerConfigMapModified, err := h.syncDiskMakerConfigMap(o)
 	if err != nil {
-		klog.Errorf("error creating diskmaker configmap %s with %v", o.Name, err)
+		klog.Errorf("error creating diskmaker configmap %s: %v", o.Name, err)
 		return h.addFailureCondition(instance, o, err)
 	}
 
 	err = h.syncStorageClass(o)
 	if err != nil {
-		klog.Errorf("failed to create storageClass %v", err)
+		klog.Errorf("failed to create storageClass: %v", err)
 		return h.addFailureCondition(instance, o, err)
 	}
 
@@ -149,7 +158,7 @@ func (h *Handler) syncLocalVolumeProvider(instance *localv1.LocalVolume) error {
 
 	provisionerDS, err := h.syncProvisionerDaemonset(o, provisionerConfigMapModified)
 	if err != nil {
-		klog.Errorf("failed to create daemonset for provisioner %s with %v", o.Name, err)
+		klog.Errorf("failed to create daemonset for provisioner %s: %v", o.Name, err)
 		return h.addFailureCondition(instance, o, err)
 	}
 
@@ -165,7 +174,7 @@ func (h *Handler) syncLocalVolumeProvider(instance *localv1.LocalVolume) error {
 
 	diskMakerDaemonset, err := h.syncDiskMakerDaemonset(o, diskMakerConfigMapModified)
 	if err != nil {
-		klog.Errorf("failed to create daemonset for diskmaker %s with %v", o.Name, err)
+		klog.Errorf("failed to create daemonset for diskmaker %s: %v", o.Name, err)
 		return h.addFailureCondition(instance, o, err)
 	}
 	if diskMakerDaemonset != nil {
@@ -180,24 +189,17 @@ func (h *Handler) syncLocalVolumeProvider(instance *localv1.LocalVolume) error {
 	o.Status.Generations = children
 	o.Status.State = operatorv1.Managed
 	o = h.addSuccessCondition(o)
-	o, modified := addFinalizer(o)
-
-	if modified || !equality.Semantic.DeepEqual(instance.Status, o.Status) {
-		// A generation update can cause frivolous updates to LocalVolume object
-		// we are only going to update generation when something in LocalVolume object
-		// changes.
-		o.Status.ObservedGeneration = &o.Generation
-		err = h.apiClient.updateLocalVolume(o)
-		if err != nil {
-			klog.Errorf("error syncing status : %v", err)
-			return fmt.Errorf("error syncing status %v", err)
-		}
+	o.Status.ObservedGeneration = &o.Generation
+	err = h.apiClient.syncStatus(instance, o)
+	if err != nil {
+		klog.Errorf("error syncing status: %v", err)
+		return fmt.Errorf("error syncing status: %v", err)
 	}
 	return nil
 }
 
 func (h *Handler) addFailureCondition(oldLv *localv1.LocalVolume, lv *localv1.LocalVolume, err error) error {
-	message := fmt.Sprintf("error syncing local storage : %+v", err)
+	message := fmt.Sprintf("error syncing local storage: %+v", err)
 	condition := operatorv1.OperatorCondition{
 		Type:               operatorv1.OperatorStatusTypeAvailable,
 		Status:             operatorv1.ConditionFalse,
@@ -208,7 +210,7 @@ func (h *Handler) addFailureCondition(oldLv *localv1.LocalVolume, lv *localv1.Lo
 	lv.Status.Conditions = newConditions
 	syncErr := h.apiClient.syncStatus(oldLv, lv)
 	if syncErr != nil {
-		klog.Errorf("error syncing condition : %v", syncErr)
+		klog.Errorf("error syncing condition: %v", syncErr)
 	}
 	return err
 }
@@ -249,7 +251,7 @@ func (h *Handler) diskMakerImage() string {
 }
 
 func (h *Handler) cleanupLocalVolumeDeployment(lv *localv1.LocalVolume) error {
-	klog.Infof("Deleting localvolume : %s", commontypes.LocalVolumeKey(lv))
+	klog.Infof("Deleting localvolume: %s", commontypes.LocalVolumeKey(lv))
 	childPersistentVolumes, err := h.apiClient.listPersistentVolumes(metav1.ListOptions{LabelSelector: commontypes.GetPVOwnerSelector(lv).String()})
 	if err != nil {
 		msg := fmt.Sprintf("error listing persistent volumes for localvolume %s: %v", commontypes.LocalVolumeKey(lv), err)
@@ -276,12 +278,12 @@ func (h *Handler) cleanupLocalVolumeDeployment(lv *localv1.LocalVolume) error {
 func (h *Handler) syncProvisionerConfigMap(o *localv1.LocalVolume) (bool, error) {
 	provisionerConfigMap, err := h.generateProvisionerConfigMap(o)
 	if err != nil {
-		klog.Errorf("error generating provisioner configmap %s with %v", o.Name, err)
+		klog.Errorf("error generating provisioner configmap %s: %v", o.Name, err)
 		return false, err
 	}
 	_, modified, err := h.apiClient.applyConfigMap(provisionerConfigMap)
 	if err != nil {
-		return false, fmt.Errorf("error creating provisioner configmap %s with %v", o.Name, err)
+		return false, fmt.Errorf("error creating provisioner configmap %s: %v", o.Name, err)
 	}
 	return modified, nil
 }
@@ -289,11 +291,11 @@ func (h *Handler) syncProvisionerConfigMap(o *localv1.LocalVolume) (bool, error)
 func (h *Handler) syncDiskMakerConfigMap(o *localv1.LocalVolume) (bool, error) {
 	diskMakerConfigMap, err := h.generateDiskMakerConfig(o)
 	if err != nil {
-		return false, fmt.Errorf("error generating diskmaker configmap %s with %v", o.Name, err)
+		return false, fmt.Errorf("error generating diskmaker configmap %s: %v", o.Name, err)
 	}
 	_, modified, err := h.apiClient.applyConfigMap(diskMakerConfigMap)
 	if err != nil {
-		return false, fmt.Errorf("error creating diskmarker configmap %s with %v", o.Name, err)
+		return false, fmt.Errorf("error creating diskmarker configmap %s: %v", o.Name, err)
 	}
 	return modified, nil
 }
@@ -313,7 +315,7 @@ func (h *Handler) syncRBACPolicies(o *localv1.LocalVolume) error {
 
 	_, _, err := h.apiClient.applyServiceAccount(serviceAccount)
 	if err != nil {
-		return fmt.Errorf("error applying service account %s with %v", serviceAccount.Name, err)
+		return fmt.Errorf("error applying service account %s: %v", serviceAccount.Name, err)
 	}
 
 	provisionerClusterRole := &rbacv1.ClusterRole{
@@ -333,7 +335,7 @@ func (h *Handler) syncRBACPolicies(o *localv1.LocalVolume) error {
 	addOwner(&provisionerClusterRole.ObjectMeta, o)
 	_, _, err = h.apiClient.applyClusterRole(provisionerClusterRole)
 	if err != nil {
-		return fmt.Errorf("error applying cluster role %s with %v", provisionerClusterRole.Name, err)
+		return fmt.Errorf("error applying cluster role %s: %v", provisionerClusterRole.Name, err)
 	}
 
 	pvClusterRoleBinding := &rbacv1.ClusterRoleBinding{
@@ -359,7 +361,7 @@ func (h *Handler) syncRBACPolicies(o *localv1.LocalVolume) error {
 
 	_, _, err = h.apiClient.applyClusterRoleBinding(pvClusterRoleBinding)
 	if err != nil {
-		return fmt.Errorf("error applying pv cluster role binding %s with %v", pvClusterRoleBinding.Name, err)
+		return fmt.Errorf("error applying pv cluster role binding %s: %v", pvClusterRoleBinding.Name, err)
 	}
 
 	nodeRoleBinding := &rbacv1.ClusterRoleBinding{
@@ -385,7 +387,7 @@ func (h *Handler) syncRBACPolicies(o *localv1.LocalVolume) error {
 
 	_, _, err = h.apiClient.applyClusterRoleBinding(nodeRoleBinding)
 	if err != nil {
-		return fmt.Errorf("error creating node role binding %s with %v", nodeRoleBinding.Name, err)
+		return fmt.Errorf("error creating node role binding %s: %v", nodeRoleBinding.Name, err)
 	}
 
 	localVolumeRole := &rbacv1.Role{
@@ -405,7 +407,7 @@ func (h *Handler) syncRBACPolicies(o *localv1.LocalVolume) error {
 	addOwner(&localVolumeRole.ObjectMeta, o)
 	_, _, err = h.apiClient.applyRole(localVolumeRole)
 	if err != nil {
-		return fmt.Errorf("error applying localvolume role %s with %v", localVolumeRole.Name, err)
+		return fmt.Errorf("error applying localvolume role %s: %v", localVolumeRole.Name, err)
 	}
 
 	localVolumeRoleBinding := &rbacv1.RoleBinding{
@@ -431,7 +433,7 @@ func (h *Handler) syncRBACPolicies(o *localv1.LocalVolume) error {
 	addOwner(&localVolumeRoleBinding.ObjectMeta, o)
 	_, _, err = h.apiClient.applyRoleBinding(localVolumeRoleBinding)
 	if err != nil {
-		return fmt.Errorf("error applying localvolume rolebinding %s with %v", localVolumeRoleBinding.Name, err)
+		return fmt.Errorf("error applying localvolume rolebinding %s: %v", localVolumeRoleBinding.Name, err)
 	}
 	return nil
 }
@@ -463,12 +465,12 @@ func (h *Handler) generateProvisionerConfigMap(cr *localv1.LocalVolume) (*corev1
 	}
 	y, err := yaml.Marshal(configMapData)
 	if err != nil {
-		return nil, fmt.Errorf("error creating configmap while marshalling yaml %v", err)
+		return nil, fmt.Errorf("error creating configmap while marshalling yaml: %v", err)
 	}
 
 	pvLabelString, err := yaml.Marshal(pvLabels(cr))
 	if err != nil {
-		return nil, fmt.Errorf("error generating pv labels : %v", err)
+		return nil, fmt.Errorf("error generating pv labels: %v", err)
 	}
 
 	configmap.Data = map[string]string{
@@ -489,13 +491,13 @@ func (h *Handler) syncStorageClass(cr *localv1.LocalVolume) error {
 		storageClass := generateStorageClass(cr, storageClassName)
 		_, _, err := h.apiClient.applyStorageClass(storageClass)
 		if err != nil {
-			return fmt.Errorf("error creating storageClass %s with %v", storageClassName, err)
+			return fmt.Errorf("error creating storageClass %s: %v", storageClassName, err)
 		}
 	}
 	removeErrors := h.removeUnExpectedStorageClasses(cr, expectedStorageClasses)
 	// For now we will ignore errors while removing unexpected storageClasses
 	if removeErrors != nil {
-		klog.Errorf("error removing unexpected storageclasses : %v", removeErrors)
+		klog.Errorf("error removing unexpected storageclasses: %v", removeErrors)
 	}
 	return nil
 }
@@ -503,7 +505,7 @@ func (h *Handler) syncStorageClass(cr *localv1.LocalVolume) error {
 func (h *Handler) removeUnExpectedStorageClasses(cr *localv1.LocalVolume, expectedStorageClasses sets.String) error {
 	list, err := h.apiClient.listStorageClasses(metav1.ListOptions{LabelSelector: getOwnerLabelSelector(cr).String()})
 	if err != nil {
-		return fmt.Errorf("error listing storageclasses for CR %s with %v", cr.Name, err)
+		return fmt.Errorf("error listing storageclasses for CR %s: %v", cr.Name, err)
 	}
 	removeErrors := []error{}
 	for _, sc := range list.Items {
@@ -511,7 +513,7 @@ func (h *Handler) removeUnExpectedStorageClasses(cr *localv1.LocalVolume, expect
 			klog.Infof("removing storageClass %s", sc.Name)
 			scDeleteErr := k8sclient.GetKubeClient().StorageV1().StorageClasses().Delete(sc.Name, nil)
 			if scDeleteErr != nil && !errors.IsNotFound(scDeleteErr) {
-				removeErrors = append(removeErrors, fmt.Errorf("error deleting storageclass %s with %v", sc.Name, scDeleteErr))
+				removeErrors = append(removeErrors, fmt.Errorf("error deleting storageclass %s: %v", sc.Name, scDeleteErr))
 			}
 		}
 	}
@@ -567,7 +569,7 @@ func (h *Handler) syncDiskMakerDaemonset(cr *localv1.LocalVolume, forceRollout b
 	generation := getExpectedGeneration(cr, ds)
 	ds, _, err := h.apiClient.applyDaemonSet(ds, generation, forceRollout)
 	if err != nil {
-		return nil, fmt.Errorf("error applying diskmaker daemonset %s with %v", dsName, err)
+		return nil, fmt.Errorf("error applying diskmaker daemonset %s: %v", dsName, err)
 	}
 	return ds, nil
 }
@@ -578,7 +580,7 @@ func (h *Handler) syncProvisionerDaemonset(cr *localv1.LocalVolume, forceRollout
 	generation := getExpectedGeneration(cr, ds)
 	ds, _, err := h.apiClient.applyDaemonSet(ds, generation, forceRollout)
 	if err != nil {
-		return nil, fmt.Errorf("error applying provisioner daemonset %s with %v", dsName, err)
+		return nil, fmt.Errorf("error applying provisioner daemonset %s: %v", dsName, err)
 	}
 	return ds, nil
 }

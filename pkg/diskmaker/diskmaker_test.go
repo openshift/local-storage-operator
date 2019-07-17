@@ -98,7 +98,7 @@ func TestLoadConfig(t *testing.T) {
 func getFakeDiskMaker(configLocation, symlinkLocation string) *DiskMaker {
 	d := &DiskMaker{configLocation: configLocation, symlinkLocation: symlinkLocation}
 	d.apiClient = &fakeApiUpdater{}
-	d.er = newEventReporter(d.apiClient)
+	d.eventSync = newEventReporter(d.apiClient)
 	return d
 }
 

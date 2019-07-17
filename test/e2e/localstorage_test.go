@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	operatorv1 "github.com/openshift/api/operator/v1"
 	localv1 "github.com/openshift/local-storage-operator/pkg/apis/local/v1"
 	commontypes "github.com/openshift/local-storage-operator/pkg/common"
 	framework "github.com/operator-framework/operator-sdk/pkg/test"
@@ -20,6 +21,7 @@ import (
 	utilnet "k8s.io/apimachinery/pkg/util/net"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
+	dynclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 var (
@@ -115,16 +117,62 @@ func TestLocalStorageOperator(t *testing.T) {
 		t.Fatalf("error waiting for diskmaker daemonset : %v", err)
 	}
 
+	err = verifyLocalVolume(localVolume, f.Client)
+	if err != nil {
+		t.Fatalf("error verifying localvolume cr: %v", err)
+	}
+
+	err = checkLocalVolumeStatus(localVolume)
+	if err != nil {
+		t.Fatalf("error checking localvolume condition: %v", err)
+	}
+
 	if waitForPVCreation {
 		err = waitForCreatedPV(f.KubeClient, localVolume)
 		if err != nil {
-			t.Fatalf("error waiting for creation of pv : %v", err)
+			t.Fatalf("error waiting for creation of pv: %v", err)
 		}
 		err = deleteCreatedPV(f.KubeClient, localVolume)
 		if err != nil {
-			t.Errorf("error deleting created PV : %v", err)
+			t.Errorf("error deleting created PV: %v", err)
 		}
 	}
+}
+
+func verifyLocalVolume(lv *localv1.LocalVolume, client framework.FrameworkClient) error {
+	waitErr := wait.PollImmediate(retryInterval, timeout, func() (bool, error) {
+		objectKey := dynclient.ObjectKey{
+			Namespace: lv.Namespace,
+			Name:      lv.Name,
+		}
+		err := client.Get(goctx.TODO(), objectKey, lv)
+		if err != nil {
+			return false, err
+		}
+		finaliers := lv.GetFinalizers()
+		if len(finaliers) == 0 {
+			return false, nil
+		}
+		return true, nil
+	})
+	return waitErr
+}
+
+func checkLocalVolumeStatus(lv *localv1.LocalVolume) error {
+	localVolumeConditions := lv.Status.Conditions
+	if len(localVolumeConditions) == 0 {
+		return fmt.Errorf("expected local volume to have conditions")
+	}
+
+	c := localVolumeConditions[0]
+	if c.Type != operatorv1.OperatorStatusTypeAvailable || c.Status != operatorv1.ConditionTrue {
+		return fmt.Errorf("expected available operator condition got %v", localVolumeConditions)
+	}
+
+	if c.LastTransitionTime.IsZero() {
+		return fmt.Errorf("expect last transition time to be set")
+	}
+	return nil
 }
 
 func deleteCreatedPV(kubeClient kubernetes.Interface, lv *localv1.LocalVolume) error {
