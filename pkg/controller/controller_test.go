@@ -8,7 +8,10 @@ import (
 	"github.com/ghodss/yaml"
 	operatorv1 "github.com/openshift/api/operator/v1"
 	localv1 "github.com/openshift/local-storage-operator/pkg/apis/local/v1"
+	commontypes "github.com/openshift/local-storage-operator/pkg/common"
+	"github.com/openshift/local-storage-operator/pkg/diskmaker"
 	appsv1 "k8s.io/api/apps/v1"
+	"k8s.io/api/core/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	storagev1 "k8s.io/api/storage/v1"
@@ -20,6 +23,8 @@ type fakeApiUpdater struct {
 	oldInstance         *localv1.LocalVolume
 	sas                 []*corev1.ServiceAccount
 	configMaps          []*corev1.ConfigMap
+	roles               []*rbacv1.Role
+	roleBindings        []*rbacv1.RoleBinding
 	clusterRoles        []*rbacv1.ClusterRole
 	clusterRoleBindings []*rbacv1.ClusterRoleBinding
 	storageClasses      []*storagev1.StorageClass
@@ -40,6 +45,16 @@ func (s *fakeApiUpdater) applyServiceAccount(sa *corev1.ServiceAccount) (*corev1
 func (s *fakeApiUpdater) applyConfigMap(configmap *corev1.ConfigMap) (*corev1.ConfigMap, bool, error) {
 	s.configMaps = append(s.configMaps, configmap)
 	return configmap, true, nil
+}
+
+func (s *fakeApiUpdater) applyRole(role *rbacv1.Role) (*rbacv1.Role, bool, error) {
+	s.roles = append(s.roles, role)
+	return role, true, nil
+}
+
+func (s *fakeApiUpdater) applyRoleBinding(roleBinding *rbacv1.RoleBinding) (*rbacv1.RoleBinding, bool, error) {
+	s.roleBindings = append(s.roleBindings, roleBinding)
+	return roleBinding, true, nil
 }
 
 func (s *fakeApiUpdater) applyClusterRole(clusterRole *rbacv1.ClusterRole) (*rbacv1.ClusterRole, bool, error) {
@@ -65,8 +80,17 @@ func (s *fakeApiUpdater) listStorageClasses(listOptions metav1.ListOptions) (*st
 	return &storagev1.StorageClassList{Items: []storagev1.StorageClass{}}, nil
 }
 
+func (s *fakeApiUpdater) listPersistentVolumes(listOptions metav1.ListOptions) (*corev1.PersistentVolumeList, error) {
+	return &corev1.PersistentVolumeList{Items: []corev1.PersistentVolume{}}, nil
+}
+
 func (s *fakeApiUpdater) recordEvent(lv *localv1.LocalVolume, eventType, reason, messageFmt string, args ...interface{}) {
 	fmt.Printf("Recording event : %v", eventType)
+}
+
+func (s *fakeApiUpdater) updateLocalVolume(lv *localv1.LocalVolume) error {
+	s.latestInstance = lv
+	return nil
 }
 
 func TestCreateDiskMakerConfig(t *testing.T) {
@@ -116,6 +140,18 @@ func TestSyncLocalVolumeProvider(t *testing.T) {
 	}
 	newInstance := apiClient.latestInstance
 
+	if len(newInstance.GetFinalizers()) == 0 {
+		t.Fatalf("expected local volume to have finalizers")
+	}
+
+	// rerun the sync again so as rest of the code can run
+	err = handler.syncLocalVolumeProvider(newInstance)
+	if err != nil {
+		t.Fatalf("unexpected error while syncing localvolume: %v", err)
+	}
+
+	newInstance = apiClient.latestInstance
+
 	localVolumeConditions := newInstance.Status.Conditions
 	if len(localVolumeConditions) == 0 {
 		t.Fatalf("expected local volume to be available")
@@ -129,6 +165,39 @@ func TestSyncLocalVolumeProvider(t *testing.T) {
 
 	if c.LastTransitionTime.IsZero() {
 		t.Fatalf("expect last transition time to be set")
+	}
+
+	configMaps := apiClient.configMaps
+	var provisionerConfigMap *v1.ConfigMap
+	var diskMakeConfigMap *v1.ConfigMap
+
+	for _, c := range configMaps {
+		if c.Name == "local-disks-local-provisioner-configmap" {
+			provisionerConfigMap = c
+		}
+
+		if c.Name == "local-disks-diskmaker-configmap" {
+			diskMakeConfigMap = c
+		}
+	}
+
+	err = verifyDiskMakerConfigmap(diskMakeConfigMap, localStorageProvider)
+
+	provisionerConfigMapData := provisionerConfigMap.Data
+	labelsForPV, ok := provisionerConfigMapData["labelsForPV"]
+	if !ok {
+		t.Fatalf("expected labels for pv got nothing")
+	}
+
+	var labelsForPVMap map[string]string
+	err = yaml.Unmarshal([]byte(labelsForPV), &labelsForPVMap)
+	if err != nil {
+		t.Fatalf("error unmarshalling pv labels : %v", err)
+	}
+
+	crOwnerValue, ok := labelsForPVMap[commontypes.LocalVolumeOwnerNameForPV]
+	if crOwnerValue != "local-disks" {
+		t.Fatalf("expected cr owner to be %s got %s", "local-disks", crOwnerValue)
 	}
 
 	provisionedDaemonSets := apiClient.daemonSets
@@ -154,6 +223,29 @@ func TestSyncLocalVolumeProvider(t *testing.T) {
 	if provisionerContainerImage != provisionerImage {
 		t.Fatalf("expected provisioner image %v got %v", provisionerImage, provisionerContainerImage)
 	}
+}
+
+func verifyDiskMakerConfigmap(configMap *v1.ConfigMap, lv *localv1.LocalVolume) error {
+	makerData, ok := configMap.Data["diskMakerConfig"]
+	if !ok {
+		return fmt.Errorf("error getting diskmaker data")
+	}
+
+	diskMakerConfig := &diskmaker.DiskConfig{}
+	err := yaml.Unmarshal([]byte(makerData), diskMakerConfig)
+	if err != nil {
+		return fmt.Errorf("error unmarshalling the configmap %v", err)
+	}
+
+	disks := diskMakerConfig.Disks
+	if len(disks) != len(lv.Spec.StorageClassDevices) {
+		return fmt.Errorf("expected %d devices got %d", len(lv.Spec.StorageClassDevices), len(disks))
+	}
+
+	if diskMakerConfig.OwnerName != lv.Name {
+		return fmt.Errorf("expected owner to be %s got %s", lv.Name, diskMakerConfig.OwnerName)
+	}
+	return nil
 }
 
 func getLocalVolume() *localv1.LocalVolume {

@@ -36,7 +36,14 @@ func (d *Disks) DeviceIDs() sets.String {
 
 // DiskConfig stores a mapping between StorageClass Name and disks that the storageclass
 // will use on each matached node.
-type DiskConfig map[string]*Disks
+type DiskConfig struct {
+	Disks           map[string]*Disks `json:"disks,omitempty"`
+	OwnerName       string            `json:"ownerName,omitempty"`
+	OwnerNamespace  string            `json:"ownerNamespace,omitempty"`
+	OwnerKind       string            `json:"ownerKind,omitempty"`
+	OwnerUID        string            `json:"ownerUID,omitempty"`
+	OwnerAPIVersion string            `json:ownerAPIVersion,omitempty`
+}
 
 // ToYAML returns yaml representation of diskconfig
 func (d *DiskConfig) ToYAML() (string, error) {

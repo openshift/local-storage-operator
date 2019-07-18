@@ -37,8 +37,9 @@ cat ${repo_dir}/deploy/crd.yaml >> ${global_manifest}
 sed -i "s,quay.io/openshift/origin-local-storage-operator,${IMAGE_LOCAL_STORAGE_OPERATOR}," ${manifest}
 sed -i "s,quay.io/openshift/origin-local-storage-diskmaker,${IMAGE_LOCAL_DISKMAKER}," ${manifest}
 NAMESPACE=${NAMESPACE:-default}
+LOCAL_DISK=${LOCAL_DISK:-""}
 
-TEST_NAMESPACE=${NAMESPACE} go test ./test/e2e/... \
+TEST_NAMESPACE=${NAMESPACE} TEST_LOCAL_DISK=${LOCAL_DISK} go test ./test/e2e/... \
   -root=$(pwd) \
   -kubeconfig=${KUBECONFIG} \
   -globalMan ${global_manifest} \

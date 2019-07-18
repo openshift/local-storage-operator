@@ -25,7 +25,8 @@ func printVersion() {
 }
 
 func main() {
-	klog.InitFlags(nil)
+	klogFlags := flag.NewFlagSet("local-storage-diskmaker", flag.ExitOnError)
+	klog.InitFlags(klogFlags)
 	flag.Set("alsologtostderr", "true")
 	flag.Parse()
 
