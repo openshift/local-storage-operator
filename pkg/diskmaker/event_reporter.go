@@ -13,6 +13,7 @@ const (
 	ErrorReadingBlockList    = "ErrorReadingBlockList"
 	ErrorListingDeviceID     = "ErrorListingDeviceID"
 	ErrorFindingMatchingDisk = "ErrorFindingMatchingDisk"
+	ErrorCreatingSharedDir   = "ErrorCreatingSharedDir"
 	ErrorCreatingSymLink     = "ErrorCreatingSymLink"
 
 	FoundMatchingDisk = "FoundMatchingDisk"

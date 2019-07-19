@@ -63,9 +63,13 @@ spec:
                     items:
                       type: string
                     type: array
+                  directoryPaths:
+                    description: 'A list of of directories which can be used as local-storage'
+                    items:
+                      type: string
+                    type: array
                 required:
                   - storageClassName
-                  - devicePaths
                 type: object
               type: array
           required:

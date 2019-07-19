@@ -3,6 +3,7 @@ package diskmaker
 import (
 	"bytes"
 	"fmt"
+	"hash/fnv"
 	"io/ioutil"
 	"os"
 	"os/exec"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/ghodss/yaml"
 	localv1 "github.com/openshift/local-storage-operator/pkg/apis/local/v1"
+	"golang.org/x/sys/unix"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/klog"
@@ -25,6 +27,7 @@ import (
 var (
 	checkDuration = 5 * time.Second
 	diskByIDPath  = "/dev/disk/by-id/*"
+	rootfsDir     = "/rootfs"
 )
 
 type DiskMaker struct {
@@ -37,8 +40,9 @@ type DiskMaker struct {
 
 type DiskLocation struct {
 	// diskNamePath stores full device name path - "/dev/sda"
-	diskNamePath string
-	diskID       string
+	diskNamePath  string
+	diskID        string
+	directoryPath string
 }
 
 // DiskMaker returns a new instance of DiskMaker
@@ -135,7 +139,6 @@ func (d *DiskMaker) symLinkDisks(diskConfig *DiskConfig) {
 
 	if len(deviceSet) == 0 {
 		klog.V(3).Infof("unable to find any new disks")
-		return
 	}
 
 	// read all available disks from /dev/disk/by-id/*
@@ -176,6 +179,20 @@ func (d *DiskMaker) symLinkDisks(diskConfig *DiskConfig) {
 				klog.Errorf(msg)
 				continue
 			}
+
+			// if it is a shared directory
+			if deviceNameLocation.directoryPath != "" {
+				bindName := generateBindName(deviceNameLocation.directoryPath, storageClass)
+				bindPath := path.Join(symLinkDirPath, bindName)
+				if fileExists(bindPath) {
+					klog.V(4).Infof("bind path %s already exists", bindPath)
+					continue
+				}
+
+				// TODO: perform actual bind mount of directoryPath to bindPath
+
+			}
+
 			baseDeviceName := filepath.Base(deviceNameLocation.diskNamePath)
 			symLinkPath := path.Join(symLinkDirPath, baseDeviceName)
 			if fileExists(symLinkPath) {
@@ -210,12 +227,12 @@ func (d *DiskMaker) findMatchingDisks(diskConfig *DiskConfig, deviceSet sets.Str
 	// blockDeviceMap is a map of storageclass and device locations
 	blockDeviceMap := make(map[string][]DiskLocation)
 
-	addDiskToMap := func(scName, stableDeviceID, diskName string) {
+	addDiskToMap := func(scName, stableDeviceID, diskName, directoryPath string) {
 		deviceArray, ok := blockDeviceMap[scName]
 		if !ok {
 			deviceArray = []DiskLocation{}
 		}
-		deviceArray = append(deviceArray, DiskLocation{diskName, stableDeviceID})
+		deviceArray = append(deviceArray, DiskLocation{diskName, stableDeviceID, directoryPath})
 		blockDeviceMap[scName] = deviceArray
 	}
 	for storageClass, disks := range diskConfig.Disks {
@@ -228,10 +245,10 @@ func (d *DiskMaker) findMatchingDisks(diskConfig *DiskConfig, deviceSet sets.Str
 				// This means no /dev/disk/by-id entry was created for requested device.
 				if err != nil {
 					klog.V(4).Infof("unable to find disk ID %s for local pool %v", diskName, err)
-					addDiskToMap(storageClass, "", diskName)
+					addDiskToMap(storageClass, "", diskName, "")
 					continue
 				}
-				addDiskToMap(storageClass, matchedDeviceID, diskName)
+				addDiskToMap(storageClass, matchedDeviceID, diskName, "")
 				continue
 			}
 		}
@@ -250,14 +267,41 @@ func (d *DiskMaker) findMatchingDisks(diskConfig *DiskConfig, deviceSet sets.Str
 			baseDeviceName := filepath.Base(matchedDiskName)
 			// We need to make sure that requested device is not already mounted.
 			if hasExactDisk(deviceSet, baseDeviceName) {
-				addDiskToMap(storageClass, matchedDeviceID, matchedDiskName)
+				addDiskToMap(storageClass, matchedDeviceID, matchedDiskName, "")
 			}
+		}
+
+		for _, directory := range disks.DirectoryPaths {
+			sharedDirPath := path.Join(rootfsDir, directory)
+			if fileExists(sharedDirPath) {
+				isDir, err := isDir(sharedDirPath)
+				if err != nil {
+					msg := fmt.Sprintf("error checking shared dir %s: %v", sharedDirPath, err)
+					e := newEvent(ErrorCreatingSharedDir, msg, "")
+					d.eventSync.report(e, d.localVolume)
+					klog.Errorf(msg)
+				}
+				if isDir {
+					addDiskToMap(storageClass, "", "", sharedDirPath)
+				}
+				continue
+			}
+
+			err := os.MkdirAll(sharedDirPath, 0755)
+			if err != nil {
+				msg := fmt.Sprintf("error creating shared dir %s: %v", sharedDirPath, err)
+				e := newEvent(ErrorCreatingSharedDir, msg, "")
+				d.eventSync.report(e, d.localVolume)
+				klog.Errorf(msg)
+				continue
+			}
+			addDiskToMap(storageClass, "", "", sharedDirPath)
 		}
 	}
 	return blockDeviceMap, nil
 }
 
-// findDeviceByID finds device ID and return device name(such as sda, sdb) and complete deviceID path
+// findDeviceByID finds device ID and return (deviceID, deviceName, error)
 func (d *DiskMaker) findDeviceByID(deviceID string) (string, string, error) {
 	diskDevPath, err := filepath.EvalSymlinks(deviceID)
 	if err != nil {
@@ -313,4 +357,39 @@ func fileExists(filename string) bool {
 		return false
 	}
 	return true
+}
+
+// isBlock checks if the given path is a block device
+func isBlock(fullPath string) (bool, error) {
+	var st unix.Stat_t
+	err := unix.Stat(fullPath, &st)
+	if err != nil {
+		return false, err
+	}
+
+	return (st.Mode & unix.S_IFMT) == unix.S_IFBLK, nil
+}
+
+// isDir checks if the given path is a directory
+func isDir(fullPath string) (bool, error) {
+	dir, err := os.Open(fullPath)
+	if err != nil {
+		return false, err
+	}
+	defer dir.Close()
+
+	stat, err := dir.Stat()
+	if err != nil {
+		return false, err
+	}
+
+	return stat.IsDir(), nil
+}
+
+func generateBindName(file, class string) string {
+	h := fnv.New32a()
+	h.Write([]byte(file))
+	h.Write([]byte(class))
+	// This is the FNV-1a 32-bit hash
+	return fmt.Sprintf("local-shared-%x", h.Sum32())
 }

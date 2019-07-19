@@ -59,6 +59,8 @@ type StorageClassDevice struct {
 	// File system type
 	// +optional
 	FSType string `json:"fsType,omitempty"`
+	// A list of of directories which can be used as local-storage
+	DirectoryPaths []string `json:"directoryPaths,omitempty"`
 	// A list of device paths which would be chosen for local storage.
 	// For example - ["/dev/sda", "/dev/sdb", "/dev/disk/by-id/ata-crucial"]
 	DevicePaths []string `json:"devicePaths,omitempty"`

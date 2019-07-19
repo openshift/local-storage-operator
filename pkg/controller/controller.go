@@ -537,6 +537,9 @@ func (h *Handler) generateDiskMakerConfig(cr *localv1.LocalVolume) (*corev1.Conf
 		if len(storageClassDevice.DevicePaths) > 0 {
 			disks.DevicePaths = storageClassDevice.DevicePaths
 		}
+		if len(storageClassDevice.DirectoryPaths) > 0 {
+			disks.DirectoryPaths = storageClassDevice.DirectoryPaths
+		}
 		configMapData.Disks[storageClassDevice.StorageClassName] = disks
 	}
 
@@ -734,6 +737,11 @@ func (h *Handler) generateDiskMakerDaemonSet(cr *localv1.LocalVolume) *appsv1.Da
 					MountPath:        "/dev",
 					MountPropagation: &hostContainerPropagation,
 				},
+				{
+					Name:             "rootfs-dir",
+					MountPath:        "/rootfs",
+					MountPropagation: &hostContainerPropagation,
+				},
 			},
 		},
 	}
@@ -762,6 +770,15 @@ func (h *Handler) generateDiskMakerDaemonSet(cr *localv1.LocalVolume) *appsv1.Da
 			VolumeSource: corev1.VolumeSource{
 				HostPath: &corev1.HostPathVolumeSource{
 					Path: "/dev",
+					Type: &directoryHostPath,
+				},
+			},
+		},
+		{
+			Name: "rootfs-dir",
+			VolumeSource: corev1.VolumeSource{
+				HostPath: &corev1.HostPathVolumeSource{
+					Path: "/",
 					Type: &directoryHostPath,
 				},
 			},
