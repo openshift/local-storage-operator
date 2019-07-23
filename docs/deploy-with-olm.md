@@ -155,7 +155,7 @@ local-pv-3fa1c73    100Gi      RWO            Delete           Available        
 Request a PVC using the local-sc storage class we just created:
 
 ```bash
-<< EOF | oc create -f -
+oc create -f - << EOF
 kind: PersistentVolumeClaim
 apiVersion: v1
 metadata:
