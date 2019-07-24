@@ -17,6 +17,9 @@ metadata:
 spec:
   sourceType: grpc
   image: quay.io/gnufied/local-registry:v4.2.0
+  displayName: Local Storage Operator
+  publisher: redhat
+  description: An operator to manage local volumes
 
 ---
 
