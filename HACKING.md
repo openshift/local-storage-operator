@@ -5,7 +5,7 @@
 Developing on plain k8s is pretty simple. Just write your code and use Makefile to build your own images
 and then update `deploy/operator.yaml` to point to your images and follow rest of the instructions in `deploy/README.md`.
 
-## For developing on Openshift and OLM
+## For developing on OpenShift and OLM
 
 1. Same as plain k8s, make your code change and build local-diskmaker and local-storage-operator images. Push them to quay or docker.io.
 2. Next we will have to update CSV inside manifests directory to point to those images.
@@ -28,7 +28,7 @@ before creating local-registry.
 
 ### Cleaning up after a deploy
 
-When deploying on Openshift and OLM, just deleting catalog and subscription is not enough. You obviously have to run:
+When deploying on OpenShift and OLM, just deleting catalog and subscription is not enough. You obviously have to run:
 
 ```
 oc delete -f examples/olm/catalog-create-subscribe.yaml

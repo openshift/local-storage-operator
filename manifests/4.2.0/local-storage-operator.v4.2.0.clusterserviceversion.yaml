@@ -176,7 +176,7 @@ spec:
         group: local.storage.openshift.io
         kind: LocalVolume
         name: localvolumes.local.storage.openshift.io
-        description: Manage local storage volumes for Openshift
+        description: Manage local storage volumes for OpenShift
         version: v1
         specDescriptors:
           - description: Management state of operator
