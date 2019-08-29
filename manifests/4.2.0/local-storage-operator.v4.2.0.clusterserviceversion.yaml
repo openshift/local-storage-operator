@@ -3,12 +3,25 @@ kind: ClusterServiceVersion
 metadata:
   name: local-storage-operator.v4.2.0
   namespace: placeholder
+  annotations:
+    categories: Storage
+    capabilities: Full Lifecycle
+    containerImage: quay.io/openshift/origin-local-storage-operator:4.2.0
+    support: Red Hat
+    repository: https://github.com/openshift/local-storage-operator
   labels:
     operator-metering: "true"
 spec:
   displayName: Local Storage
   description: Local Storage Operator
-  keywords: [local storage]
+  keywords:
+    - storage
+    - local storage
+  links:
+    - name: Documentation
+      url: https://github.com/openshift/local-storage-operator/tree/master/docs
+    - name: Source Repository
+      url: https://github.com/openshift/local-storage-operator
   version: 4.2.0
   maturity: stable
   maintainers:
@@ -24,9 +37,9 @@ spec:
       alm-owner-metering: local-storage-operator
   installModes:
   - type: OwnNamespace
-    supported: false
+    supported: true
   - type: SingleNamespace
-    supported: false
+    supported: true
   - type: MultiNamespace
     supported: false
   - type: AllNamespaces
