@@ -3,12 +3,49 @@ kind: ClusterServiceVersion
 metadata:
   name: local-storage-operator.v4.2.0
   namespace: placeholder
+  annotations:
+    alm-examples: |-
+      [
+        {
+          "apiVersion": "local.storage.openshift.io/v1",
+          "kind": "LocalVolume",
+          "metadata": {
+            "name": "example"
+          },
+          "spec": {
+            "storageClassDevices": [
+              {
+                "devicePaths": [
+                    "/dev/vde",
+                    "/dev/vdf"
+                ],
+                "fsType": "ext4",
+                "storageClassName": "foobar",
+                "volumeMode": "Filesystem"
+              }
+            ]
+          }
+        }
+      ]
+    categories: Storage
+    capabilities: Full Lifecycle
+    containerImage: quay.io/openshift/origin-local-storage-operator:4.2.0
+    support: Red Hat
+    repository: https://github.com/openshift/local-storage-operator
+    description: Configure and use local storage volumes in kubernetes and Openshift
   labels:
     operator-metering: "true"
 spec:
   displayName: Local Storage
   description: Local Storage Operator
-  keywords: [local storage]
+  keywords:
+    - storage
+    - local storage
+  links:
+    - name: Documentation
+      url: https://github.com/openshift/local-storage-operator/tree/master/docs
+    - name: Source Repository
+      url: https://github.com/openshift/local-storage-operator
   version: 4.2.0
   maturity: stable
   maintainers:
@@ -24,9 +61,9 @@ spec:
       alm-owner-metering: local-storage-operator
   installModes:
   - type: OwnNamespace
-    supported: false
+    supported: true
   - type: SingleNamespace
-    supported: false
+    supported: true
   - type: MultiNamespace
     supported: false
   - type: AllNamespaces
