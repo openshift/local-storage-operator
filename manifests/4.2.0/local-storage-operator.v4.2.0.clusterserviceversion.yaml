@@ -151,6 +151,13 @@ spec:
           - apiGroups:
             - ""
             resources:
+            - persistentvolumeclaims
+            - events
+            verbs:
+              - "*"
+          - apiGroups:
+            - ""
+            resources:
             - nodes
             verbs:
             - get
