@@ -15,11 +15,11 @@ Github repo.  Grab the [latest release](https://github.com/operator-framework/op
 
 ### Create and Subscribe to the local-storage Catalog
 
-By default the local-storage-operator assumes the `local-storage` namespace for its resources.  If you're not modifying the example manifests, be sure to create
-the `local-storage` project or namespace: 
-`oc new-project local-storage` or `kubectl create ns local-storage`
+By default the local-storage-operator assumes the `local-storage` namespace for its resources and it is automatically created while installing
+the operator using this method.
 
 
+Run
 `oc apply -f https://raw.githubusercontent.com/openshift/local-storage-operator/master/examples/olm/catalog-create-subscribe.yaml`
 For Kubernetes substitute `oc` with `kubectl`
 
