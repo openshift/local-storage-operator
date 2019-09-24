@@ -15,7 +15,7 @@ metadata:
 apiVersion: operators.coreos.com/v1
 kind: OperatorSource
 metadata:
-  name: hekumar-operators
+  name: redhat-local-storage-src
   namespace: openshift-marketplace
 spec:
   type: appregistry
@@ -33,5 +33,5 @@ spec:
   channel: stable
   installPlanApproval: Automatic
   name: local-storage-operator
-  source: hekumar-operators
+  source: redhat-local-storage-src
   sourceNamespace: openshift-marketplace
