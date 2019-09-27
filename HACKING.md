@@ -19,7 +19,7 @@ docker build --no-cache -t quay.io/gnufied/local-registry:latest -f ./Dockerfile
 Push the result image somewhere.
 
 NOTE: When this document was written https://bugzilla.redhat.com/show_bug.cgi?id=1726409 bug prevented local-registry from being usable
-with OLM if manifests contain `image-references` file. So please make sure that `manifests/4.2.0/image-references` file is removed
+with OLM if manifests contain `image-references` file. So please make sure that `manifests/4.3.0/image-references` file is removed
 before creating local-registry.
 
 4. When creating a catalog from `examples/olm/catalog-create-subscribe.yaml` file, specify your own image of local registry.
