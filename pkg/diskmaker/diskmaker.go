@@ -233,6 +233,11 @@ func (d *DiskMaker) findMatchingDisks(diskConfig *DiskConfig, deviceSet sets.Str
 				}
 				addDiskToMap(storageClass, matchedDeviceID, diskName)
 				continue
+			} else {
+				msg := fmt.Sprintf("unable to find matching disk %v", diskName)
+				e := newEvent(ErrorFindingMatchingDisk, msg, diskName)
+				d.eventSync.report(e, d.localVolume)
+				klog.Errorf(msg)
 			}
 		}
 
