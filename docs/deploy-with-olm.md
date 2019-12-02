@@ -39,7 +39,7 @@ oc describe no -l node-role.kubernetes.io/worker | grep hostname
 
 Create a LocalVolume manifest named ``create-cr.yaml`` using the hostnames obtained above:
 
-### CR using volumeMode - Filesystem
+#### CR using volumeMode - Filesystem
 
 ```yaml
 apiVersion: "local.storage.openshift.io/v1"
@@ -65,7 +65,7 @@ spec:
         - /dev/xvdf
 ```
 
-### CR using volumeMode - Block
+#### CR using volumeMode - Block
 
 ```yaml
 apiVersion: "local.storage.openshift.io/v1"
@@ -108,6 +108,36 @@ the Block CR, you may run in to issues where the pod reports being unschedulable
 ``Warning  FailedScheduling  27s (x2 over 27s)  default-scheduler  0/6 nodes are available: 3 node(s) didn't find available persistent volumes to bind, 3 node(s) had taints that the pod didn't tolerate.``
 
 In this example, the disks were prevsiously used, and a filesystem was applied.  Be sure to either use fresh disks, or remove any partitions and file systems if you're setting up a Block mode CR.
+
+### Create a CR using Tolerations
+
+In addition to a node selector, you can also specify [tolerations](https://docs.openshift.com/container-platform/latest/nodes/scheduling/nodes-scheduler-taints-tolerations.html) 
+for pods created by the local-storage-operator. This allows the local-storage-operator to select
+tainted nodes for use.
+
+The following example demonstrates selecting nodes that have a taint, `localstorage`, 
+that contains a value of `local`:
+
+```yaml
+apiVersion: "local.storage.openshift.io/v1"
+kind: "LocalVolume"
+metadata:
+  name: "local-disks"
+  namespace: "local-storage"
+spec:
+  tolerations:
+    - key: localstorage
+      operator: Equal
+      value: "local"
+  storageClassDevices:
+    - storageClassName: "local-sc"
+      volumeMode: Filesystem
+      fsType: xfs
+      devicePaths:
+        - /dev/xvdf
+```
+
+The defined tolerations will be passed to the resulting DaemonSets, allowing the diskmaker and provisioner pods to be created for nodes that contain the specified taints.
 
 ### Verify your deployment
 
