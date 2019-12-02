@@ -225,6 +225,46 @@ func TestSyncLocalVolumeProvider(t *testing.T) {
 	}
 }
 
+func TestTolerationProvisionerDS(t *testing.T) {
+	localStorageProvider := getLocalVolumeWithTolerations()
+	handler, _ := getHandler()
+	provisionerDS := handler.generateLocalProvisionerDaemonset(localStorageProvider)
+	if provisionerDS == nil {
+		t.Fatalf("error creating local provisioner DaemonSet")
+	}
+	data := provisionerDS.Spec.Template.Spec.Tolerations
+	if data == nil || len(data) == 0{
+		t.Errorf("error getting toleration data from provisioner DaemonSet")
+	}
+	toleration := data[0]
+	if toleration.Key != "localstorage" {
+		t.Errorf("key mismatch %v", toleration.Key)
+	}
+	if toleration.Value != "true" {
+		t.Errorf("value mismatch %v", toleration.Value)
+	}
+}
+
+func TestTolerationDiskmakerDS(t *testing.T) {
+	localStorageProvider := getLocalVolumeWithTolerations()
+	handler, _ := getHandler()
+	diskmakerDS := handler.generateDiskMakerDaemonSet(localStorageProvider)
+	if diskmakerDS == nil {
+		t.Fatalf("error creating diskmaker DaemonSet")
+	}
+	data := diskmakerDS.Spec.Template.Spec.Tolerations
+	if data == nil || len(data) == 0{
+		t.Errorf("error getting toleration data from diskmaker DaemonSet")
+	}
+	toleration := data[0]
+	if toleration.Key != "localstorage" {
+		t.Errorf("key mismatch %v", toleration.Key)
+	}
+	if toleration.Value != "true" {
+		t.Errorf("value mismatch %v", toleration.Value)
+	}
+}
+
 func verifyDiskMakerConfigmap(configMap *v1.ConfigMap, lv *localv1.LocalVolume) error {
 	makerData, ok := configMap.Data["diskMakerConfig"]
 	if !ok {
@@ -264,6 +304,18 @@ func getLocalVolume() *localv1.LocalVolume {
 			},
 		},
 	}
+}
+
+func getLocalVolumeWithTolerations() *localv1.LocalVolume {
+	lv := getLocalVolume()
+	lv.Spec.Tolerations = []corev1.Toleration {
+		{
+			Key: "localstorage",
+			Operator: "Equal",
+			Value: "true",
+		},
+	}
+	return lv
 }
 
 func getHandler() (*Handler, *fakeApiUpdater) {

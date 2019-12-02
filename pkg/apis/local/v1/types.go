@@ -37,6 +37,9 @@ type LocalVolumeSpec struct {
 	NodeSelector *corev1.NodeSelector `json:"nodeSelector,omitempty"`
 	// List of storage class and devices they can match
 	StorageClassDevices []StorageClassDevice `json:"storageClassDevices,omitempty"`
+	// If specified, a list of tolerations to pass to the diskmaker and provisioner DaemonSets.
+	// +optional
+	Tolerations []corev1.Toleration `json:"tolerations,omitempty"`
 }
 
 // PersistentVolumeMode describes how a volume is intended to be consumed, either Block or Filesystem.
