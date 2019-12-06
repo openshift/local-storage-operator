@@ -675,6 +675,7 @@ func (h *Handler) generateLocalProvisionerDaemonset(cr *localv1.LocalVolume) *ap
 				Spec: corev1.PodSpec{
 					Containers:         containers,
 					ServiceAccountName: provisionerServiceAccount,
+					Tolerations:        cr.Spec.Tolerations,
 					Volumes:            volumes,
 				},
 			},
@@ -788,6 +789,7 @@ func (h *Handler) generateDiskMakerDaemonSet(cr *localv1.LocalVolume) *appsv1.Da
 				Spec: corev1.PodSpec{
 					Containers:         containers,
 					ServiceAccountName: provisionerServiceAccount,
+					Tolerations:        cr.Spec.Tolerations,
 					Volumes:            volumes,
 				},
 			},
