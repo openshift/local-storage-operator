@@ -25,11 +25,8 @@ func (f *fakeApiUpdater) getLocalVolume(lv *localv1.LocalVolume) (*localv1.Local
 
 func TestFindMatchingDisk(t *testing.T) {
 	d := getFakeDiskMaker("/tmp/foo", "/mnt/local-storage")
-	deviceSet, err := d.findNewDisks(getData())
-	if err != nil {
-		t.Fatalf("error getting data %v", err)
-	}
-	if len(deviceSet) != 7 {
+	deviceSet := d.findNewDisks(getRawOutput())
+	if len(deviceSet) != 5 {
 		t.Errorf("expected 7 devices got %d", len(deviceSet))
 	}
 	diskConfig := &DiskConfig{
@@ -100,20 +97,6 @@ func getFakeDiskMaker(configLocation, symlinkLocation string) *DiskMaker {
 	d.apiClient = &fakeApiUpdater{}
 	d.eventSync = newEventReporter(d.apiClient)
 	return d
-}
-
-func getData() string {
-	return `
-sda
-sda1 /boot
-sda2 [SWAP]
-sda3 /
-vda
-vdb
-vdc
-vdd
-vde
-vdf`
 }
 
 func getDeiveIDs() []string {

@@ -8,7 +8,6 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/ghodss/yaml"
@@ -112,7 +111,10 @@ func (d *DiskMaker) Run(stop <-chan struct{}) {
 }
 
 func (d *DiskMaker) symLinkDisks(diskConfig *DiskConfig) {
-	cmd := exec.Command("lsblk", "--list", "-o", "NAME,MOUNTPOINT", "--noheadings")
+	// run command lsblk --all --noheadings --pairs --output "KNAME,PKNAME,TYPE,MOUNTPOINT"
+	// the reason we are using KNAME instead of NAME is because for lvm disks(and may be others)
+	// the NAME and device file in /dev directory do not match.
+	cmd := exec.Command("lsblk", "--all", "--noheadings", "--pairs", "--output", "KNAME,PKNAME,TYPE,MOUNTPOINT")
 	var out bytes.Buffer
 	var err error
 	cmd.Stdout = &out
@@ -124,14 +126,7 @@ func (d *DiskMaker) symLinkDisks(diskConfig *DiskConfig) {
 		klog.Errorf(msg)
 		return
 	}
-	deviceSet, err := d.findNewDisks(out.String())
-	if err != nil {
-		msg := fmt.Sprintf("error reading blocklist: %v", err)
-		e := newEvent(ErrorReadingBlockList, msg, "")
-		d.eventSync.report(e, d.localVolume)
-		klog.Errorf(msg)
-		return
-	}
+	deviceSet := d.findNewDisks(out.String())
 
 	if len(deviceSet) == 0 {
 		klog.V(3).Infof("unable to find any new disks")
@@ -285,21 +280,17 @@ func (d *DiskMaker) findStableDeviceID(diskName string, allDisks []string) (stri
 	return "", fmt.Errorf("unable to find ID of disk %s", diskName)
 }
 
-func (d *DiskMaker) findNewDisks(content string) (sets.String, error) {
+func (d *DiskMaker) findNewDisks(content string) sets.String {
 	deviceSet := sets.NewString()
-	deviceLines := strings.Split(content, "\n")
-	for _, deviceLine := range deviceLines {
-		deviceLine := strings.TrimSpace(deviceLine)
-		deviceDetails := strings.Split(deviceLine, " ")
-		// We only consider devices that are not mounted.
-		// TODO: We should also consider checking for device partitions, so as
-		// if a device has partitions then we do not consider the device. We only
-		// consider partitions.
-		if len(deviceDetails) == 1 && len(deviceDetails[0]) > 0 {
-			deviceSet.Insert(deviceDetails[0])
-		}
+	fullDiskTable := newDiskTable()
+	fullDiskTable.parse(content)
+	usableDisks := fullDiskTable.filterUsableDisks()
+
+	for _, disk := range usableDisks {
+		diskName := disk["KNAME"]
+		deviceSet.Insert(diskName)
 	}
-	return deviceSet, nil
+	return deviceSet
 }
 
 func hasExactDisk(disks sets.String, device string) bool {
