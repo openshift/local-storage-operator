@@ -4,6 +4,8 @@ import "strings"
 
 type blockDevice map[string]string
 
+// diskTable stores output of lsblk in parsed format. It uses output of following command:
+//   - lsblk --all --noheadings --pairs --output "KNAME,PKNAME,TYPE,MOUNTPOINT"
 type diskTable struct {
 	disks []blockDevice
 }
