@@ -68,6 +68,11 @@ spec:
                   - devicePaths
                 type: object
               type: array
+            tolerations:
+              description: A list of tolerations to pass to the diskmaker and provisioner DaemonSets.
+              items:
+                type: object
+              type: array
           required:
             - storageClassDevices
           type: object
