@@ -1,6 +1,7 @@
 package diskmaker
 
 import (
+	"reflect"
 	"testing"
 )
 
@@ -8,13 +9,32 @@ func TestDiskTableParse(t *testing.T) {
 	output := getRawOutput()
 	d := newDiskTable()
 	d.parse(output)
-	if len(d.disks) != 11 {
-		t.Errorf("expected 11 disks got %d", len(d.disks))
+	expectedDiskMap := []blockDevice{
+		map[string]string{"KNAME": "sda", "MOUNTPOINT": "", "PKNAME": "", "TYPE": "disk"},
+		map[string]string{"KNAME": "sda1", "MOUNTPOINT": "/boot/efi", "PKNAME": "sda", "TYPE": "part"},
+		map[string]string{"KNAME": "sda2", "MOUNTPOINT": "[SWAP]", "PKNAME": "sda", "TYPE": "part"},
+		map[string]string{"KNAME": "sda3", "MOUNTPOINT": "/", "PKNAME": "sda", "TYPE": "part"},
+		map[string]string{"KNAME": "sdb", "MOUNTPOINT": "", "PKNAME": "", "TYPE": "disk"},
+		map[string]string{"KNAME": "sdb1", "MOUNTPOINT": "", "PKNAME": "sdb", "TYPE": "part"},
+		map[string]string{"KNAME": "sdb2", "MOUNTPOINT": "", "PKNAME": "sdb", "TYPE": "part"},
+		map[string]string{"KNAME": "sdc", "MOUNTPOINT": "", "PKNAME": "", "TYPE": "disk"},
+		map[string]string{"KNAME": "sdc1", "MOUNTPOINT": "", "PKNAME": "sdc", "TYPE": "part"},
+		map[string]string{"KNAME": "sdc2", "MOUNTPOINT": "", "PKNAME": "sdc", "TYPE": "part"},
+		map[string]string{"KNAME": "sdc3", "MOUNTPOINT": "", "PKNAME": "sdc", "TYPE": "part"},
 	}
-
+	if !reflect.DeepEqual(expectedDiskMap, d.disks) {
+		t.Errorf("Expexted disk map to be: %+v got %+v", expectedDiskMap, d.disks)
+	}
+	expectedUsableDisks := []blockDevice{
+		map[string]string{"KNAME": "sdb1", "MOUNTPOINT": "", "PKNAME": "sdb", "TYPE": "part"},
+		map[string]string{"KNAME": "sdb2", "MOUNTPOINT": "", "PKNAME": "sdb", "TYPE": "part"},
+		map[string]string{"KNAME": "sdc1", "MOUNTPOINT": "", "PKNAME": "sdc", "TYPE": "part"},
+		map[string]string{"KNAME": "sdc2", "MOUNTPOINT": "", "PKNAME": "sdc", "TYPE": "part"},
+		map[string]string{"KNAME": "sdc3", "MOUNTPOINT": "", "PKNAME": "sdc", "TYPE": "part"},
+	}
 	usableDisks := d.filterUsableDisks()
-	if len(usableDisks) != 5 {
-		t.Errorf("expected 5 usable disks, got %d", len(usableDisks))
+	if !reflect.DeepEqual(expectedUsableDisks, usableDisks) {
+		t.Errorf("expected usable disks to be: %+v got %+v", expectedUsableDisks, usableDisks)
 	}
 
 }
