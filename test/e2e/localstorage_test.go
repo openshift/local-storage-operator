@@ -14,7 +14,7 @@ import (
 	commontypes "github.com/openshift/local-storage-operator/pkg/common"
 	framework "github.com/operator-framework/operator-sdk/pkg/test"
 	"github.com/operator-framework/operator-sdk/pkg/test/e2eutil"
-	"k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
@@ -40,132 +40,111 @@ func addToScheme(s *runtime.Scheme) error {
 }
 
 func TestLocalStorageOperator(t *testing.T) {
-	tests := []struct {
-		name        string
-		shouldTaint bool
-	}{
-		{
-			name:        "LocalVolume should be created",
-			shouldTaint: false,
-		},
-		{
-			name:        "LocalVolume should be created and attached to a node that's tainted",
-			shouldTaint: true,
+	localVolumeList := &localv1.LocalVolumeList{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "LocalVolume",
+			APIVersion: localv1.SchemeGroupVersion.String(),
 		},
 	}
+	err := framework.AddToFrameworkScheme(addToScheme, localVolumeList)
+	if err != nil {
+		t.Fatalf("error adding local volume list : %v", err)
+	}
 
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
+	ctx := framework.NewTestCtx(t)
+	defer ctx.Cleanup()
 
-			localVolumeList := &localv1.LocalVolumeList{
-				TypeMeta: metav1.TypeMeta{
-					Kind:       "LocalVolume",
-					APIVersion: localv1.SchemeGroupVersion.String(),
-				},
-			}
-			err := framework.AddToFrameworkScheme(addToScheme, localVolumeList)
-			if err != nil {
-				t.Fatalf("error adding local volume list : %v", err)
-			}
+	err = waitForOperatorToBeReady(t, ctx)
+	if err != nil {
+		t.Fatalf("error waiting for operator to be ready : %v", err)
+	}
 
-			ctx := framework.NewTestCtx(t)
-			defer ctx.Cleanup()
+	f := framework.Global
+	namespace, err := ctx.GetNamespace()
+	if err != nil {
+		t.Fatalf("error fetching namespace : %v", err)
+	}
 
-			err = waitForOperatorToBeReady(t, ctx)
-			if err != nil {
-				t.Fatalf("error waiting for operator to be ready : %v", err)
-			}
+	selectedNode := selectNode(t, f.KubeClient)
 
-			f := framework.Global
-			namespace, err := ctx.GetNamespace()
-			if err != nil {
-				t.Fatalf("error fetching namespace : %v", err)
-			}
+	originalNodeTaints := selectedNode.Spec.Taints
+	selectedNode.Spec.Taints = []v1.Taint{
+		{
+			Key:    "localstorage",
+			Value:  "testvalue",
+			Effect: "NoSchedule",
+		},
+	}
+	updatedNode, err := waitForNodeTaintUpdate(t, f.KubeClient, selectedNode, retryInterval, timeout)
+	if err != nil {
+		t.Fatalf("error tainting node : %v", err)
+	}
+	selectedNode = updatedNode
 
-			selectedNode := selectNode(t, f.KubeClient)
+	defer func() {
+		selectedNode.Spec.Taints = originalNodeTaints
+		selectedNode, err = waitForNodeTaintUpdate(t, f.KubeClient, selectedNode, retryInterval, timeout)
+		if err != nil {
+			t.Fatalf("error restoring original taints on node: %v", err)
+		}
+	}()
 
-			if test.shouldTaint {
-				originalNodeTaints := selectedNode.Spec.Taints
-				selectedNode.Spec.Taints = []v1.Taint{
-					{
-						Key:    "localstorage",
-						Value:  "testvalue",
-						Effect: "NoSchedule",
-					},
-				}
-				updatedNode, err := waitForNodeTaintUpdate(t, f.KubeClient, selectedNode, retryInterval, timeout)
-				if err != nil {
-					t.Fatalf("error tainting node : %v", err)
-				}
-				selectedNode = updatedNode
+	selectedDisk, _ := selectDisk(f.KubeClient, selectedNode)
+	waitForPVCreation := true
+	if selectedDisk == "" {
+		waitForPVCreation = false
+		selectedDisk = "/dev/foobar"
+	}
 
-				defer func() {
-					selectedNode.Spec.Taints = originalNodeTaints
-					selectedNode, err = waitForNodeTaintUpdate(t, f.KubeClient, selectedNode, retryInterval, timeout)
-					if err != nil {
-						t.Fatalf("error restoring original taints on node: %v", err)
-					}
-				}()
-			}
+	localVolume := getFakeLocalVolume(selectedNode, selectedDisk, namespace)
 
-			selectedDisk, _ := selectDisk(f.KubeClient, selectedNode)
-			waitForPVCreation := true
-			if selectedDisk == "" {
-				waitForPVCreation = false
-				selectedDisk = "/dev/foobar"
-			}
+	err = f.Client.Create(goctx.TODO(), localVolume, &framework.CleanupOptions{TestContext: ctx, Timeout: cleanupTimeout, RetryInterval: cleanupRetryInterval})
+	if err != nil {
+		t.Fatalf("error creating localvolume cr : %v", err)
+	}
 
-			localVolume := getFakeLocalVolume(selectedNode, selectedDisk, namespace, test.shouldTaint)
+	provisionerDSName := localVolume.Name + "-local-provisioner"
+	diskMakerDSName := localVolume.Name + "-local-diskmaker"
 
-			err = f.Client.Create(goctx.TODO(), localVolume, &framework.CleanupOptions{TestContext: ctx, Timeout: cleanupTimeout, RetryInterval: cleanupRetryInterval})
-			if err != nil {
-				t.Fatalf("error creating localvolume cr : %v", err)
-			}
+	err = waitForDaemonSet(t, f.KubeClient, namespace, provisionerDSName, retryInterval, timeout)
+	if err != nil {
+		t.Fatalf("error waiting for provisioner daemonset : %v", err)
+	}
 
-			provisionerDSName := localVolume.Name + "-local-provisioner"
-			diskMakerDSName := localVolume.Name + "-local-diskmaker"
+	err = waitForDaemonSet(t, f.KubeClient, namespace, diskMakerDSName, retryInterval, timeout)
+	if err != nil {
+		t.Fatalf("error waiting for diskmaker daemonset : %v", err)
+	}
 
-			err = waitForDaemonSet(t, f.KubeClient, namespace, provisionerDSName, retryInterval, timeout)
-			if err != nil {
-				t.Fatalf("error waiting for provisioner daemonset : %v", err)
-			}
+	err = verifyLocalVolume(localVolume, f.Client)
+	if err != nil {
+		t.Fatalf("error verifying localvolume cr: %v", err)
+	}
 
-			err = waitForDaemonSet(t, f.KubeClient, namespace, diskMakerDSName, retryInterval, timeout)
-			if err != nil {
-				t.Fatalf("error waiting for diskmaker daemonset : %v", err)
-			}
+	err = verifyDaemonSetTolerations(f.KubeClient, provisionerDSName, namespace, localVolume.Spec.Tolerations)
+	if err != nil {
+		t.Fatalf("error verifying provisioner tolerations match localvolume: %v", err)
+	}
 
-			err = verifyLocalVolume(localVolume, f.Client)
-			if err != nil {
-				t.Fatalf("error verifying localvolume cr: %v", err)
-			}
+	err = verifyDaemonSetTolerations(f.KubeClient, diskMakerDSName, namespace, localVolume.Spec.Tolerations)
+	if err != nil {
+		t.Fatalf("error verifying diskmaker tolerations match localvolume: %v", err)
+	}
 
-			err = verifyDaemonSetTolerations(f.KubeClient, provisionerDSName, namespace, localVolume.Spec.Tolerations)
-			if err != nil {
-				t.Fatalf("error verifying provisioner tolerations match localvolume: %v", err)
-			}
+	err = checkLocalVolumeStatus(localVolume)
+	if err != nil {
+		t.Fatalf("error checking localvolume condition: %v", err)
+	}
 
-			err = verifyDaemonSetTolerations(f.KubeClient, diskMakerDSName, namespace, localVolume.Spec.Tolerations)
-			if err != nil {
-				t.Fatalf("error verifying diskmaker tolerations match localvolume: %v", err)
-			}
-
-			err = checkLocalVolumeStatus(localVolume)
-			if err != nil {
-				t.Fatalf("error checking localvolume condition: %v", err)
-			}
-
-			if waitForPVCreation {
-				err = waitForCreatedPV(f.KubeClient, localVolume)
-				if err != nil {
-					t.Fatalf("error waiting for creation of pv: %v", err)
-				}
-				err = deleteCreatedPV(f.KubeClient, localVolume)
-				if err != nil {
-					t.Errorf("error deleting created PV: %v", err)
-				}
-			}
-		})
+	if waitForPVCreation {
+		err = waitForCreatedPV(f.KubeClient, localVolume)
+		if err != nil {
+			t.Fatalf("error waiting for creation of pv: %v", err)
+		}
+		err = deleteCreatedPV(f.KubeClient, localVolume)
+		if err != nil {
+			t.Errorf("error deleting created PV: %v", err)
+		}
 	}
 }
 
@@ -396,7 +375,7 @@ func waitForNodeTaintUpdate(t *testing.T, kubeclient kubernetes.Interface, node 
 	return *newNode, nil
 }
 
-func getFakeLocalVolume(selectedNode v1.Node, selectedDisk, namespace string, shouldTaint bool) *localv1.LocalVolume {
+func getFakeLocalVolume(selectedNode v1.Node, selectedDisk, namespace string) *localv1.LocalVolume {
 	localVolume := &localv1.LocalVolume{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "LocalVolume",
@@ -416,6 +395,13 @@ func getFakeLocalVolume(selectedNode v1.Node, selectedDisk, namespace string, sh
 					},
 				},
 			},
+			Tolerations: []v1.Toleration{
+				{
+					Key:      "localstorage",
+					Value:    "testvalue",
+					Operator: "Equal",
+				},
+			},
 			StorageClassDevices: []localv1.StorageClassDevice{
 				{
 					StorageClassName: "test-local-sc",
@@ -424,14 +410,6 @@ func getFakeLocalVolume(selectedNode v1.Node, selectedDisk, namespace string, sh
 			},
 		},
 	}
-	if shouldTaint {
-		localVolume.Spec.Tolerations = []v1.Toleration{
-			{
-				Key:      "localstorage",
-				Value:    "testvalue",
-				Operator: "Equal",
-			},
-		}
-	}
+
 	return localVolume
 }
