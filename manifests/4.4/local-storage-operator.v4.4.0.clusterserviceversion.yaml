@@ -234,8 +234,8 @@ spec:
         description: Manage local storage volumes for OpenShift
         version: v1
         specDescriptors:
-          - description: Management state of operator
-            displayName: Managementstate
+          - description: User requested management state of operator
+            displayName: Requested management state
             path: managementState
           - description: Log level of operator
             displayName: LogLevel
@@ -252,8 +252,8 @@ spec:
           - description: Last generation of this object
             displayName: ObservedGeneration
             path: observedGeneration
-          - description: Management State of the operator
-            displayName: ManagementState
+          - description: Current management state of operator
+            displayName: Operator management state
             path: managementState
           - description: Last known condition of the operator
             displayName: Conditions
