@@ -38,7 +38,7 @@ spec:
               type: string
               enum: ["Managed", "Unmanaged", "Removed", "Force"]
             logLevel:
-              description: logLevel configures log level for the operator
+              description: logLevel configures log level for the diskmaker and provisioner for this object
               type: string
               enum: ["Normal", "Debug", "Trace", "TraceAll"]
             storageClassDevices:

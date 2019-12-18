@@ -227,17 +227,17 @@ spec:
                         value: quay.io/openshift/origin-local-storage-diskmaker:latest
   customresourcedefinitions:
     owned:
-      - displayName: Local Volume operator
+      - displayName: Local Volume
         group: local.storage.openshift.io
         kind: LocalVolume
         name: localvolumes.local.storage.openshift.io
         description: Manage local storage volumes for OpenShift
         version: v1
         specDescriptors:
-          - description: User requested management state of operator
+          - description: User requested management state of this object
             displayName: Requested management state
             path: managementState
-          - description: Log level of operator
+          - description: Log level of local volume diskmaker and provisioner for this object
             displayName: LogLevel
             path: logLevel
           - description: Selected nodes for local storage
@@ -245,17 +245,17 @@ spec:
             path: nodeSelector
             x-descriptors:
               - 'urn:alm:descriptor:com.tectonic.ui:selector'
-          - description: StorageClass devices configured by the operator
+          - description: StorageClass devices configured by this object
             displayName: StorageClassDevices
             path: storageClassDevices
         statusDescriptors:
           - description: Last generation of this object
             displayName: ObservedGeneration
             path: observedGeneration
-          - description: Current management state of operator
+          - description: Current management state of this object
             displayName: Operator management state
             path: managementState
-          - description: Last known condition of the operator
+          - description: Last known condition of this object
             displayName: Conditions
             path: conditions
             x-descriptors:
