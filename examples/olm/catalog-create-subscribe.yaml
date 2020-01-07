@@ -8,8 +8,8 @@ kind: OperatorGroup
 metadata:
   name: local-operator-group
   namespace: local-storage
-  spec:
-    targetNamespaces:
+spec:
+  targetNamespaces:
     - local-storage
 ---
 apiVersion: operators.coreos.com/v1
