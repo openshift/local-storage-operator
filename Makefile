@@ -12,10 +12,11 @@ IMAGE = $(REGISTRY)local-volume-provisioner:$(VERSION)
 MUTABLE_IMAGE = $(REGISTRY)local-volume-provisioner:$(VERSION)
 DISKMAKER_IMAGE = $(REGISTRY)local-diskmaker:$(VERSION)
 OPERATOR_IMAGE= $(REGISTRY)local-storage-operator:$(VERSION)
+REV=$(shell git describe --long --tags --match='v*' --dirty 2>/dev/null || git rev-list -n1 HEAD)
 
 all build:
-	CGO_ENABLED=0 GOOS=linux go build -a -ldflags '-extldflags "-static"' -o $(TARGET_DIR)/diskmaker ./cmd/diskmaker
-	CGO_ENABLED=0 GOOS=linux go build -a -ldflags '-extldflags "-static"' -o $(TARGET_DIR)/local-storage-operator ./cmd/local-storage-operator
+	CGO_ENABLED=0 GOOS=linux go build -a -ldflags '-X main.version=$(REV) -extldflags "-static"' -o $(TARGET_DIR)/diskmaker ./cmd/diskmaker
+	CGO_ENABLED=0 GOOS=linux go build -a -ldflags '-X main.version=$(REV) -extldflags "-static"' -o $(TARGET_DIR)/local-storage-operator ./cmd/local-storage-operator
 .PHONY: all build
 
 images: diskmaker-container operator-container
