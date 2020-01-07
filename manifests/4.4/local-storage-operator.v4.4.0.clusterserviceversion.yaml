@@ -72,7 +72,7 @@ spec:
   - type: MultiNamespace
     supported: false
   - type: AllNamespaces
-    supported: true
+    supported: false
   install:
     strategy: deployment
     spec:
