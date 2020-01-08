@@ -12,6 +12,7 @@ import (
 var (
 	configLocation  string
 	symlinkLocation string
+	version         = "unknown"
 )
 
 func init() {
@@ -22,6 +23,7 @@ func init() {
 func printVersion() {
 	klog.Infof("Go Version: %s", runtime.Version())
 	klog.Infof("Go OS/Arch: %s/%s", runtime.GOOS, runtime.GOARCH)
+	klog.Infof("local-storage-diskmaker Version: %v", version)
 }
 
 func main() {

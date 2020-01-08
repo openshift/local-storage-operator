@@ -18,7 +18,12 @@ func printVersion() {
 	klog.Infof("Go Version: %s", runtime.Version())
 	klog.Infof("Go OS/Arch: %s/%s", runtime.GOOS, runtime.GOARCH)
 	klog.Infof("operator-sdk Version: %v", sdkVersion.Version)
+	klog.Infof("local-storage-operator Version: %v", version)
 }
+
+var (
+	version = "unknown"
+)
 
 func main() {
 	klogFlags := flag.NewFlagSet("local-storage-operator", flag.ExitOnError)
