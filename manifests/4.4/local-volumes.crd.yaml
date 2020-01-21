@@ -57,6 +57,21 @@ spec:
                   fsType:
                     description: File system type
                     type: string
+                  useAllDevices:
+                      description: Switch to enable selection of all available paths for storage
+                      type: boolean
+                  excludeDeviceNames:
+                    description: 'A list of regex patterns that match devices which would be excluded for local storage when useAllDevices is enabled.
+                    For example - ["/dev/sda", "/dev/sdb", "/dev/disk/by-id/ata-crucial"]'
+                    items:
+                      type: string
+                    type: array
+                  excludeDeviceTypes:
+                    description: 'A list of devices types which would be excluded for local storage when useAllDevices is enabled.
+                    For example - ["part", "lvm", "crypt"]'
+                    items:
+                      type: string
+                    type: array
                   devicePaths:
                     description: 'A list of devices which would be chosen for local storage.
                     For example - ["/dev/sda", "/dev/sdb", "/dev/disk/by-id/ata-crucial"]'
@@ -65,7 +80,6 @@ spec:
                     type: array
                 required:
                   - storageClassName
-                  - devicePaths
                 type: object
               type: array
             tolerations:

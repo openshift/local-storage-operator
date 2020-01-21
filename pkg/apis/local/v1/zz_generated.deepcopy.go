@@ -147,6 +147,16 @@ func (in *StorageClassDevice) DeepCopyInto(out *StorageClassDevice) {
 		*out = make([]string, len(*in))
 		copy(*out, *in)
 	}
+	if in.ExcludeDeviceNames != nil {
+		in, out := &in.ExcludeDeviceNames, &out.ExcludeDeviceNames
+		*out = make([]string, len(*in))
+		copy(*out, *in)
+	}
+	if in.ExcludeDeviceTypes != nil {
+		in, out := &in.ExcludeDeviceTypes, &out.ExcludeDeviceTypes
+		*out = make([]string, len(*in))
+		copy(*out, *in)
+	}
 	return
 }
 

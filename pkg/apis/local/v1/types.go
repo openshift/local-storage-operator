@@ -64,7 +64,18 @@ type StorageClassDevice struct {
 	FSType string `json:"fsType,omitempty"`
 	// A list of device paths which would be chosen for local storage.
 	// For example - ["/dev/sda", "/dev/sdb", "/dev/disk/by-id/ata-crucial"]
+	// +optional
 	DevicePaths []string `json:"devicePaths,omitempty"`
+	// UseAllDevices enables grabbing of all available devices for localStorage
+	// Note: The DevicePaths will be ignored when this is enabled
+	UseAllDevices bool `json:"useAllDevices,omitempty"`
+	// A list of device paths which would be excluded for local storage when UseAllDevices is enabled
+	// For example - ["/dev/sda", "/dev/sdb", "/dev/disk/by-id/ata-crucial"]
+	// +optional
+	ExcludeDeviceNames []string `json:"excludeDeviceNames,omitempty"`
+	// ExcludeDeviceTypes is the list of deviceTypes to ignore
+	// +optional
+	ExcludeDeviceTypes []string `json:"excludeDeviceTypes,omitempty"`
 }
 
 type LocalVolumeStatus struct {
