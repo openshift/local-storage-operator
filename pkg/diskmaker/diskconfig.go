@@ -10,7 +10,13 @@ import (
 
 // Disks defines disks to be used for local volumes
 type Disks struct {
-	DevicePaths []string `json:"devicePaths,omitempty"`
+	// these fields are direct copy of some in StorageClassDevice
+	// we are considering replacing this entire field with StorageClassDevice,
+	// but we are concerned it will break something, so we're only adding to it for now.
+	DevicePaths        []string `json:"devicePaths,omitempty"`
+	UseAllDevices      bool     `json:"useAllDevices,omitempty"`
+	ExcludeDeviceNames []string `json:"excludeDeviceNames,omitempty"`
+	ExcludeDeviceTypes []string `json:"excludeDeviceTypes,omitempty"`
 }
 
 // DeviceNames returns devices which are used by name.
