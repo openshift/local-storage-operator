@@ -127,6 +127,9 @@ func (s *sdkAPIUpdater) applyStorageClass(sc *storagev1.StorageClass) (*storagev
 }
 
 func (s *sdkAPIUpdater) applyDaemonSet(ds *appsv1.DaemonSet, expectedGeneration int64, forceRollout bool) (*appsv1.DaemonSet, bool, error) {
+	if forceRollout {
+		klog.Infof("Rolling out DaemonSet: %s/%s", ds.Name, ds.Namespace)
+	}
 	return resourceapply.ApplyDaemonSet(k8sclient.GetKubeClient().AppsV1(), ds, expectedGeneration, forceRollout)
 }
 
