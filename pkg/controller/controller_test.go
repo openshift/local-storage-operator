@@ -18,6 +18,11 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+type daemonSetRollout struct {
+	daemonSet    *appsv1.DaemonSet
+	forceRollout bool
+}
+
 type fakeApiUpdater struct {
 	latestInstance      *localv1.LocalVolume
 	oldInstance         *localv1.LocalVolume
@@ -28,7 +33,7 @@ type fakeApiUpdater struct {
 	clusterRoles        []*rbacv1.ClusterRole
 	clusterRoleBindings []*rbacv1.ClusterRoleBinding
 	storageClasses      []*storagev1.StorageClass
-	daemonSets          []*appsv1.DaemonSet
+	daemonSets          []daemonSetRollout
 }
 
 func (f *fakeApiUpdater) syncStatus(oldInstance, newInstance *localv1.LocalVolume) error {
@@ -73,7 +78,8 @@ func (s *fakeApiUpdater) applyStorageClass(sc *storagev1.StorageClass) (*storage
 }
 
 func (s *fakeApiUpdater) applyDaemonSet(ds *appsv1.DaemonSet, expectedGeneration int64, forceRollout bool) (*appsv1.DaemonSet, bool, error) {
-	s.daemonSets = append(s.daemonSets, ds)
+	dsRollout := daemonSetRollout{forceRollout: forceRollout, daemonSet: ds}
+	s.daemonSets = append(s.daemonSets, dsRollout)
 	return ds, true, nil
 }
 func (s *fakeApiUpdater) listStorageClasses(listOptions metav1.ListOptions) (*storagev1.StorageClassList, error) {
@@ -204,12 +210,12 @@ func TestSyncLocalVolumeProvider(t *testing.T) {
 	var localProvisionerDaemonSet *appsv1.DaemonSet
 	var diskMakerDaemonset *appsv1.DaemonSet
 	for _, ds := range provisionedDaemonSets {
-		if ds.Name == "local-disks-local-provisioner" {
-			localProvisionerDaemonSet = ds
+		if ds.daemonSet.Name == "local-disks-local-provisioner" && ds.forceRollout {
+			localProvisionerDaemonSet = ds.daemonSet
 		}
 
-		if ds.Name == "local-disks-local-diskmaker" {
-			diskMakerDaemonset = ds
+		if ds.daemonSet.Name == "local-disks-local-diskmaker" && ds.forceRollout {
+			diskMakerDaemonset = ds.daemonSet
 		}
 	}
 
@@ -233,7 +239,7 @@ func TestTolerationProvisionerDS(t *testing.T) {
 		t.Fatalf("error creating local provisioner DaemonSet")
 	}
 	data := provisionerDS.Spec.Template.Spec.Tolerations
-	if data == nil || len(data) == 0{
+	if data == nil || len(data) == 0 {
 		t.Errorf("error getting toleration data from provisioner DaemonSet")
 	}
 	toleration := data[0]
@@ -253,7 +259,7 @@ func TestTolerationDiskmakerDS(t *testing.T) {
 		t.Fatalf("error creating diskmaker DaemonSet")
 	}
 	data := diskmakerDS.Spec.Template.Spec.Tolerations
-	if data == nil || len(data) == 0{
+	if data == nil || len(data) == 0 {
 		t.Errorf("error getting toleration data from diskmaker DaemonSet")
 	}
 	toleration := data[0]
@@ -308,11 +314,11 @@ func getLocalVolume() *localv1.LocalVolume {
 
 func getLocalVolumeWithTolerations() *localv1.LocalVolume {
 	lv := getLocalVolume()
-	lv.Spec.Tolerations = []corev1.Toleration {
+	lv.Spec.Tolerations = []corev1.Toleration{
 		{
-			Key: "localstorage",
+			Key:      "localstorage",
 			Operator: "Equal",
-			Value: "true",
+			Value:    "true",
 		},
 	}
 	return lv
