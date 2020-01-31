@@ -210,11 +210,11 @@ func TestSyncLocalVolumeProvider(t *testing.T) {
 	var localProvisionerDaemonSet *appsv1.DaemonSet
 	var diskMakerDaemonset *appsv1.DaemonSet
 	for _, ds := range provisionedDaemonSets {
-		if ds.daemonSet.Name == "local-disks-local-provisioner" {
+		if ds.daemonSet.Name == "local-disks-local-provisioner" && ds.forceRollout {
 			localProvisionerDaemonSet = ds.daemonSet
 		}
 
-		if ds.daemonSet.Name == "local-disks-local-diskmaker" {
+		if ds.daemonSet.Name == "local-disks-local-diskmaker" && ds.forceRollout {
 			diskMakerDaemonset = ds.daemonSet
 		}
 	}
