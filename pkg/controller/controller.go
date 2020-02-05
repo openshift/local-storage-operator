@@ -269,6 +269,13 @@ func (h *Handler) cleanupLocalVolumeDeployment(lv *localv1.LocalVolume) error {
 		return fmt.Errorf(msg)
 	}
 
+	err = h.removeUnExpectedStorageClasses(lv, sets.NewString())
+	if err != nil {
+		msg := err.Error()
+		h.apiClient.recordEvent(lv, corev1.EventTypeWarning, deletingStorageClassFailed, msg)
+		return err
+	}
+
 	lv = removeFinalizer(lv)
 	return h.apiClient.updateLocalVolume(lv)
 }
