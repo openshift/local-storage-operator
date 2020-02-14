@@ -34,8 +34,8 @@ metadata:
     repository: https://github.com/openshift/local-storage-operator
     createdAt: "2019-08-14T00:00:00Z"
     description: >
-      Configure and use local storage volumes in kubernetes and Openshift.
-      Openshift 4.2 and above is only supported Openshift versions.
+      Configure and use local storage volumes in kubernetes and OpenShift.
+      OpenShift 4.2 and above is only supported OpenShift versions.
     olm.skipRange: '>=4.5.0 <4.6.0'
   labels:
     operator-metering: "true"
