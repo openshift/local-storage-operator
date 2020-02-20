@@ -154,9 +154,19 @@ func (h *Handler) syncLocalVolumeProvider(instance *localv1.LocalVolume) error {
 		return h.addFailureCondition(instance, o, err)
 	}
 
+	rollOutDaemonSet := false
+	if diskMakerConfigMapModified || provisionerConfigMapModified {
+		rollOutDaemonSet = true
+	}
+
+	if o.Status.ObservedGeneration != nil &&
+		(*o.Status.ObservedGeneration != o.Generation) {
+		rollOutDaemonSet = true
+	}
+
 	children := []operatorv1.GenerationStatus{}
 
-	provisionerDS, err := h.syncProvisionerDaemonset(o, provisionerConfigMapModified)
+	provisionerDS, err := h.syncProvisionerDaemonset(o, rollOutDaemonSet)
 	if err != nil {
 		klog.Errorf("failed to create daemonset for provisioner %s: %v", o.Name, err)
 		return h.addFailureCondition(instance, o, err)
@@ -172,7 +182,7 @@ func (h *Handler) syncLocalVolumeProvider(instance *localv1.LocalVolume) error {
 		})
 	}
 
-	diskMakerDaemonset, err := h.syncDiskMakerDaemonset(o, diskMakerConfigMapModified)
+	diskMakerDaemonset, err := h.syncDiskMakerDaemonset(o, rollOutDaemonSet)
 	if err != nil {
 		klog.Errorf("failed to create daemonset for diskmaker %s: %v", o.Name, err)
 		return h.addFailureCondition(instance, o, err)
