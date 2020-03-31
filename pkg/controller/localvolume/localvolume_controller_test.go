@@ -1,4 +1,4 @@
-package controller
+package localvolume
 
 import (
 	"fmt"
@@ -11,8 +11,8 @@ import (
 	commontypes "github.com/openshift/local-storage-operator/pkg/common"
 	"github.com/openshift/local-storage-operator/pkg/diskmaker"
 	appsv1 "k8s.io/api/apps/v1"
-	"k8s.io/api/core/v1"
 	corev1 "k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -324,9 +324,9 @@ func getLocalVolumeWithTolerations() *localv1.LocalVolume {
 	return lv
 }
 
-func getHandler() (*Handler, *fakeApiUpdater) {
+func getHandler() (*ReconcileLocalVolume, *fakeApiUpdater) {
 	apiClient := &fakeApiUpdater{}
-	handler := &Handler{
+	handler := &ReconcileLocalVolume{
 		localStorageNameSpace: "foobar",
 		localDiskLocation:     "/mnt/local-storage",
 		apiClient:             apiClient,

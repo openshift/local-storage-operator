@@ -1,16 +1,16 @@
 package diskmaker
 
 import (
+	"context"
 	"fmt"
 	"os"
 
 	localv1 "github.com/openshift/local-storage-operator/pkg/apis/local/v1"
-	"github.com/operator-framework/operator-sdk/pkg/k8sclient"
-	"github.com/operator-framework/operator-sdk/pkg/sdk"
-	"k8s.io/api/core/v1"
-	"k8s.io/client-go/kubernetes/scheme"
-	v1core "k8s.io/client-go/kubernetes/typed/core/v1"
+
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/manager"
 )
 
 type apiUpdater interface {
@@ -20,14 +20,16 @@ type apiUpdater interface {
 
 type sdkAPIUpdater struct {
 	recorder record.EventRecorder
+	// This client, initialized using mgr.Client() above, is a split client
+	// that reads objects from the cache and writes to the apiserver
+	client client.Client
 }
 
-func newAPIUpdater() apiUpdater {
-	apiClient := &sdkAPIUpdater{}
-	broadcaster := record.NewBroadcaster()
-	broadcaster.StartRecordingToSink(&v1core.EventSinkImpl{Interface: v1core.New(k8sclient.GetKubeClient().CoreV1().RESTClient()).Events("")})
-	recorder := broadcaster.NewRecorder(scheme.Scheme, v1.EventSource{Component: "local-storage-diskmaker"})
-	apiClient.recorder = recorder
+func newAPIUpdater(mgr manager.Manager) apiUpdater {
+	apiClient := &sdkAPIUpdater{
+		client:   mgr.GetClient(),
+		recorder: mgr.GetEventRecorderFor("local-storage-diskmaker"),
+	}
 	return apiClient
 }
 
@@ -42,6 +44,7 @@ func (s *sdkAPIUpdater) recordEvent(lv *localv1.LocalVolume, e *event) {
 }
 
 func (s *sdkAPIUpdater) getLocalVolume(lv *localv1.LocalVolume) (*localv1.LocalVolume, error) {
-	err := sdk.Get(lv)
+	newLocalVolume := lv.DeepCopy()
+	err := s.client.Get(context.TODO(), types.NamespacedName{Name: newLocalVolume.GetName(), Namespace: newLocalVolume.GetNamespace()}, newLocalVolume)
 	return lv, err
 }
