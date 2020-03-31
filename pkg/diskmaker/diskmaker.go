@@ -15,6 +15,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/klog"
+	"sigs.k8s.io/controller-runtime/pkg/manager"
 )
 
 // DiskMaker is a small utility that reads configmap and
@@ -41,11 +42,11 @@ type DiskLocation struct {
 }
 
 // DiskMaker returns a new instance of DiskMaker
-func NewDiskMaker(configLocation, symLinkLocation string) *DiskMaker {
+func NewDiskMaker(configLocation, symLinkLocation string, mgr manager.Manager) *DiskMaker {
 	t := &DiskMaker{}
 	t.configLocation = configLocation
 	t.symlinkLocation = symLinkLocation
-	t.apiClient = newAPIUpdater()
+	t.apiClient = newAPIUpdater(mgr)
 	t.eventSync = newEventReporter(t.apiClient)
 	return t
 }

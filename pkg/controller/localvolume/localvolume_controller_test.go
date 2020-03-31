@@ -1,4 +1,4 @@
-package controller
+package localvolume
 
 import (
 	"fmt"
@@ -392,9 +392,9 @@ func getLocalVolumeWithTolerations() *localv1.LocalVolume {
 	return lv
 }
 
-func getHandler() (*Handler, *fakeApiUpdater) {
+func getHandler() (*ReconcileLocalVolume, *fakeApiUpdater) {
 	apiClient := &fakeApiUpdater{}
-	handler := &Handler{
+	handler := &ReconcileLocalVolume{
 		localStorageNameSpace: "foobar",
 		localDiskLocation:     "/mnt/local-storage",
 		apiClient:             apiClient,

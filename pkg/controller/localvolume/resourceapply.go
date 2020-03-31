@@ -1,4 +1,4 @@
-package controller
+package localvolume
 
 import (
 	"github.com/openshift/library-go/pkg/operator/resource/resourcemerge"
