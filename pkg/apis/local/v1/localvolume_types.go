@@ -6,24 +6,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
-//  LocalVolumeList returns list of local storage configurations
-type LocalVolumeList struct {
-	metav1.TypeMeta `json:",inline"`
-	metav1.ListMeta `json:"metadata"`
-	Items           []LocalVolume `json:"items"`
-}
-
-// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
-// LocalVolume is a local storage configuration used by the operator
-type LocalVolume struct {
-	metav1.TypeMeta   `json:",inline"`
-	metav1.ObjectMeta `json:"metadata"`
-	Spec              LocalVolumeSpec   `json:"spec"`
-	Status            LocalVolumeStatus `json:"status,omitempty"`
-}
-
-// LocalVolumeSpec returns spec of configuration
+// LocalVolumeSpec defines the desired state of LocalVolume
 type LocalVolumeSpec struct {
 	// managementState indicates whether and how the operator should manage the component
 	// +optional
@@ -67,6 +50,7 @@ type StorageClassDevice struct {
 	DevicePaths []string `json:"devicePaths,omitempty"`
 }
 
+// LocalVolumeStatus defines the observed state of LocalVolume
 type LocalVolumeStatus struct {
 	// ObservedGeneration is the last generation of this object that
 	// the operator has acted on.
@@ -86,6 +70,28 @@ type LocalVolumeStatus struct {
 	Generations []operatorv1.GenerationStatus `json:"generations,omitempty"`
 }
 
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+
+// LocalVolume is the Schema for the localvolumes API
+// +kubebuilder:subresource:status
+// +kubebuilder:resource:path=localvolumes,scope=Namespaced
+type LocalVolume struct {
+	metav1.TypeMeta   `json:",inline"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
+
+	Spec   LocalVolumeSpec   `json:"spec,omitempty"`
+	Status LocalVolumeStatus `json:"status,omitempty"`
+}
+
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+
+// LocalVolumeList contains a list of LocalVolume
+type LocalVolumeList struct {
+	metav1.TypeMeta `json:",inline"`
+	metav1.ListMeta `json:"metadata,omitempty"`
+	Items           []LocalVolume `json:"items"`
+}
+
 // SetDefaults sets values of log level and manage levels
 func (local *LocalVolume) SetDefaults() {
 	if len(local.Spec.LogLevel) == 0 {
@@ -95,4 +101,8 @@ func (local *LocalVolume) SetDefaults() {
 	if len(local.Spec.ManagementState) == 0 {
 		local.Spec.ManagementState = operatorv1.Managed
 	}
+}
+
+func init() {
+	SchemeBuilder.Register(&LocalVolume{}, &LocalVolumeList{})
 }
