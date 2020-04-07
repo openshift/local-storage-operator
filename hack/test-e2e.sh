@@ -2,22 +2,10 @@
 set -e
 
 ARTIFACT_DIR=${ARTIFACT_DIR:-_output}
-manifest=$(mktemp)
-global_manifest=$(mktemp)
-
-# save generated manifest files in _output directory for debugging purposes
-cleanup(){
-  local return_code="$?"
-  set +e
-
-  cp ${manifest} $ARTIFACT_DIR/manifest
-  cp ${global_manifest} $ARTIFACT_DIR/global_manifest
-  rm -rf ${manifest}
-  rm -rf ${global_manifest}
-  exit $return_code
-}
-
-trap cleanup exit
+manifest=$ARTIFACT_DIR/manifest
+global_manifest=$ARTIFACT_DIR/global_manifest
+rm -f $manifest $global_manifest
+mkdir -p $ARTIFACT_DIR
 
 if [ -n "${IMAGE_FORMAT}" ] ; then
     IMAGE_LOCAL_STORAGE_OPERATOR=$(sed -e "s,\${component},local-storage-operator," <(echo $IMAGE_FORMAT))
@@ -29,10 +17,15 @@ fi
 
 KUBECONFIG=${KUBECONFIG:-$HOME/.kube/config}
 repo_dir="$(dirname $0)/.."
-cat ${repo_dir}/deploy/sa.yaml >> ${manifest}
-cat ${repo_dir}/deploy/rbac.yaml >> ${manifest}
-cat ${repo_dir}/deploy/operator.yaml >> ${manifest}
-cat ${repo_dir}/deploy/crd.yaml >> ${global_manifest}
+{ cat ${repo_dir}/deploy/service_account.yaml;printf "\n---\n"; } >> ${manifest}
+{ cat ${repo_dir}/deploy/role.yaml;printf "\n---\n"; } >> ${manifest}
+{ cat ${repo_dir}/deploy/role_binding.yaml;printf "\n---\n"; } >> ${manifest}
+{ cat ${repo_dir}/deploy/cluster_role.yaml;printf "\n---\n"; } >> ${manifest}
+{ cat ${repo_dir}/deploy/cluster_role_binding.yaml;printf "\n---\n"; } >> ${manifest}
+{ cat ${repo_dir}/deploy/cluster_role_binding_pv.yaml;printf "\n---\n"; } >> ${manifest}
+{ cat ${repo_dir}/deploy/operator.yaml;printf "\n---\n"; } >> ${manifest}
+{ cat ${repo_dir}/deploy/crds/local.storage.openshift.io_localvolumes_crd.yaml;printf "\n---\n"; } >> ${global_manifest}
+
 
 sed -i "s,quay.io/openshift/origin-local-storage-operator,${IMAGE_LOCAL_STORAGE_OPERATOR}," ${manifest}
 sed -i "s,quay.io/openshift/origin-local-storage-diskmaker,${IMAGE_LOCAL_DISKMAKER}," ${manifest}
