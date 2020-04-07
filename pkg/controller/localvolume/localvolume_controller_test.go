@@ -9,6 +9,7 @@ import (
 	operatorv1 "github.com/openshift/api/operator/v1"
 	localv1 "github.com/openshift/local-storage-operator/pkg/apis/local/v1"
 	commontypes "github.com/openshift/local-storage-operator/pkg/common"
+	"github.com/openshift/local-storage-operator/pkg/controller/util"
 	"github.com/openshift/local-storage-operator/pkg/diskmaker"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -138,8 +139,8 @@ func TestSyncLocalVolumeProvider(t *testing.T) {
 	handler, apiClient := getHandler()
 	diskMakerImage := "quay.io/gnufied/local-diskmaker"
 	provisionerImage := "quay.io/gnufied/local-provisioner"
-	os.Setenv(diskMakerImageEnv, diskMakerImage)
-	os.Setenv(provisionerImageEnv, provisionerImage)
+	os.Setenv(util.DiskMakerImageEnv, diskMakerImage)
+	os.Setenv(util.ProvisionerImageEnv, provisionerImage)
 	err := handler.syncLocalVolumeProvider(localStorageProvider)
 	if err != nil {
 		t.Fatalf("unexpected error : %v", err)

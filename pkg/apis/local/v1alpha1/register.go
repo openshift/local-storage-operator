@@ -10,6 +10,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/scheme"
 )
 
+const (
+	LocalVolumeSetKind = "LocalVolumeSet"
+)
+
 var (
 	// SchemeGroupVersion is group version used to register these objects
 	SchemeGroupVersion = schema.GroupVersion{Group: "local.storage.openshift.io", Version: "v1alpha1"}
