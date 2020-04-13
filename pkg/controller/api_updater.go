@@ -11,8 +11,8 @@ import (
 	"github.com/operator-framework/operator-sdk/pkg/k8sclient"
 	"github.com/operator-framework/operator-sdk/pkg/sdk"
 	appsv1 "k8s.io/api/apps/v1"
-	"k8s.io/api/core/v1"
 	corev1 "k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	extscheme "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset/scheme"
@@ -46,6 +46,7 @@ type apiUpdater interface {
 	applyRoleBinding(roleBinding *rbacv1.RoleBinding) (*rbacv1.RoleBinding, bool, error)
 	applyStorageClass(required *storagev1.StorageClass) (*storagev1.StorageClass, bool, error)
 	applyDaemonSet(ds *appsv1.DaemonSet, expectedGeneration int64, forceRollout bool) (*appsv1.DaemonSet, bool, error)
+	getDaemonSet(namespace, dsName string) (*appsv1.DaemonSet, error)
 	listStorageClasses(listOptions metav1.ListOptions) (*storagev1.StorageClassList, error)
 	listPersistentVolumes(listOptions metav1.ListOptions) (*corev1.PersistentVolumeList, error)
 	recordEvent(lv *localv1.LocalVolume, eventType, reason, messageFmt string, args ...interface{})
@@ -131,6 +132,10 @@ func (s *sdkAPIUpdater) applyDaemonSet(ds *appsv1.DaemonSet, expectedGeneration 
 		klog.Infof("Rolling out DaemonSet: %s/%s", ds.Name, ds.Namespace)
 	}
 	return resourceapply.ApplyDaemonSet(k8sclient.GetKubeClient().AppsV1(), ds, expectedGeneration, forceRollout)
+}
+
+func (s *sdkAPIUpdater) getDaemonSet(namespace, dsName string) (*appsv1.DaemonSet, error) {
+	return k8sclient.GetKubeClient().AppsV1().DaemonSets(namespace).Get(dsName, metav1.GetOptions{})
 }
 
 func (s *sdkAPIUpdater) listStorageClasses(listOptions metav1.ListOptions) (*storagev1.StorageClassList, error) {
