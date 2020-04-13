@@ -719,6 +719,7 @@ func (r *ReconcileLocalVolume) generateDiskMakerDaemonSet(cr *localv1.LocalVolum
 		{
 			Name:  "local-diskmaker",
 			Image: util.GetDiskMakerImage(),
+			Args:  []string{"lv-controller"},
 			SecurityContext: &corev1.SecurityContext{
 				Privileged: &privileged,
 			},
