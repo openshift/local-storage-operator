@@ -30,7 +30,16 @@ const (
 	RawDisk DeviceType = "disk"
 	// Partition represents a device-type of partion
 	Partition DeviceType = "part"
+	// Loop type device
+	Loop DeviceType = "loop"
 )
+
+// ValidDeviceTypes for DeviceInclusionSpec
+var ValidDeviceTypes = []DeviceType{
+	RawDisk,
+	Partition,
+	Loop,
+}
 
 // DeviceInclusionSpec holds the inclusion filter spec
 type DeviceInclusionSpec struct {
