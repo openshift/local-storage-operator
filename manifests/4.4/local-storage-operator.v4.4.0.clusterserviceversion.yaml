@@ -29,7 +29,7 @@ metadata:
       ]
     categories: Storage
     capabilities: Full Lifecycle
-    containerImage: quay.io/openshift/origin-local-storage-operator:4.4.0
+    containerImage: quay.io/openshift/origin-local-storage-operator:latest
     support: Red Hat
     repository: https://github.com/openshift/local-storage-operator
     createdAt: "2019-08-14T00:00:00Z"
