@@ -6,7 +6,7 @@ The local-storage Operator is avaialble in OLM, this makes it easy to consume lo
 
 ## Pre Requisites
 
-* A running OCP cluster (>= 4.1), with unused raw disks.  This operator also works with upstream raw Kubernetes clusters
+* A running OCP cluster (>= 4.2), with unused raw disks.  This operator also works with upstream raw Kubernetes clusters
   and has been tested with version 1.14.
 * OLM version >= 0.9.0.
 
