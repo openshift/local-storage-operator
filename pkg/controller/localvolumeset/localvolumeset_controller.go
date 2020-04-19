@@ -3,7 +3,6 @@ package localvolumeset
 import (
 	"context"
 	"fmt"
-	"reflect"
 
 	"github.com/go-logr/logr"
 	localv1alpha1 "github.com/openshift/local-storage-operator/pkg/apis/local/v1alpha1"
@@ -21,6 +20,8 @@ import (
 	"k8s.io/klog"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
@@ -98,7 +99,6 @@ type ReconcileLocalVolumeSet struct {
 func (r *ReconcileLocalVolumeSet) Reconcile(request reconcile.Request) (reconcile.Result, error) {
 	r.reqLogger = log.WithValues("Request.Namespace", request.Namespace, "Request.Name", request.Name)
 	r.reqLogger.Info("Reconciling LocalVolumeSet")
-
 	// Fetch the LocalVolumeSet instance
 	instance := &localv1alpha1.LocalVolumeSet{}
 	err := r.client.Get(context.TODO(), request.NamespacedName, instance)
@@ -143,25 +143,30 @@ func (r *ReconcileLocalVolumeSet) Reconcile(request reconcile.Request) (reconcil
 	}
 	totalPVCount := int32(len(localPVs.Items))
 	instance.Status.TotalProvisionedDeviceCount = &totalPVCount
+	instance.Status.ObservedGeneration = instance.Generation
 	err = r.client.Status().Update(context.TODO(), instance)
 	if err != nil {
 		return reconcile.Result{}, err
 	}
+
 	return reconcile.Result{}, nil
 }
 
 func (r *ReconcileLocalVolumeSet) syncLocalVolumeSetDaemon(cr *localv1alpha1.LocalVolumeSet) error {
 	ds := newDiscoveryDaemonsetForCR(cr)
-	oldDs := &appsv1.DaemonSet{}
-	err := r.client.Get(context.TODO(), types.NamespacedName{Name: ds.Name, Namespace: ds.Namespace}, oldDs)
-	if err != nil {
-		if errors.IsNotFound(err) {
-			return r.client.Create(context.TODO(), ds)
+	oldDs := &appsv1.DaemonSet{ObjectMeta: metav1.ObjectMeta{Name: ds.Name, Namespace: ds.Namespace}}
+	_, err := controllerutil.CreateOrUpdate(context.TODO(), r.client, oldDs, func() error {
+		if oldDs.Labels == nil {
+			oldDs.Labels = make(map[string]string)
 		}
+		for k, v := range ds.Labels {
+			oldDs.Labels[k] = v
+		}
+		oldDs.Spec = ds.Spec
+		return controllerutil.SetControllerReference(cr, oldDs, r.scheme)
+	})
+	if err != nil && !errors.IsAlreadyExists(err) {
 		return err
-	}
-	if !reflect.DeepEqual(ds.Spec, oldDs.Spec) {
-		return r.client.Update(context.TODO(), oldDs)
 	}
 	return nil
 }
@@ -225,21 +230,30 @@ func newDiscoveryDaemonsetForCR(cr *localv1alpha1.LocalVolumeSet) *appsv1.Daemon
 			},
 		},
 	}
-	addOwner(&ds.ObjectMeta, cr)
 	addOwnerLabels(&ds.ObjectMeta, cr)
 	return ds
 }
 
-// syncProvisionerConfigMap syncs the configmap and returns true if configmap was modified
-func (r *ReconcileLocalVolumeSet) syncProvisionerConfigMap(o *localv1alpha1.LocalVolumeSet) error {
-	provisionerConfigMap, err := r.generateProvisionerConfigMap(o)
+// syncProvisionerConfigMap syncs the configmap and returns any error if occured
+func (r *ReconcileLocalVolumeSet) syncProvisionerConfigMap(cr *localv1alpha1.LocalVolumeSet) error {
+	provisionerConfigMap, err := r.generateProvisionerConfigMap(cr)
 	if err != nil {
-		klog.Errorf("error generating provisioner configmap %s: %v", o.Name, err)
+		klog.Errorf("error generating provisioner configmap %s: %v", cr.Name, err)
 		return err
 	}
-	err = r.client.Create(context.TODO(), provisionerConfigMap)
+	oldProvisionerConfigMap := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: provisionerConfigMap.Name, Namespace: provisionerConfigMap.Namespace}}
+	_, err = controllerutil.CreateOrUpdate(context.TODO(), r.client, oldProvisionerConfigMap, func() error {
+		if oldProvisionerConfigMap.Labels == nil {
+			oldProvisionerConfigMap.Labels = make(map[string]string)
+		}
+		for k, v := range provisionerConfigMap.Labels {
+			oldProvisionerConfigMap.Labels[k] = v
+		}
+		oldProvisionerConfigMap.Data = provisionerConfigMap.Data
+		return controllerutil.SetControllerReference(cr, oldProvisionerConfigMap, r.scheme)
+	})
 	if err != nil && !errors.IsAlreadyExists(err) {
-		return fmt.Errorf("error creating provisioner configmap %s: %v", o.Name, err)
+		return err
 	}
 	return nil
 }
@@ -248,7 +262,7 @@ func (r *ReconcileLocalVolumeSet) getProvisionerConfigMapName(cr *localv1alpha1.
 	return cr.Name + "-localvolumeset-local-provisioner-configmap"
 }
 
-// CreateConfigMap Create configmap requires by the local storage provisioner
+// generateProvisionerConfigMap Create configmap requires by the local storage provisioner
 func (r *ReconcileLocalVolumeSet) generateProvisionerConfigMap(cr *localv1alpha1.LocalVolumeSet) (*corev1.ConfigMap, error) {
 	provisonerConfigName := r.getProvisionerConfigMapName(cr)
 	configMapData := map[string]string{}
@@ -274,7 +288,6 @@ func (r *ReconcileLocalVolumeSet) generateProvisionerConfigMap(cr *localv1alpha1
 	}
 
 	configmap.Data = configMapData
-	addOwner(&configmap.ObjectMeta, cr)
 	addOwnerLabels(&configmap.ObjectMeta, cr)
 	return configmap, nil
 }
@@ -307,16 +320,19 @@ func addOwnerLabels(meta *metav1.ObjectMeta, cr *localv1alpha1.LocalVolumeSet) {
 
 func (r *ReconcileLocalVolumeSet) syncProvisionerDaemonset(cr *localv1alpha1.LocalVolumeSet, provisionerConfigMapName string) error {
 	ds := r.generateLocalProvisionerDaemonset(cr, provisionerConfigMapName)
-	oldDs := &appsv1.DaemonSet{}
-	err := r.client.Get(context.TODO(), types.NamespacedName{Name: ds.Name, Namespace: ds.Namespace}, oldDs)
-	if err != nil {
-		if errors.IsNotFound(err) {
-			return r.client.Create(context.TODO(), ds)
+	oldDs := &appsv1.DaemonSet{ObjectMeta: metav1.ObjectMeta{Name: ds.Name, Namespace: ds.Namespace}}
+	_, err := controllerutil.CreateOrUpdate(context.TODO(), r.client, oldDs, func() error {
+		if oldDs.Labels == nil {
+			oldDs.Labels = make(map[string]string)
 		}
+		for k, v := range ds.Labels {
+			oldDs.Labels[k] = v
+		}
+		oldDs.Spec = ds.Spec
+		return controllerutil.SetControllerReference(cr, oldDs, r.scheme)
+	})
+	if err != nil && !errors.IsAlreadyExists(err) {
 		return err
-	}
-	if !reflect.DeepEqual(ds.Spec, oldDs.Spec) {
-		return r.client.Update(context.TODO(), oldDs)
 	}
 	return nil
 }
@@ -329,104 +345,137 @@ func (r *ReconcileLocalVolumeSet) syncRBACPolicies(cr *localv1alpha1.LocalVolume
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      cr.Name + "-" + util.ProvisionerServiceAccount,
 			Namespace: cr.Namespace,
-			Labels:    operatorLabel,
 		},
 	}
-	addOwner(&serviceAccount.ObjectMeta, cr)
-	err := r.client.Create(context.TODO(), serviceAccount)
+
+	_, err := controllerutil.CreateOrUpdate(context.TODO(), r.client, serviceAccount, func() error {
+		if serviceAccount.Labels == nil {
+			serviceAccount.Labels = make(map[string]string)
+		}
+		for k, v := range operatorLabel {
+			serviceAccount.Labels[k] = v
+		}
+		return controllerutil.SetOwnerReference(cr, serviceAccount, r.scheme)
+	})
 	if err != nil && !errors.IsAlreadyExists(err) {
-		return fmt.Errorf("error creating service account %s: %v", serviceAccount.Name, err)
+		return fmt.Errorf("error creating or updating serviceAccount %s : %v", serviceAccount.Name, err)
 	}
 
 	provisionerClusterRole := &rbacv1.ClusterRole{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      cr.Name + "-" + util.ProvisionerNodeRoleName,
 			Namespace: cr.Namespace,
-			Labels:    operatorLabel,
-		},
-		Rules: []rbacv1.PolicyRule{
-			{
-				Verbs:     []string{"get"},
-				APIGroups: []string{""},
-				Resources: []string{"nodes"},
-			},
 		},
 	}
-	addOwner(&provisionerClusterRole.ObjectMeta, cr)
-	err = r.client.Create(context.TODO(), provisionerClusterRole)
+
+	_, err = controllerutil.CreateOrUpdate(context.TODO(), r.client, provisionerClusterRole, func() error {
+		if provisionerClusterRole.Labels == nil {
+			provisionerClusterRole.Labels = make(map[string]string)
+			for k, v := range operatorLabel {
+				provisionerClusterRole.Labels[k] = v
+			}
+			provisionerClusterRole.Rules = []rbacv1.PolicyRule{
+				{
+					Verbs:     []string{"get"},
+					APIGroups: []string{""},
+					Resources: []string{"nodes"},
+				},
+			}
+		}
+		return controllerutil.SetOwnerReference(cr, provisionerClusterRole, r.scheme)
+	})
 	if err != nil && !errors.IsAlreadyExists(err) {
-		return fmt.Errorf("error creating provisioner cluster role %s: %v", provisionerClusterRole.Name, err)
+		return fmt.Errorf("error creating or updating provisionerClusterRole %s : %v", provisionerClusterRole.Name, err)
 	}
 
 	pvClusterRoleBinding := &rbacv1.ClusterRoleBinding{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      cr.Name + "-" + util.ProvisionerPVRoleBindingName,
 			Namespace: cr.Namespace,
-			Labels:    operatorLabel,
 		},
-		Subjects: []rbacv1.Subject{
+	}
+
+	_, err = controllerutil.CreateOrUpdate(context.TODO(), r.client, pvClusterRoleBinding, func() error {
+		if pvClusterRoleBinding.Labels == nil {
+			pvClusterRoleBinding.Labels = make(map[string]string)
+		}
+		for k, v := range operatorLabel {
+			pvClusterRoleBinding.Labels[k] = v
+		}
+		pvClusterRoleBinding.Subjects = []rbacv1.Subject{
 			{
 				Kind:      "ServiceAccount",
 				Name:      serviceAccount.Name,
 				Namespace: serviceAccount.Namespace,
 			},
-		},
-		RoleRef: rbacv1.RoleRef{
+		}
+		pvClusterRoleBinding.RoleRef = rbacv1.RoleRef{
 			APIGroup: "rbac.authorization.k8s.io",
 			Kind:     "ClusterRole",
 			Name:     util.DefaultPVClusterRole,
-		},
-	}
-	addOwner(&pvClusterRoleBinding.ObjectMeta, cr)
-	err = r.client.Create(context.TODO(), pvClusterRoleBinding)
+		}
+		return controllerutil.SetOwnerReference(cr, pvClusterRoleBinding, r.scheme)
+	})
 	if err != nil && !errors.IsAlreadyExists(err) {
-		return fmt.Errorf("error creating node pvClusterRoleBinding %s: %v", pvClusterRoleBinding.Name, err)
+		return fmt.Errorf("error creating or updating pvClusterRoleBinding %s : %v", pvClusterRoleBinding.Name, err)
 	}
 
 	nodeRoleBinding := &rbacv1.ClusterRoleBinding{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      cr.Name + "-" + util.ProvisionerNodeRoleBindingName,
 			Namespace: cr.Namespace,
-			Labels:    operatorLabel,
 		},
-		Subjects: []rbacv1.Subject{
+	}
+
+	_, err = controllerutil.CreateOrUpdate(context.TODO(), r.client, nodeRoleBinding, func() error {
+		if nodeRoleBinding.Labels == nil {
+			nodeRoleBinding.Labels = make(map[string]string)
+		}
+		for k, v := range operatorLabel {
+			nodeRoleBinding.Labels[k] = v
+		}
+		nodeRoleBinding.Subjects = []rbacv1.Subject{
 			{
 				Kind:      "ServiceAccount",
 				Name:      serviceAccount.Name,
 				Namespace: serviceAccount.Namespace,
 			},
-		},
-		RoleRef: rbacv1.RoleRef{
+		}
+		nodeRoleBinding.RoleRef = rbacv1.RoleRef{
 			APIGroup: "rbac.authorization.k8s.io",
 			Kind:     "ClusterRole",
 			Name:     provisionerClusterRole.Name,
-		},
-	}
-
-	addOwner(&nodeRoleBinding.ObjectMeta, cr)
-	err = r.client.Create(context.TODO(), nodeRoleBinding)
+		}
+		return controllerutil.SetOwnerReference(cr, nodeRoleBinding, r.scheme)
+	})
 	if err != nil && !errors.IsAlreadyExists(err) {
-		return fmt.Errorf("error creating node role binding %s: %v", nodeRoleBinding.Name, err)
+		return fmt.Errorf("error creating or updating nodeRoleBinding %s : %v", nodeRoleBinding.Name, err)
 	}
 
 	localVolumeRole := &rbacv1.Role{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      cr.Name + "-" + util.LocalVolumeRoleName,
 			Namespace: cr.Namespace,
-			Labels:    operatorLabel,
 		},
-		Rules: []rbacv1.PolicyRule{
+	}
+	_, err = controllerutil.CreateOrUpdate(context.TODO(), r.client, localVolumeRole, func() error {
+		if localVolumeRole.Labels == nil {
+			localVolumeRole.Labels = make(map[string]string)
+		}
+		for k, v := range operatorLabel {
+			localVolumeRole.Labels[k] = v
+		}
+		localVolumeRole.Rules = []rbacv1.PolicyRule{
 			{
 				Verbs:     []string{"get", "list", "watch"},
 				APIGroups: []string{"local.storage.openshift.io"},
 				Resources: []string{"*"},
 			},
-		},
-	}
-	addOwner(&localVolumeRole.ObjectMeta, cr)
-	err = r.client.Create(context.TODO(), localVolumeRole)
+		}
+		return controllerutil.SetOwnerReference(cr, localVolumeRole, r.scheme)
+	})
 	if err != nil && !errors.IsAlreadyExists(err) {
-		return fmt.Errorf("error creating node localVolumeRole %s: %v", localVolumeRole.Name, err)
+		return fmt.Errorf("error creating or updating localVolumeRole %s : %v", localVolumeRole.Name, err)
 	}
 
 	localVolumeRoleBinding := &rbacv1.RoleBinding{
@@ -435,23 +484,30 @@ func (r *ReconcileLocalVolumeSet) syncRBACPolicies(cr *localv1alpha1.LocalVolume
 			Namespace: cr.Namespace,
 			Labels:    operatorLabel,
 		},
-		Subjects: []rbacv1.Subject{
+	}
+	_, err = controllerutil.CreateOrUpdate(context.TODO(), r.client, localVolumeRoleBinding, func() error {
+		if localVolumeRoleBinding.Labels == nil {
+			localVolumeRoleBinding.Labels = make(map[string]string)
+		}
+		for k, v := range operatorLabel {
+			localVolumeRoleBinding.Labels[k] = v
+		}
+		localVolumeRoleBinding.Subjects = []rbacv1.Subject{
 			{
 				Kind:      "ServiceAccount",
 				Name:      serviceAccount.Name,
 				Namespace: serviceAccount.Namespace,
 			},
-		},
-		RoleRef: rbacv1.RoleRef{
+		}
+		localVolumeRoleBinding.RoleRef = rbacv1.RoleRef{
 			APIGroup: "rbac.authorization.k8s.io",
 			Kind:     "Role",
 			Name:     localVolumeRole.Name,
-		},
-	}
-	addOwner(&localVolumeRole.ObjectMeta, cr)
-	err = r.client.Create(context.TODO(), localVolumeRoleBinding)
+		}
+		return controllerutil.SetOwnerReference(cr, localVolumeRoleBinding, r.scheme)
+	})
 	if err != nil && !errors.IsAlreadyExists(err) {
-		return fmt.Errorf("error creating node localVolumeRoleBinding %s: %v", localVolumeRoleBinding.Name, err)
+		return fmt.Errorf("error creating or updating localVolumeRoleBinding %s : %v", localVolumeRoleBinding.Name, err)
 	}
 	return nil
 }
@@ -553,20 +609,6 @@ func (r *ReconcileLocalVolumeSet) generateLocalProvisionerDaemonset(cr *localv1a
 		},
 	}
 	r.applyNodeSelector(cr, ds)
-	addOwner(&ds.ObjectMeta, cr)
 	addOwnerLabels(&ds.ObjectMeta, cr)
 	return ds
-}
-
-func addOwner(meta *metav1.ObjectMeta, cr *localv1alpha1.LocalVolumeSet) {
-	trueVal := true
-	meta.OwnerReferences = []metav1.OwnerReference{
-		{
-			APIVersion: localv1alpha1.SchemeGroupVersion.String(),
-			Kind:       localv1alpha1.LocalVolumeSetKind,
-			Name:       cr.Name,
-			UID:        cr.UID,
-			Controller: &trueVal,
-		},
-	}
 }
