@@ -89,6 +89,7 @@ spec:
             resources:
             - pods
             - services
+            - services/finalizers
             - endpoints
             - persistentvolumeclaims
             - events
@@ -117,6 +118,29 @@ spec:
             - statefulsets
             verbs:
             - "*"
+          - apiGroups:
+            - events.k8s.io
+            resources:
+            - events
+            verbs:
+            - "*"
+          - apiGroups:
+            - monitoring.coreos.com
+            resources:
+            - servicemonitors
+            verbs:
+            - get
+            - list
+            - watch
+            - create
+          - apiGroups:
+            - apps
+            resourceNames:
+            - local-storage-operator
+            resources:
+            - deployments/finalizers
+            verbs:
+            - update
           serviceAccountName: local-storage-operator
       clusterPermissions:
         - rules:
