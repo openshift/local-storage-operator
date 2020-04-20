@@ -17,10 +17,10 @@ spec:
         - name: local-storage-operator
           image: quay.io/openshift/origin-local-storage-operator
           ports:
-            - containerPort: 60000
-              name: metrics
+          - containerPort: 60000
+            name: metrics
           command:
-            - local-storage-operator
+          - local-storage-operator
           imagePullPolicy: Always
           env:
             - name: WATCH_NAMESPACE
@@ -32,9 +32,7 @@ spec:
                 fieldRef:
                   fieldPath: metadata.name
             - name: OPERATOR_NAME
-              value: local-storage-operator
-            - name: OPERATOR_NAME
-              value: local-storage-operator
+              value: "local-storage-operator"
             - name: PROVISIONER_IMAGE
               value: quay.io/openshift/origin-local-storage-static-provisioner
             - name: DISKMAKER_IMAGE
