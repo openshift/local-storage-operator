@@ -35,12 +35,12 @@ push-images:
 	docker push ${OPERATOR_IMAGE}
 
 diskmaker-container:
-	docker build --no-cache -t $(DISKMAKER_IMAGE) -f $(CURPATH)/build/Dockerfile.diskmaker .
+	docker build --no-cache -t $(DISKMAKER_IMAGE) -f $(CURPATH)/Dockerfile.diskmaker .
 
 .PHONY: diskmaker-container
 
 operator-container:
-	docker build --no-cache -t $(OPERATOR_IMAGE) -f $(CURPATH)/build/Dockerfile .
+	docker build --no-cache -t $(OPERATOR_IMAGE) -f $(CURPATH)/Dockerfile .
 
 .PHONY: operator-container
 
