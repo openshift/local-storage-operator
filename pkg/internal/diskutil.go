@@ -25,7 +25,8 @@ type BlockDevice struct {
 	Model      string        `json:"mode,omitempty"`
 	Vendor     string        `json:"vendor,omitempty"`
 	State      string        `json:"state,omitempty"`
-	Size       int           `json:"size"`
+	FSType     string        `json:"fstype"`
+	Size       string        `json:"size"`
 	Rotational bool          `json:"rota"`
 	ReadOnly   bool          `json:"ro,omitempty"`
 	Removable  bool          `json:"rm,omitempty"`
@@ -87,7 +88,7 @@ func ListBlockDevices() ([]BlockDevice, error) {
 	var output bytes.Buffer
 	var parsedOutput LsblkOutput
 
-	columns := "NAME,ROTA,TYPE,SIZE,MODEL,VENDOR,RO,RM,STATE"
+	columns := "NAME,ROTA,TYPE,SIZE,MODEL,VENDOR,RO,RM,STATE,FSTYPE"
 	args := []string{"-J", "-b", "-o", columns}
 	cmd := exec.Command("lsblk", args...)
 	cmd.Stdout = &output

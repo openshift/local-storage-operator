@@ -6,7 +6,9 @@ import (
 
 	localv1alpha1 "github.com/openshift/local-storage-operator/pkg/apis/local/v1alpha1"
 	"github.com/openshift/local-storage-operator/pkg/internal"
+	"github.com/pkg/errors"
 	"golang.org/x/sys/unix"
+	"k8s.io/apimachinery/pkg/api/resource"
 )
 
 // var filters []diskFilter
@@ -64,8 +66,7 @@ var filters = []diskFilter{
 	{
 		name: "noFilesystemSignature",
 		matcher: func(dev internal.BlockDevice) (bool, error) {
-			//TODO
-			matched := false
+			matched := dev.FSType == ""
 			return matched, nil
 		},
 	},
@@ -74,8 +75,16 @@ var matchers = []diskMatcher{
 	{
 		name: "inSizeRange",
 		matcher: func(dev internal.BlockDevice, spec localv1alpha1.DeviceInclusionSpec) (bool, error) {
-			//TODO
 			matched := false
+
+			quantity, err := resource.ParseQuantity(dev.Size)
+			if err != nil {
+				return false, errors.Wrap(err, "could not parse device size")
+			}
+
+			greaterThanMin := spec.MinSize.Cmp(quantity) < 0
+			lessThanMax := spec.MaxSize.Cmp(resource.MustParse(dev.Size)) > 0
+			matched = greaterThanMin && (lessThanMax || spec.MaxSize.IsZero())
 			return matched, nil
 		},
 	},
