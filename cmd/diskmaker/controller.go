@@ -13,6 +13,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/config"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/manager/signals"
+
+	diskmakerController "github.com/openshift/local-storage-operator/pkg/controller/diskmaker"
 )
 
 var managerCmd = &cobra.Command{
@@ -71,9 +73,14 @@ func startController(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	err = diskmakerController.AddToManager(mgr)
+	if err != nil {
+		log.Error(err, "failed to add controllers to manager")
+	}
+
 	// Start the Cmd
 	if err := mgr.Start(signals.SetupSignalHandler()); err != nil {
-		log.Error(err, "Manager exited non-zero")
+		log.Error(err, "manager exited non-zero")
 		return err
 	}
 	return nil

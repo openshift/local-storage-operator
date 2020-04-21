@@ -211,17 +211,44 @@ func newDiscoveryDaemonsetForCR(cr *localv1alpha1.LocalVolumeSet) *appsv1.Daemon
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{Labels: labels},
 				Spec: corev1.PodSpec{
-					Volumes: volumes,
+					Volumes:            volumes,
+					ServiceAccountName: "local-storage-operator", // TODO replace with common var
 					Containers: []corev1.Container{
 						{
-							Image:   "busybox",
-							Name:    "busybox",
-							Command: []string{"sleep", "3600"},
+							Image: util.GetDiskMakerImage(),
+							Args:  []string{"lv-manager"},
+							Name:  "local-diskmaker",
 							VolumeMounts: []corev1.VolumeMount{
 								{
 									Name:             "local-disks",
 									MountPath:        util.GetLocalDiskLocationPath(),
 									MountPropagation: &hostContainerPropagation,
+								},
+							},
+							Env: []corev1.EnvVar{
+								{
+									Name: "MY_NODE_NAME",
+									ValueFrom: &corev1.EnvVarSource{
+										FieldRef: &corev1.ObjectFieldSelector{
+											FieldPath: "spec.nodeName",
+										},
+									},
+								},
+								{
+									Name: "WATCH_NAMESPACE",
+									ValueFrom: &corev1.EnvVarSource{
+										FieldRef: &corev1.ObjectFieldSelector{
+											FieldPath: "metadata.namespace",
+										},
+									},
+								},
+								{
+									Name: "POD_NAME",
+									ValueFrom: &corev1.EnvVarSource{
+										FieldRef: &corev1.ObjectFieldSelector{
+											FieldPath: "metadata.name",
+										},
+									},
 								},
 							},
 						},
