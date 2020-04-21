@@ -9,14 +9,20 @@ require (
 	github.com/openshift/client-go v0.0.0-20200116152001-92a2713fa240
 	github.com/openshift/library-go v0.0.0-20200314142707-3c25293448b0
 	github.com/operator-framework/operator-sdk v0.16.0
+	github.com/pkg/errors v0.8.1
 	github.com/prometheus/common v0.7.0
+	github.com/spf13/cobra v0.0.5
 	github.com/spf13/pflag v1.0.5
+	golang.org/x/sys v0.0.0-20191028164358-195ce5e7f934
 	gopkg.in/yaml.v2 v2.2.8
 	k8s.io/api v0.18.0
 	k8s.io/apimachinery v0.18.0
 	k8s.io/client-go v12.0.0+incompatible
 	k8s.io/klog v1.0.0
-	sigs.k8s.io/controller-runtime v0.4.0
+	k8s.io/kube-openapi v0.0.0-20190918143330-0270cf2f1c1d
+	sigs.k8s.io/controller-runtime v0.5.2
+	sigs.k8s.io/sig-storage-lib-external-provisioner v4.1.0+incompatible // indirect
+	sigs.k8s.io/sig-storage-local-static-provisioner v2.3.4+incompatible
 )
 
 // Pinned to kubernetes-1.16.2
