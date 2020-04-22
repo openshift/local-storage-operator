@@ -11,8 +11,8 @@ const (
 	ProvisionerPVRoleBindingName = "local-storage-provisioner-pv-binding"
 	ProvisionerNodeRoleName      = "local-storage-provisioner-node-clusterrole"
 
-	LocalVolumeRoleName        = "local-storage-provisioner-cr-role"
-	LocalVolumeRoleBindingName = "local-storage-provisioner-cr-rolebinding"
+	LocalVolumeSetRoleName        = "local-storage-provisioner-cr-role"
+	LocalVolumeSetRoleBindingName = "local-storage-provisioner-cr-rolebinding"
 
 	DefaultPVClusterRole           = "system:persistent-volume-provisioner"
 	ProvisionerNodeRoleBindingName = "local-storage-provisioner-node-binding"

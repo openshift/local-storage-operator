@@ -153,7 +153,7 @@ func (r *ReconcileLocalVolumeSet) Reconcile(request reconcile.Request) (reconcil
 }
 
 func (r *ReconcileLocalVolumeSet) syncLocalVolumeSetDaemon(cr *localv1alpha1.LocalVolumeSet) error {
-	ds := newDiscoveryDaemonsetForCR(cr)
+	ds := r.generateDiscoveryDaemonset(cr)
 	oldDs := &appsv1.DaemonSet{ObjectMeta: metav1.ObjectMeta{Name: ds.Name, Namespace: ds.Namespace}}
 	_, err := controllerutil.CreateOrUpdate(context.TODO(), r.client, oldDs, func() error {
 		if oldDs.Labels == nil {
@@ -183,8 +183,8 @@ func (r *ReconcileLocalVolumeSet) applyNodeSelector(cr *localv1alpha1.LocalVolum
 	return ds
 }
 
-// newDiscDaemonsetForCR returns a busybox pod with the same name/namespace as the cr
-func newDiscoveryDaemonsetForCR(cr *localv1alpha1.LocalVolumeSet) *appsv1.DaemonSet {
+// generateDiscoveryDaemonset returns a discovery daemon spec
+func (r *ReconcileLocalVolumeSet) generateDiscoveryDaemonset(cr *localv1alpha1.LocalVolumeSet) *appsv1.DaemonSet {
 	labels := map[string]string{
 		"app": cr.Name,
 	}
@@ -212,7 +212,7 @@ func newDiscoveryDaemonsetForCR(cr *localv1alpha1.LocalVolumeSet) *appsv1.Daemon
 				ObjectMeta: metav1.ObjectMeta{Labels: labels},
 				Spec: corev1.PodSpec{
 					Volumes:            volumes,
-					ServiceAccountName: "local-storage-operator", // TODO replace with common var
+					ServiceAccountName: cr.Name + "-" + util.ProvisionerServiceAccount,
 					Containers: []corev1.Container{
 						{
 							Image: util.GetDiskMakerImage(),
@@ -258,6 +258,7 @@ func newDiscoveryDaemonsetForCR(cr *localv1alpha1.LocalVolumeSet) *appsv1.Daemon
 		},
 	}
 	addOwnerLabels(&ds.ObjectMeta, cr)
+	r.applyNodeSelector(cr, ds)
 	return ds
 }
 
@@ -479,35 +480,40 @@ func (r *ReconcileLocalVolumeSet) syncRBACPolicies(cr *localv1alpha1.LocalVolume
 		return fmt.Errorf("error creating or updating nodeRoleBinding %s : %v", nodeRoleBinding.Name, err)
 	}
 
-	localVolumeRole := &rbacv1.Role{
+	localVolumeSetRole := &rbacv1.Role{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      cr.Name + "-" + util.LocalVolumeRoleName,
+			Name:      cr.Name + "-" + util.LocalVolumeSetRoleName,
 			Namespace: cr.Namespace,
 		},
 	}
-	_, err = controllerutil.CreateOrUpdate(context.TODO(), r.client, localVolumeRole, func() error {
-		if localVolumeRole.Labels == nil {
-			localVolumeRole.Labels = make(map[string]string)
+	_, err = controllerutil.CreateOrUpdate(context.TODO(), r.client, localVolumeSetRole, func() error {
+		if localVolumeSetRole.Labels == nil {
+			localVolumeSetRole.Labels = make(map[string]string)
 		}
 		for k, v := range operatorLabel {
-			localVolumeRole.Labels[k] = v
+			localVolumeSetRole.Labels[k] = v
 		}
-		localVolumeRole.Rules = []rbacv1.PolicyRule{
+		localVolumeSetRole.Rules = []rbacv1.PolicyRule{
 			{
 				Verbs:     []string{"get", "list", "watch"},
 				APIGroups: []string{"local.storage.openshift.io"},
 				Resources: []string{"*"},
 			},
+			{
+				Verbs:     []string{"*"},
+				APIGroups: []string{""},
+				Resources: []string{"configmaps"},
+			},
 		}
-		return controllerutil.SetOwnerReference(cr, localVolumeRole, r.scheme)
+		return controllerutil.SetOwnerReference(cr, localVolumeSetRole, r.scheme)
 	})
 	if err != nil && !errors.IsAlreadyExists(err) {
-		return fmt.Errorf("error creating or updating localVolumeRole %s : %v", localVolumeRole.Name, err)
+		return fmt.Errorf("error creating or updating localVolumeRole %s : %v", localVolumeSetRole.Name, err)
 	}
 
 	localVolumeRoleBinding := &rbacv1.RoleBinding{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      cr.Name + "-" + util.LocalVolumeRoleBindingName,
+			Name:      cr.Name + "-" + util.LocalVolumeSetRoleBindingName,
 			Namespace: cr.Namespace,
 			Labels:    operatorLabel,
 		},
@@ -529,7 +535,7 @@ func (r *ReconcileLocalVolumeSet) syncRBACPolicies(cr *localv1alpha1.LocalVolume
 		localVolumeRoleBinding.RoleRef = rbacv1.RoleRef{
 			APIGroup: "rbac.authorization.k8s.io",
 			Kind:     "Role",
-			Name:     localVolumeRole.Name,
+			Name:     localVolumeSetRole.Name,
 		}
 		return controllerutil.SetOwnerReference(cr, localVolumeRoleBinding, r.scheme)
 	})
