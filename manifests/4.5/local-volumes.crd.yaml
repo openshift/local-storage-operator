@@ -103,6 +103,7 @@ spec:
             conditions:
               type: array
               items:
+                type: object
                 properties:
                   type:
                     type: string
@@ -110,7 +111,7 @@ spec:
                     type: string
                     enum: ["True", "False", "Unknown"]
                   lastTransitionTime:
-                    type: dateTime
+                    type: string
                     format: date-time
                   reason:
                     type: string
