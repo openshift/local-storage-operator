@@ -161,16 +161,18 @@ func (d *DiskMaker) symLinkDisks(diskConfig *DiskConfig) {
 	}
 
 	for storageClass, deviceArray := range deviceMap {
+		symLinkDirPath := path.Join(d.symlinkLocation, storageClass)
+		err := os.MkdirAll(symLinkDirPath, 0755)
+		if err != nil {
+			msg := fmt.Sprintf("error creating symlink dir %s: %v", symLinkDirPath, err)
+			e := newEvent(ErrorFindingMatchingDisk, msg, "")
+			d.eventSync.report(e, d.localVolume)
+			klog.Errorf(msg)
+			continue
+		}
+
 		for _, deviceNameLocation := range deviceArray {
-			symLinkDirPath := path.Join(d.symlinkLocation, storageClass)
-			err := os.MkdirAll(symLinkDirPath, 0755)
-			if err != nil {
-				msg := fmt.Sprintf("error creating symlink dir %s: %v", symLinkDirPath, err)
-				e := newEvent(ErrorFindingMatchingDisk, msg, "")
-				d.eventSync.report(e, d.localVolume)
-				klog.Errorf(msg)
-				continue
-			}
+
 			baseDeviceName := filepath.Base(deviceNameLocation.diskNamePath)
 			symLinkPath := path.Join(symLinkDirPath, baseDeviceName)
 			if fileExists(symLinkPath) {
