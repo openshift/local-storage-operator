@@ -13,7 +13,7 @@ import (
 	commontypes "github.com/openshift/local-storage-operator/pkg/common"
 	framework "github.com/operator-framework/operator-sdk/pkg/test"
 	"github.com/operator-framework/operator-sdk/pkg/test/e2eutil"
-	"k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
@@ -99,10 +99,12 @@ func TestLocalStorageOperator(t *testing.T) {
 		},
 	}
 
-	err = f.Client.Create(goctx.TODO(), localVolume, &framework.CleanupOptions{TestContext: ctx, Timeout: cleanupTimeout, RetryInterval: cleanupRetryInterval})
+	err = f.Client.Create(goctx.TODO(), localVolume, nil)
 	if err != nil {
 		t.Fatalf("error creating localvolume cr : %v", err)
 	}
+
+	defer deleteLocalVolume(localVolume, f.Client)
 
 	provisionerDSName := localVolume.Name + "-local-provisioner"
 	diskMakerDSName := localVolume.Name + "-local-diskmaker"
@@ -137,6 +139,15 @@ func TestLocalStorageOperator(t *testing.T) {
 			t.Errorf("error deleting created PV: %v", err)
 		}
 	}
+	err = deleteLocalVolume(localVolume, f.Client)
+	if err != nil {
+		t.Fatalf("error deleting localvolume: %v", err)
+	}
+
+	err = verifyStorageClassDeletion(localVolume.Spec.StorageClassDevices[0].StorageClassName, f.KubeClient)
+	if err != nil {
+		t.Fatalf("error verifying storageClass cleanup: %v", err)
+	}
 }
 
 func verifyLocalVolume(lv *localv1.LocalVolume, client framework.FrameworkClient) error {
@@ -156,6 +167,45 @@ func verifyLocalVolume(lv *localv1.LocalVolume, client framework.FrameworkClient
 		return true, nil
 	})
 	return waitErr
+}
+
+func deleteLocalVolume(lv *localv1.LocalVolume, client framework.FrameworkClient) error {
+	err := client.Delete(goctx.TODO(), lv)
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil
+		}
+		return err
+	}
+	waitErr := wait.PollImmediate(retryInterval, timeout, func() (bool, error) {
+		objectKey := dynclient.ObjectKey{
+			Namespace: lv.Namespace,
+			Name:      lv.Name,
+		}
+		err := client.Get(goctx.TODO(), objectKey, lv)
+		if err != nil {
+			if apierrors.IsNotFound(err) {
+				return true, nil
+			}
+			return false, err
+		}
+		return false, nil
+	})
+	return waitErr
+}
+
+func verifyStorageClassDeletion(scName string, kubeclient kubernetes.Interface) error {
+	waitError := wait.Poll(retryInterval, timeout, func() (done bool, err error) {
+		_, err = kubeclient.StorageV1().StorageClasses().Get(scName, metav1.GetOptions{})
+		if err != nil {
+			if apierrors.IsNotFound(err) {
+				return true, nil
+			}
+			return false, err
+		}
+		return false, nil
+	})
+	return waitError
 }
 
 func checkLocalVolumeStatus(lv *localv1.LocalVolume) error {

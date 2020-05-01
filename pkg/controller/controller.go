@@ -14,7 +14,6 @@ import (
 	"github.com/operator-framework/operator-sdk/pkg/k8sclient"
 	"github.com/operator-framework/operator-sdk/pkg/sdk"
 	appsv1 "k8s.io/api/apps/v1"
-	"k8s.io/api/core/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	storagev1 "k8s.io/api/storage/v1"
@@ -258,7 +257,7 @@ func (h *Handler) cleanupLocalVolumeDeployment(lv *localv1.LocalVolume) error {
 		h.apiClient.recordEvent(lv, corev1.EventTypeWarning, listingPersistentVolumesFailed, msg)
 		return fmt.Errorf(msg)
 	}
-	boundPVs := []v1.PersistentVolume{}
+	boundPVs := []corev1.PersistentVolume{}
 	for _, pv := range childPersistentVolumes.Items {
 		if pv.Status.Phase == corev1.VolumeBound {
 			boundPVs = append(boundPVs, pv)
@@ -268,6 +267,13 @@ func (h *Handler) cleanupLocalVolumeDeployment(lv *localv1.LocalVolume) error {
 		msg := fmt.Sprintf("localvolume %s has bound persistentvolumes in use", commontypes.LocalVolumeKey(lv))
 		h.apiClient.recordEvent(lv, corev1.EventTypeWarning, localVolumeDeletionFailed, msg)
 		return fmt.Errorf(msg)
+	}
+
+	err = h.removeUnExpectedStorageClasses(lv, sets.NewString())
+	if err != nil {
+		msg := err.Error()
+		h.apiClient.recordEvent(lv, corev1.EventTypeWarning, deletingStorageClassFailed, msg)
+		return err
 	}
 
 	lv = removeFinalizer(lv)
@@ -885,7 +891,6 @@ func generateStorageClass(cr *localv1.LocalVolume, scName string) *storagev1.Sto
 		VolumeBindingMode: &firstConsumerBinding,
 	}
 	addOwnerLabels(&sc.ObjectMeta, cr)
-	addOwner(&sc.ObjectMeta, cr)
 	return sc
 }
 
