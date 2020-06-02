@@ -16,54 +16,27 @@ package test
 
 import (
 	"flag"
-	"io/ioutil"
-	"log"
 	"os"
 	"testing"
-)
 
-const (
-	ProjRootFlag          = "root"
-	KubeConfigFlag        = "kubeconfig"
-	NamespacedManPathFlag = "namespacedMan"
-	GlobalManPathFlag     = "globalMan"
-	SingleNamespaceFlag   = "singleNamespace"
-	TestNamespaceEnv      = "TEST_NAMESPACE"
+	log "github.com/sirupsen/logrus"
 )
 
 func MainEntry(m *testing.M) {
-	projRoot := flag.String(ProjRootFlag, "", "path to project root")
-	kubeconfigPath := flag.String(KubeConfigFlag, "", "path to kubeconfig")
-	globalManPath := flag.String(GlobalManPathFlag, "", "path to operator manifest")
-	namespacedManPath := flag.String(NamespacedManPathFlag, "", "path to rbac manifest")
-	singleNamespace = flag.Bool(SingleNamespaceFlag, false, "enable single namespace mode")
+	fopts := &frameworkOpts{}
+	fopts.addToFlagSet(flag.CommandLine)
 	flag.Parse()
-	// go test always runs from the test directory; change to project root
-	err := os.Chdir(*projRoot)
+
+	f, err := newFramework(fopts)
 	if err != nil {
-		log.Fatalf("failed to change directory to project root: %v", err)
+		log.Fatalf("Failed to create framework: %v", err)
 	}
-	if err := setup(kubeconfigPath, namespacedManPath); err != nil {
-		log.Fatalf("failed to set up framework: %v", err)
+
+	Global = f
+
+	exitCode, err := f.runM(m)
+	if err != nil {
+		log.Fatal(err)
 	}
-	// setup context to use when setting up crd
-	ctx := NewTestCtx(nil)
-	// os.Exit stops the program before the deferred functions run
-	// to fix this, we put the exit in the defer as well
-	defer func() {
-		exitCode := m.Run()
-		ctx.CleanupNoT()
-		os.Exit(exitCode)
-	}()
-	// create crd
-	if *kubeconfigPath != "incluster" {
-		globalYAML, err := ioutil.ReadFile(*globalManPath)
-		if err != nil {
-			log.Fatalf("failed to read global resource manifest: %v", err)
-		}
-		err = ctx.createFromYAML(globalYAML, true, &CleanupOptions{TestContext: ctx})
-		if err != nil {
-			log.Fatalf("failed to create resource(s) in global resource manifest: %v", err)
-		}
-	}
+	os.Exit(exitCode)
 }

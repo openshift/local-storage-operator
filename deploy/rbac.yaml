@@ -14,6 +14,7 @@ rules:
   resources:
   - pods
   - services
+  - services/finalizers
   - endpoints
   - persistentvolumeclaims
   - events
@@ -48,6 +49,23 @@ rules:
   - events
   verbs:
   - "*"
+- apiGroups:
+  - monitoring.coreos.com
+  resources:
+  - servicemonitors
+  verbs:
+  - get
+  - list
+  - watch
+  - create
+- apiGroups:
+  - apps
+  resourceNames:
+  - local-storage-operator
+  resources:
+  - deployments/finalizers
+  verbs:
+  - update
 ---
 
 kind: RoleBinding

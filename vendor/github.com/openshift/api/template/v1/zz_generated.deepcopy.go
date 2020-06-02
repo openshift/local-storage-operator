@@ -5,7 +5,7 @@
 package v1
 
 import (
-	core_v1 "k8s.io/api/core/v1"
+	corev1 "k8s.io/api/core/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 )
 
@@ -40,7 +40,7 @@ func (in *BrokerTemplateInstance) DeepCopyObject() runtime.Object {
 func (in *BrokerTemplateInstanceList) DeepCopyInto(out *BrokerTemplateInstanceList) {
 	*out = *in
 	out.TypeMeta = in.TypeMeta
-	out.ListMeta = in.ListMeta
+	in.ListMeta.DeepCopyInto(&out.ListMeta)
 	if in.Items != nil {
 		in, out := &in.Items, &out.Items
 		*out = make([]BrokerTemplateInstance, len(*in))
@@ -222,7 +222,7 @@ func (in *TemplateInstanceCondition) DeepCopy() *TemplateInstanceCondition {
 func (in *TemplateInstanceList) DeepCopyInto(out *TemplateInstanceList) {
 	*out = *in
 	out.TypeMeta = in.TypeMeta
-	out.ListMeta = in.ListMeta
+	in.ListMeta.DeepCopyInto(&out.ListMeta)
 	if in.Items != nil {
 		in, out := &in.Items, &out.Items
 		*out = make([]TemplateInstance, len(*in))
@@ -280,12 +280,15 @@ func (in *TemplateInstanceRequester) DeepCopyInto(out *TemplateInstanceRequester
 		in, out := &in.Extra, &out.Extra
 		*out = make(map[string]ExtraValue, len(*in))
 		for key, val := range *in {
+			var outVal []string
 			if val == nil {
 				(*out)[key] = nil
 			} else {
-				(*out)[key] = make([]string, len(val))
-				copy((*out)[key], val)
+				in, out := &val, &outVal
+				*out = make(ExtraValue, len(*in))
+				copy(*out, *in)
 			}
+			(*out)[key] = outVal
 		}
 	}
 	return
@@ -307,21 +310,13 @@ func (in *TemplateInstanceSpec) DeepCopyInto(out *TemplateInstanceSpec) {
 	in.Template.DeepCopyInto(&out.Template)
 	if in.Secret != nil {
 		in, out := &in.Secret, &out.Secret
-		if *in == nil {
-			*out = nil
-		} else {
-			*out = new(core_v1.LocalObjectReference)
-			**out = **in
-		}
+		*out = new(corev1.LocalObjectReference)
+		**out = **in
 	}
 	if in.Requester != nil {
 		in, out := &in.Requester, &out.Requester
-		if *in == nil {
-			*out = nil
-		} else {
-			*out = new(TemplateInstanceRequester)
-			(*in).DeepCopyInto(*out)
-		}
+		*out = new(TemplateInstanceRequester)
+		(*in).DeepCopyInto(*out)
 	}
 	return
 }
@@ -368,7 +363,7 @@ func (in *TemplateInstanceStatus) DeepCopy() *TemplateInstanceStatus {
 func (in *TemplateList) DeepCopyInto(out *TemplateList) {
 	*out = *in
 	out.TypeMeta = in.TypeMeta
-	out.ListMeta = in.ListMeta
+	in.ListMeta.DeepCopyInto(&out.ListMeta)
 	if in.Items != nil {
 		in, out := &in.Items, &out.Items
 		*out = make([]Template, len(*in))

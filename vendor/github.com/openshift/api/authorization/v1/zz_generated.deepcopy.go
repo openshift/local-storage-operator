@@ -5,9 +5,9 @@
 package v1
 
 import (
-	core_v1 "k8s.io/api/core/v1"
-	rbac_v1 "k8s.io/api/rbac/v1"
-	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	corev1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 )
 
@@ -42,12 +42,8 @@ func (in *ClusterRole) DeepCopyInto(out *ClusterRole) {
 	}
 	if in.AggregationRule != nil {
 		in, out := &in.AggregationRule, &out.AggregationRule
-		if *in == nil {
-			*out = nil
-		} else {
-			*out = new(rbac_v1.AggregationRule)
-			(*in).DeepCopyInto(*out)
-		}
+		*out = new(rbacv1.AggregationRule)
+		(*in).DeepCopyInto(*out)
 	}
 	return
 }
@@ -87,7 +83,7 @@ func (in *ClusterRoleBinding) DeepCopyInto(out *ClusterRoleBinding) {
 	}
 	if in.Subjects != nil {
 		in, out := &in.Subjects, &out.Subjects
-		*out = make([]core_v1.ObjectReference, len(*in))
+		*out = make([]corev1.ObjectReference, len(*in))
 		copy(*out, *in)
 	}
 	out.RoleRef = in.RoleRef
@@ -116,7 +112,7 @@ func (in *ClusterRoleBinding) DeepCopyObject() runtime.Object {
 func (in *ClusterRoleBindingList) DeepCopyInto(out *ClusterRoleBindingList) {
 	*out = *in
 	out.TypeMeta = in.TypeMeta
-	out.ListMeta = in.ListMeta
+	in.ListMeta.DeepCopyInto(&out.ListMeta)
 	if in.Items != nil {
 		in, out := &in.Items, &out.Items
 		*out = make([]ClusterRoleBinding, len(*in))
@@ -149,7 +145,7 @@ func (in *ClusterRoleBindingList) DeepCopyObject() runtime.Object {
 func (in *ClusterRoleList) DeepCopyInto(out *ClusterRoleList) {
 	*out = *in
 	out.TypeMeta = in.TypeMeta
-	out.ListMeta = in.ListMeta
+	in.ListMeta.DeepCopyInto(&out.ListMeta)
 	if in.Items != nil {
 		in, out := &in.Items, &out.Items
 		*out = make([]ClusterRole, len(*in))
@@ -188,7 +184,7 @@ func (in *GroupRestriction) DeepCopyInto(out *GroupRestriction) {
 	}
 	if in.Selectors != nil {
 		in, out := &in.Selectors, &out.Selectors
-		*out = make([]meta_v1.LabelSelector, len(*in))
+		*out = make([]metav1.LabelSelector, len(*in))
 		for i := range *in {
 			(*in)[i].DeepCopyInto(&(*out)[i])
 		}
@@ -554,7 +550,7 @@ func (in *RoleBinding) DeepCopyInto(out *RoleBinding) {
 	}
 	if in.Subjects != nil {
 		in, out := &in.Subjects, &out.Subjects
-		*out = make([]core_v1.ObjectReference, len(*in))
+		*out = make([]corev1.ObjectReference, len(*in))
 		copy(*out, *in)
 	}
 	out.RoleRef = in.RoleRef
@@ -583,7 +579,7 @@ func (in *RoleBinding) DeepCopyObject() runtime.Object {
 func (in *RoleBindingList) DeepCopyInto(out *RoleBindingList) {
 	*out = *in
 	out.TypeMeta = in.TypeMeta
-	out.ListMeta = in.ListMeta
+	in.ListMeta.DeepCopyInto(&out.ListMeta)
 	if in.Items != nil {
 		in, out := &in.Items, &out.Items
 		*out = make([]RoleBinding, len(*in))
@@ -643,7 +639,7 @@ func (in *RoleBindingRestriction) DeepCopyObject() runtime.Object {
 func (in *RoleBindingRestrictionList) DeepCopyInto(out *RoleBindingRestrictionList) {
 	*out = *in
 	out.TypeMeta = in.TypeMeta
-	out.ListMeta = in.ListMeta
+	in.ListMeta.DeepCopyInto(&out.ListMeta)
 	if in.Items != nil {
 		in, out := &in.Items, &out.Items
 		*out = make([]RoleBindingRestriction, len(*in))
@@ -677,30 +673,18 @@ func (in *RoleBindingRestrictionSpec) DeepCopyInto(out *RoleBindingRestrictionSp
 	*out = *in
 	if in.UserRestriction != nil {
 		in, out := &in.UserRestriction, &out.UserRestriction
-		if *in == nil {
-			*out = nil
-		} else {
-			*out = new(UserRestriction)
-			(*in).DeepCopyInto(*out)
-		}
+		*out = new(UserRestriction)
+		(*in).DeepCopyInto(*out)
 	}
 	if in.GroupRestriction != nil {
 		in, out := &in.GroupRestriction, &out.GroupRestriction
-		if *in == nil {
-			*out = nil
-		} else {
-			*out = new(GroupRestriction)
-			(*in).DeepCopyInto(*out)
-		}
+		*out = new(GroupRestriction)
+		(*in).DeepCopyInto(*out)
 	}
 	if in.ServiceAccountRestriction != nil {
 		in, out := &in.ServiceAccountRestriction, &out.ServiceAccountRestriction
-		if *in == nil {
-			*out = nil
-		} else {
-			*out = new(ServiceAccountRestriction)
-			(*in).DeepCopyInto(*out)
-		}
+		*out = new(ServiceAccountRestriction)
+		(*in).DeepCopyInto(*out)
 	}
 	return
 }
@@ -719,7 +703,7 @@ func (in *RoleBindingRestrictionSpec) DeepCopy() *RoleBindingRestrictionSpec {
 func (in *RoleList) DeepCopyInto(out *RoleList) {
 	*out = *in
 	out.TypeMeta = in.TypeMeta
-	out.ListMeta = in.ListMeta
+	in.ListMeta.DeepCopyInto(&out.ListMeta)
 	if in.Items != nil {
 		in, out := &in.Items, &out.Items
 		*out = make([]Role, len(*in))
@@ -990,7 +974,7 @@ func (in *UserRestriction) DeepCopyInto(out *UserRestriction) {
 	}
 	if in.Selectors != nil {
 		in, out := &in.Selectors, &out.Selectors
-		*out = make([]meta_v1.LabelSelector, len(*in))
+		*out = make([]metav1.LabelSelector, len(*in))
 		for i := range *in {
 			(*in)[i].DeepCopyInto(&(*out)[i])
 		}

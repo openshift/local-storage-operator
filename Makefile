@@ -1,10 +1,13 @@
 ifeq ($(REGISTRY),)
-	REGISTRY = quay.io/gnufied/
+	REGISTRY = quay.io/openshift/
 endif
 
 ifeq ($(VERSION),)
 	VERSION = latest
 endif
+
+TARGET_GOOS=linux
+TARGET_GOARCH=amd64
 
 CURPATH=$(PWD)
 TARGET_DIR=$(CURPATH)/_output/bin
@@ -14,10 +17,14 @@ DISKMAKER_IMAGE = $(REGISTRY)local-diskmaker:$(VERSION)
 OPERATOR_IMAGE= $(REGISTRY)local-storage-operator:$(VERSION)
 REV=$(shell git describe --long --tags --match='v*' --dirty 2>/dev/null || git rev-list -n1 HEAD)
 
-all build:
-	CGO_ENABLED=0 GOOS=linux go build -a -ldflags '-X main.version=$(REV) -extldflags "-static"' -o $(TARGET_DIR)/diskmaker ./cmd/diskmaker
-	CGO_ENABLED=0 GOOS=linux go build -a -ldflags '-X main.version=$(REV) -extldflags "-static"' -o $(TARGET_DIR)/local-storage-operator ./cmd/local-storage-operator
+all build: build-diskmaker build-operator
 .PHONY: all build
+
+build-diskmaker:
+	env GOOS=$(TARGET_GOOS) GOARCH=$(TARGET_GOARCH) go build -i -mod=vendor -a -i -ldflags '-X main.version=$(REV) -extldflags "-static"' -o $(TARGET_DIR)/diskmaker $(CURPATH)/cmd/diskmaker
+
+build-operator:
+	env GOOS=$(TARGET_GOOS) GOARCH=$(TARGET_GOARCH) go build -i -mod=vendor -a -i -ldflags '-X main.version=$(REV) -extldflags "-static"' -o $(TARGET_DIR)/local-storage-operator $(CURPATH)/cmd/manager
 
 images: diskmaker-container operator-container
 
@@ -28,11 +35,13 @@ push-images:
 	docker push ${OPERATOR_IMAGE}
 
 diskmaker-container:
-	docker build --no-cache -t $(DISKMAKER_IMAGE) -f Dockerfile.diskmaker .
+	docker build --no-cache -t $(DISKMAKER_IMAGE) -f $(CURPATH)/Dockerfile.diskmaker .
+
 .PHONY: diskmaker-container
 
 operator-container:
-	docker build --no-cache -t $(OPERATOR_IMAGE) -f Dockerfile .
+	docker build --no-cache -t $(OPERATOR_IMAGE) -f $(CURPATH)/Dockerfile .
+
 .PHONY: operator-container
 
 clean:

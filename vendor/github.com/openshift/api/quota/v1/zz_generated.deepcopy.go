@@ -5,7 +5,7 @@
 package v1
 
 import (
-	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 )
 
@@ -41,7 +41,7 @@ func (in *AppliedClusterResourceQuota) DeepCopyObject() runtime.Object {
 func (in *AppliedClusterResourceQuotaList) DeepCopyInto(out *AppliedClusterResourceQuotaList) {
 	*out = *in
 	out.TypeMeta = in.TypeMeta
-	out.ListMeta = in.ListMeta
+	in.ListMeta.DeepCopyInto(&out.ListMeta)
 	if in.Items != nil {
 		in, out := &in.Items, &out.Items
 		*out = make([]AppliedClusterResourceQuota, len(*in))
@@ -102,7 +102,7 @@ func (in *ClusterResourceQuota) DeepCopyObject() runtime.Object {
 func (in *ClusterResourceQuotaList) DeepCopyInto(out *ClusterResourceQuotaList) {
 	*out = *in
 	out.TypeMeta = in.TypeMeta
-	out.ListMeta = in.ListMeta
+	in.ListMeta.DeepCopyInto(&out.ListMeta)
 	if in.Items != nil {
 		in, out := &in.Items, &out.Items
 		*out = make([]ClusterResourceQuota, len(*in))
@@ -136,12 +136,8 @@ func (in *ClusterResourceQuotaSelector) DeepCopyInto(out *ClusterResourceQuotaSe
 	*out = *in
 	if in.LabelSelector != nil {
 		in, out := &in.LabelSelector, &out.LabelSelector
-		if *in == nil {
-			*out = nil
-		} else {
-			*out = new(meta_v1.LabelSelector)
-			(*in).DeepCopyInto(*out)
-		}
+		*out = new(metav1.LabelSelector)
+		(*in).DeepCopyInto(*out)
 	}
 	if in.AnnotationSelector != nil {
 		in, out := &in.AnnotationSelector, &out.AnnotationSelector

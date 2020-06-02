@@ -19,6 +19,13 @@ type ProjectList struct {
 const (
 	// These are internal finalizer values to Origin
 	FinalizerOrigin corev1.FinalizerName = "openshift.io/origin"
+	// ProjectNodeSelector is an annotation that holds the node selector;
+	// the node selector annotation determines which nodes will have pods from this project scheduled to them
+	ProjectNodeSelector = "openshift.io/node-selector"
+
+	// ProjectRequesterAnnotation is the username that requested a given project.  Its not guaranteed to be present,
+	// but it is set by the default project template.
+	ProjectRequesterAnnotation = "openshift.io/requester"
 )
 
 // ProjectSpec describes the attributes on a Project
@@ -30,7 +37,14 @@ type ProjectSpec struct {
 // ProjectStatus is information about the current status of a Project
 type ProjectStatus struct {
 	// Phase is the current lifecycle phase of the project
+	// +optional
 	Phase corev1.NamespacePhase `json:"phase,omitempty" protobuf:"bytes,1,opt,name=phase,casttype=k8s.io/api/core/v1.NamespacePhase"`
+
+	// Represents the latest available observations of the project current state.
+	// +optional
+	// +patchMergeKey=type
+	// +patchStrategy=merge
+	Conditions []corev1.NamespaceCondition `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type" protobuf:"bytes,2,rep,name=conditions"`
 }
 
 // +genclient

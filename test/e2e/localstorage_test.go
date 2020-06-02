@@ -10,6 +10,7 @@ import (
 	"time"
 
 	operatorv1 "github.com/openshift/api/operator/v1"
+	localapisv1 "github.com/openshift/local-storage-operator/pkg/apis"
 	localv1 "github.com/openshift/local-storage-operator/pkg/apis/local/v1"
 	commontypes "github.com/openshift/local-storage-operator/pkg/common"
 	framework "github.com/operator-framework/operator-sdk/pkg/test"
@@ -18,7 +19,6 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
-	"k8s.io/apimachinery/pkg/runtime"
 	utilnet "k8s.io/apimachinery/pkg/util/net"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
@@ -35,18 +35,9 @@ var (
 	labelInstanceType = "beta.kubernetes.io/instance-type"
 )
 
-func addToScheme(s *runtime.Scheme) error {
-	return localv1.AddToScheme(s)
-}
-
 func TestLocalStorageOperator(t *testing.T) {
-	localVolumeList := &localv1.LocalVolumeList{
-		TypeMeta: metav1.TypeMeta{
-			Kind:       "LocalVolume",
-			APIVersion: localv1.SchemeGroupVersion.String(),
-		},
-	}
-	err := framework.AddToFrameworkScheme(addToScheme, localVolumeList)
+	localVolumeList := &localv1.LocalVolumeList{}
+	err := framework.AddToFrameworkScheme(localapisv1.AddToScheme, localVolumeList)
 	if err != nil {
 		t.Fatalf("error adding local volume list : %v", err)
 	}
@@ -257,13 +248,13 @@ func checkLocalVolumeStatus(lv *localv1.LocalVolume) error {
 }
 
 func deleteCreatedPV(kubeClient kubernetes.Interface, lv *localv1.LocalVolume) error {
-	err := kubeClient.Core().PersistentVolumes().DeleteCollection(nil, metav1.ListOptions{LabelSelector: commontypes.GetPVOwnerSelector(lv).String()})
+	err := kubeClient.CoreV1().PersistentVolumes().DeleteCollection(nil, metav1.ListOptions{LabelSelector: commontypes.GetPVOwnerSelector(lv).String()})
 	return err
 }
 
 func waitForCreatedPV(kubeClient kubernetes.Interface, lv *localv1.LocalVolume) error {
 	waitErr := wait.PollImmediate(retryInterval, timeout, func() (bool, error) {
-		pvs, err := kubeClient.Core().PersistentVolumes().List(metav1.ListOptions{LabelSelector: commontypes.GetPVOwnerSelector(lv).String()})
+		pvs, err := kubeClient.CoreV1().PersistentVolumes().List(metav1.ListOptions{LabelSelector: commontypes.GetPVOwnerSelector(lv).String()})
 		if err != nil {
 			if isRetryableAPIError(err) {
 				return false, nil
@@ -279,7 +270,7 @@ func waitForCreatedPV(kubeClient kubernetes.Interface, lv *localv1.LocalVolume) 
 }
 
 func selectNode(t *testing.T, kubeClient kubernetes.Interface) v1.Node {
-	nodes, err := kubeClient.Core().Nodes().List(metav1.ListOptions{LabelSelector: "node-role.kubernetes.io/worker"})
+	nodes, err := kubeClient.CoreV1().Nodes().List(metav1.ListOptions{LabelSelector: "node-role.kubernetes.io/worker"})
 	var dummyNode v1.Node
 	if err != nil {
 		t.Fatalf("error finding worker node with %v", err)
@@ -383,7 +374,7 @@ func waitForDaemonSet(t *testing.T, kubeclient kubernetes.Interface, namespace, 
 	nodeCount := 1
 	var err error
 	err = wait.Poll(retryInterval, timeout, func() (done bool, err error) {
-		daemonset, err := kubeclient.AppsV1().DaemonSets(namespace).Get(name, metav1.GetOptions{IncludeUninitialized: true})
+		daemonset, err := kubeclient.AppsV1().DaemonSets(namespace).Get(name, metav1.GetOptions{})
 		if err != nil {
 			if apierrors.IsNotFound(err) {
 				t.Logf("Waiting for availability of %s daemonset\n", name)
@@ -409,9 +400,9 @@ func waitForNodeTaintUpdate(t *testing.T, kubeclient kubernetes.Interface, node 
 	var newNode *v1.Node
 	name := node.Name
 	err = wait.Poll(retryInterval, timeout, func() (done bool, err error) {
-		newNode, err = kubeclient.Core().Nodes().Get(name, metav1.GetOptions{})
+		newNode, err = kubeclient.CoreV1().Nodes().Get(name, metav1.GetOptions{})
 		newNode.Spec.Taints = node.Spec.Taints
-		newNode, err = kubeclient.Core().Nodes().Update(newNode)
+		newNode, err = kubeclient.CoreV1().Nodes().Update(newNode)
 		if err != nil {
 			t.Logf("Failed to update node %v successfully : %v", name, err)
 			return false, nil

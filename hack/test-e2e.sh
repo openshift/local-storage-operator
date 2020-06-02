@@ -2,22 +2,10 @@
 set -e
 
 ARTIFACT_DIR=${ARTIFACT_DIR:-_output}
-manifest=$(mktemp)
-global_manifest=$(mktemp)
-
-# save generated manifest files in _output directory for debugging purposes
-cleanup(){
-  local return_code="$?"
-  set +e
-
-  cp ${manifest} $ARTIFACT_DIR/manifest
-  cp ${global_manifest} $ARTIFACT_DIR/global_manifest
-  rm -rf ${manifest}
-  rm -rf ${global_manifest}
-  exit $return_code
-}
-
-trap cleanup exit
+manifest=$ARTIFACT_DIR/manifest
+global_manifest=$ARTIFACT_DIR/global_manifest
+rm -f $manifest $global_manifest
+mkdir -p $ARTIFACT_DIR
 
 if [ -n "${IMAGE_FORMAT}" ] ; then
     IMAGE_LOCAL_STORAGE_OPERATOR=$(sed -e "s,\${component},local-storage-operator," <(echo $IMAGE_FORMAT))
