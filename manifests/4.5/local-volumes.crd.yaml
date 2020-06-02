@@ -11,12 +11,13 @@ spec:
     singular: localvolume
   scope: Namespaced
   version: v1
+  preserveUnknownFields: false
   subresources:
     status: {}
   validation:
     openAPIV3Schema:
       type: object
-      decription: LocalVolume is a local storage configuration used by the operator
+      description: LocalVolume is a local storage configuration used by the operator
       properties:
         apiVersion:
           description: 'APIVersion defines the versioned schema of this representation
@@ -31,10 +32,12 @@ spec:
         metadata:
           type: object
         spec:
+          description: 'spec is the specification of the desired state of selected local devices'
           properties:
             nodeSelector:
               description: Nodes on which the provisioner must run
               type: object
+              x-kubernetes-preserve-unknown-fields: true
             managementState:
               description: Indicates whether and how the operator should manage the component
               type: string
@@ -74,14 +77,18 @@ spec:
               description: A list of tolerations to pass to the diskmaker and provisioner DaemonSets.
               items:
                 type: object
+                x-kubernetes-preserve-unknown-fields: true
               type: array
           required:
             - storageClassDevices
           type: object
         status:
+          description: 'status is the most recently observed status selected local devices'
           properties:
             generations:
+              description: 'generations are used to determine when an item needs to be reconciled or has changed in a way that needs a reaction.'
               items:
+                description: 'GenerationStatus keeps track of the generation for a given resource so that decisions about forced updates can be made.'
                 properties:
                   group:
                     type: string
@@ -103,8 +110,10 @@ spec:
                 type: object
               type: array
             conditions:
+              description: 'conditions is a list of conditions and their status'
               type: array
               items:
+                description: 'OperatorCondition is just the standard condition fields'
                 type: object
                 properties:
                   type:
@@ -119,6 +128,9 @@ spec:
                     type: string
                   message:
                     type: string
+                required:
+                - type
+                - status
             observedGeneration:
               format: int64
               type: integer
@@ -129,5 +141,8 @@ spec:
               type: integer
               format: int32
           type: object
+          required:
+          - conditions
+          - generations
       required:
         - spec
