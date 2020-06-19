@@ -17,7 +17,7 @@ Github repo.  Grab the [latest release](https://github.com/operator-framework/op
 
 ### Create and Subscribe to the local-storage Catalog
 
-By default the local-storage-operator assumes the `local-storage` namespace for its resources and it is automatically created while installing
+By default the local-storage-operator assumes the `openshift-local-storage` namespace for its resources and it is automatically created while installing
 the operator using this method.
 
 
@@ -48,7 +48,7 @@ apiVersion: "local.storage.openshift.io/v1"
 kind: "LocalVolume"
 metadata:
   name: "local-disks"
-  namespace: "local-storage"
+  namespace: "openshift-local-storage"
 spec:
   nodeSelector:
     nodeSelectorTerms:
@@ -74,7 +74,7 @@ apiVersion: "local.storage.openshift.io/v1"
 kind: "LocalVolume"
 metadata:
   name: "local-disks"
-  namespace: "local-storage"
+  namespace: "openshift-local-storage"
 spec:
   nodeSelector:
     nodeSelectorTerms:
@@ -125,7 +125,7 @@ apiVersion: "local.storage.openshift.io/v1"
 kind: "LocalVolume"
 metadata:
   name: "local-disks"
-  namespace: "local-storage"
+  namespace: "openshift-local-storage"
 spec:
   tolerations:
     - key: localstorage
@@ -144,7 +144,7 @@ The defined tolerations will be passed to the resulting DaemonSets, allowing the
 ### Verify your deployment
 
 ```bash
-oc get all -n local-storage
+oc get all -n openshift-local-storage
 NAME                                          READY   STATUS    RESTARTS   AGE
 pod/local-disks-local-provisioner-h97hj       1/1     Running   0          46m
 pod/local-disks-local-provisioner-j4mnn       1/1     Running   0          46m

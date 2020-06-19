@@ -28,6 +28,7 @@ metadata:
         }
       ]
     categories: Storage
+    "operatorframework.io/suggested-namespace": openshift-local-storage
     capabilities: Full Lifecycle
     containerImage: quay.io/openshift/origin-local-storage-operator:latest
     support: Red Hat
