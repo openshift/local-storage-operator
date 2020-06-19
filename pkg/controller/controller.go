@@ -2,6 +2,8 @@ package controller
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/json"
 	"fmt"
 	"os"
 	"sync"
@@ -36,6 +38,7 @@ type Handler struct {
 	diskMakerConfigName   string
 	lock                  sync.Mutex
 	apiClient             apiUpdater
+	controllerVersion     string
 }
 
 type localDiskData map[string]map[string]string
@@ -64,6 +67,8 @@ const (
 	provisionerImageEnv = "PROVISIONER_IMAGE"
 
 	localVolumeFinalizer = "storage.openshift.com/local-volume-protection"
+
+	specHashAnnotation = "operator.openshift.io/spec-hash"
 )
 
 // NewHandler returns a controller handler
@@ -583,6 +588,10 @@ func (h *Handler) syncDiskMakerDaemonset(cr *localv1.LocalVolume, forceRollout b
 	ds := h.generateDiskMakerDaemonSet(cr)
 	dsName := ds.Name
 	generation := getExpectedGeneration(cr, ds)
+
+	// See if we need to roll out the pods based on the DaemonSet hash
+	forceRollout = h.checkDaemonSetHash(ds, forceRollout)
+
 	ds, _, err := h.apiClient.applyDaemonSet(ds, generation, forceRollout)
 	if err != nil {
 		return nil, fmt.Errorf("error applying diskmaker daemonset %s: %v", dsName, err)
@@ -594,6 +603,10 @@ func (h *Handler) syncProvisionerDaemonset(cr *localv1.LocalVolume, forceRollout
 	ds := h.generateLocalProvisionerDaemonset(cr)
 	dsName := ds.Name
 	generation := getExpectedGeneration(cr, ds)
+
+	// See if we need to roll out the pods based on the DaemonSet hash
+	forceRollout = h.checkDaemonSetHash(ds, forceRollout)
+
 	ds, _, err := h.apiClient.applyDaemonSet(ds, generation, forceRollout)
 	if err != nil {
 		return nil, fmt.Errorf("error applying provisioner daemonset %s: %v", dsName, err)
@@ -697,6 +710,12 @@ func (h *Handler) generateLocalProvisionerDaemonset(cr *localv1.LocalVolume) *ap
 			},
 		},
 	}
+
+	err := addDaemonSetHash(ds)
+	if err != nil {
+		klog.Errorf("Unable to apply DaemonSet hash for provisioner daemonset: %v", err)
+	}
+
 	h.applyNodeSelector(cr, ds)
 	addOwner(&ds.ObjectMeta, cr)
 	addOwnerLabels(&ds.ObjectMeta, cr)
@@ -811,10 +830,42 @@ func (h *Handler) generateDiskMakerDaemonSet(cr *localv1.LocalVolume) *appsv1.Da
 			},
 		},
 	}
+
+	err := addDaemonSetHash(ds)
+	if err != nil {
+		klog.Errorf("Unable to apply DaemonSet hash for diskmaker daemonset: %v", err)
+	}
+
 	h.applyNodeSelector(cr, ds)
 	addOwner(&ds.ObjectMeta, cr)
 	addOwnerLabels(&ds.ObjectMeta, cr)
 	return ds
+}
+
+// Checks to see if the DaemonSetHash has been modified. Returns true
+// if a modification has been detected, or the original forceRollout
+// value otherwise.
+func (h *Handler) checkDaemonSetHash(ds *appsv1.DaemonSet, forceRollout bool) bool {
+	daemonSetUpdated := false
+
+	existingDS, err := h.apiClient.getDaemonSet(ds.Namespace, ds.Name)
+	if err != nil {
+		// If we can't fetch an existing DS, then return the passed in forceRollout
+		klog.Infof("Error getting existing provisioner DaemonSet: %v", err)
+		return forceRollout
+	}
+
+	existingAnnotations := existingDS.ObjectMeta.Annotations
+	if existingAnnotations == nil ||
+		existingAnnotations[specHashAnnotation] != ds.ObjectMeta.Annotations[specHashAnnotation] {
+		daemonSetUpdated = true
+	}
+
+	if daemonSetUpdated {
+		forceRollout = daemonSetUpdated
+	}
+
+	return forceRollout
 }
 
 func addFinalizer(lv *localv1.LocalVolume) (*localv1.LocalVolume, bool) {
@@ -954,4 +1005,18 @@ func remove(list []string, s string) []string {
 // isDeletionCandidate checks if object is candidate to be deleted
 func isDeletionCandidate(obj metav1.Object, finalizer string) bool {
 	return obj.GetDeletionTimestamp() != nil && contains(obj.GetFinalizers(), finalizer)
+}
+
+func addDaemonSetHash(daemonSet *appsv1.DaemonSet) error {
+	jsonBytes, err := json.Marshal(daemonSet.Spec)
+	if err != nil {
+		return err
+	}
+	specHash := fmt.Sprintf("%x", sha256.Sum256(jsonBytes))
+	if daemonSet.Annotations == nil {
+		daemonSet.Annotations = map[string]string{}
+	}
+
+	daemonSet.Annotations[specHashAnnotation] = specHash
+	return nil
 }

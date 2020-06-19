@@ -3,6 +3,7 @@ package controller
 import (
 	"fmt"
 	"os"
+	"reflect"
 	"testing"
 
 	"github.com/ghodss/yaml"
@@ -11,8 +12,8 @@ import (
 	commontypes "github.com/openshift/local-storage-operator/pkg/common"
 	"github.com/openshift/local-storage-operator/pkg/diskmaker"
 	appsv1 "k8s.io/api/apps/v1"
-	"k8s.io/api/core/v1"
 	corev1 "k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -82,6 +83,14 @@ func (s *fakeApiUpdater) applyDaemonSet(ds *appsv1.DaemonSet, expectedGeneration
 	s.daemonSets = append(s.daemonSets, dsRollout)
 	return ds, true, nil
 }
+
+func (s *fakeApiUpdater) getDaemonSet(namespace, dsName string) (*appsv1.DaemonSet, error) {
+	localVolume := getLocalVolume()
+	handler, _ := getHandler()
+	ds := handler.generateDiskMakerDaemonSet(localVolume)
+	return ds, nil
+}
+
 func (s *fakeApiUpdater) listStorageClasses(listOptions metav1.ListOptions) (*storagev1.StorageClassList, error) {
 	return &storagev1.StorageClassList{Items: []storagev1.StorageClass{}}, nil
 }
@@ -268,6 +277,65 @@ func TestTolerationDiskmakerDS(t *testing.T) {
 	}
 	if toleration.Value != "true" {
 		t.Errorf("value mismatch %v", toleration.Value)
+	}
+}
+
+func TestCheckDaemonSetHash(t *testing.T) {
+	tests := []struct {
+		name            string
+		forceRollout    bool
+		updateDaemonSet bool
+		expectUpdate    bool
+	}{
+		{
+			name:            "DaemonSet is not updated and forceRollout is false, do not update",
+			forceRollout:    false,
+			updateDaemonSet: false,
+			expectUpdate:    false,
+		},
+		{
+			name:            "DaemonSet is not updated and forceRollout is true, update",
+			forceRollout:    true,
+			updateDaemonSet: false,
+			expectUpdate:    true,
+		},
+		{
+			name:            "DaemonSet is updated and forceRollout is false, update",
+			forceRollout:    false,
+			updateDaemonSet: true,
+			expectUpdate:    true,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			localStorageProvider := getLocalVolume()
+			handler, _ := getHandler()
+			diskMakerDS := handler.generateDiskMakerDaemonSet(localStorageProvider)
+			origAnnotations := diskMakerDS.ObjectMeta.Annotations[specHashAnnotation]
+
+			if test.updateDaemonSet {
+				// The default DS has a Hash included. We want to change the spec
+				// and ensure that it's updated.
+				diskMakerDS.Spec.MinReadySeconds = 300
+				err := addDaemonSetHash(diskMakerDS)
+				if err != nil {
+					t.Errorf("error attempting to add hash to existing DS: %v", err)
+				}
+			}
+
+			needsUpdate := handler.checkDaemonSetHash(diskMakerDS, test.forceRollout)
+
+			if test.expectUpdate != needsUpdate {
+				t.Errorf("Expected update does not match update value: %v", needsUpdate)
+			}
+
+			if test.updateDaemonSet {
+				if reflect.DeepEqual(origAnnotations, diskMakerDS.ObjectMeta.Annotations[specHashAnnotation]) {
+					t.Errorf("DaemonSet annotations are identical after update")
+				}
+			}
+		})
 	}
 }
 
