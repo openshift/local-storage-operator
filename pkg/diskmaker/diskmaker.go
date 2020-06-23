@@ -12,11 +12,13 @@ import (
 	"time"
 
 	"github.com/ghodss/yaml"
+	"github.com/openshift/local-storage-operator/pkg/apis"
 	localv1 "github.com/openshift/local-storage-operator/pkg/apis/local/v1"
+	"github.com/prometheus/common/log"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/klog"
-	"sigs.k8s.io/controller-runtime/pkg/manager"
 )
 
 // DiskMaker is a small utility that reads configmap and
@@ -42,14 +44,22 @@ type DiskLocation struct {
 	diskID       string
 }
 
-// DiskMaker returns a new instance of DiskMaker
-func NewDiskMaker(configLocation, symLinkLocation string, mgr manager.Manager) *DiskMaker {
+// NewDiskMaker returns a new instance of DiskMaker
+func NewDiskMaker(configLocation, symLinkLocation string) (*DiskMaker, error) {
+	scheme := scheme.Scheme
+	apis.AddToScheme(scheme)
+	apiUpdater, err := newAPIUpdater(scheme)
+	if err != nil {
+		log.Error(err, "failed to create new APIUpdater")
+		return &DiskMaker{}, err
+	}
+
 	t := &DiskMaker{}
 	t.configLocation = configLocation
 	t.symlinkLocation = symLinkLocation
-	t.apiClient = newAPIUpdater(mgr)
+	t.apiClient = apiUpdater
 	t.eventSync = newEventReporter(t.apiClient)
-	return t
+	return t, nil
 }
 
 func (d *DiskMaker) loadConfig() (*DiskConfig, error) {
