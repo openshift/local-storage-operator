@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/ghodss/yaml"
@@ -146,7 +147,7 @@ func (d *DiskMaker) symLinkDisks(diskConfig *DiskConfig) {
 
 	deviceMap, err := d.findMatchingDisks(diskConfig, deviceSet, allDiskIds)
 	if err != nil {
-		msg := fmt.Sprintf("eror finding matching disks: %v", err)
+		msg := fmt.Sprintf("error finding matching disks: %v", err)
 		e := newEvent(ErrorFindingMatchingDisk, msg, "")
 		d.eventSync.report(e, d.localVolume)
 		klog.Errorf(msg)
@@ -154,7 +155,23 @@ func (d *DiskMaker) symLinkDisks(diskConfig *DiskConfig) {
 	}
 
 	if len(deviceMap) == 0 {
-		msg := "found empty matching device list"
+		msg := ""
+		if len(diskConfig.Disks) == 0 {
+			// Note that this scenario shouldn't be possible, as diskConfig.Disks is a required attribute
+			msg = "devicePaths was left empty; this attribute must be defined in the LocalVolume spec"
+		} else {
+			// We go through and build up a set to display the differences between expected devices
+			// and invalid formatted entries (such as /tmp)
+			diff := sets.NewString()
+			for _, v := range diskConfig.Disks {
+				set := sets.NewString()
+				for _, devicePath := range v.DevicePaths {
+					set.Insert(devicePath)
+				}
+				diff = set.Difference(v.DeviceNames())
+			}
+			msg = strings.Join(diff.List(), ", ") + " was defined in devicePaths, but expected a path in /dev/"
+		}
 		e := newEvent(ErrorFindingMatchingDisk, msg, "")
 		d.eventSync.report(e, d.localVolume)
 		klog.Errorf(msg)
@@ -230,7 +247,25 @@ func (d *DiskMaker) findMatchingDisks(diskConfig *DiskConfig, deviceSet sets.Str
 				addDiskToMap(storageClass, matchedDeviceID, diskName)
 				continue
 			} else {
-				msg := fmt.Sprintf("unable to find matching disk %v", diskName)
+				if !fileExists(diskName) {
+					msg := fmt.Sprintf("no file exists for specified device %v", diskName)
+					klog.Errorf(msg)
+					continue
+				}
+				fileMode, err := os.Stat(diskName)
+				if err != nil {
+					klog.Errorf("error attempting to examine %v, %v", diskName, err)
+					continue
+				}
+				msg := ""
+				switch mode := fileMode.Mode(); {
+				case mode.IsDir():
+					msg = fmt.Sprintf("unable to use directory %v for local storage. Use an existing block device.", diskName)
+				case mode.IsRegular():
+					msg = fmt.Sprintf("unable to use regular file %v for local storage. Use an existing block device.", diskName)
+				default:
+					msg = fmt.Sprintf("unable to find matching disk %v", diskName)
+				}
 				e := newEvent(ErrorFindingMatchingDisk, msg, diskName)
 				d.eventSync.report(e, d.localVolume)
 				klog.Errorf(msg)
