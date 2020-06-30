@@ -20,7 +20,7 @@ import (
 
 // createOrUpdateDaemonset fetches and creates/updates ds according to desiredDs
 // fields that are not allowed update at runtime are not copied unless the creationtimestamp is zero
-func createOrUpdateDaemonset(
+func CreateOrUpdateDaemonset(
 	c client.Client,
 	daemonSetMutateFn func(*appsv1.DaemonSet) error,
 ) (*appsv1.DaemonSet, controllerutil.OperationResult, error) {
@@ -65,15 +65,17 @@ func getDiskMakerDSMutateFn(
 		name := DiskMakerName
 
 		// common spec
-		mutateAggregatedSpec(
+		MutateAggregatedSpec(
 			ds,
 			request,
 			tolerations,
 			ownerRefs,
 			nodeSelector,
-			dataHash,
 			name,
 		)
+		// add provisioner configmap hash
+		initMapIfNil(&ds.ObjectMeta.Annotations)
+		ds.ObjectMeta.Annotations[dataHashAnnotationKey] = dataHash
 		ds.Spec.Template.Spec.Containers[0].Image = common.GetDiskMakerImage()
 		ds.Spec.Template.Spec.Containers[0].Args = []string{"lv-manager"}
 
@@ -95,15 +97,17 @@ func getLocalProvisionerDSMutateFn(
 		name := ProvisionerName
 
 		// common spec
-		mutateAggregatedSpec(
+		MutateAggregatedSpec(
 			ds,
 			request,
 			tolerations,
 			ownerRefs,
 			nodeSelector,
-			dataHash,
 			name,
 		)
+		// add provisioner configmap hash
+		initMapIfNil(&ds.ObjectMeta.Annotations)
+		ds.ObjectMeta.Annotations[dataHashAnnotationKey] = dataHash
 		ds.Spec.Template.Spec.Containers[0].Image = common.GetLocalProvisionerImage()
 
 		return nil
@@ -161,13 +165,13 @@ func getProvisionerVolumesAndMounts() ([]corev1.Volume, []corev1.VolumeMount) {
 	}
 	return volumes, volumeMounts
 }
-func mutateAggregatedSpec(
+
+func MutateAggregatedSpec(
 	ds *appsv1.DaemonSet,
 	request reconcile.Request,
 	tolerations []corev1.Toleration,
 	ownerRefs []metav1.OwnerReference,
 	nodeSelector *corev1.NodeSelector,
-	dataHash string,
 	name string,
 ) {
 
@@ -192,10 +196,6 @@ func mutateAggregatedSpec(
 		ds.ObjectMeta.Labels[key] = value
 		ds.Spec.Template.ObjectMeta.Labels[key] = value
 	}
-
-	// add provisioner configmap hash
-	initMapIfNil(&ds.Spec.Template.ObjectMeta.Annotations)
-	ds.Spec.Template.ObjectMeta.Annotations[dataHashAnnotationKey] = dataHash
 
 	// ownerRefs
 	ds.ObjectMeta.OwnerReferences = ownerRefs

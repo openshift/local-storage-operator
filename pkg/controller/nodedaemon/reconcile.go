@@ -62,7 +62,7 @@ func (r *DaemonReconciler) Reconcile(request reconcile.Request) (reconcile.Resul
 	configMapDataHash := dataHash(configMap.Data)
 
 	diskMakerDSMutateFn := getDiskMakerDSMutateFn(request, tolerations, ownerRefs, nodeSelector, configMapDataHash)
-	ds, opResult, err := createOrUpdateDaemonset(r.client, diskMakerDSMutateFn)
+	ds, opResult, err := CreateOrUpdateDaemonset(r.client, diskMakerDSMutateFn)
 	if err != nil {
 		return reconcile.Result{}, err
 	} else if opResult == controllerutil.OperationResultUpdated || opResult == controllerutil.OperationResultCreated {
@@ -70,7 +70,7 @@ func (r *DaemonReconciler) Reconcile(request reconcile.Request) (reconcile.Resul
 	}
 
 	localProvisionerDSMutateFn := getLocalProvisionerDSMutateFn(request, tolerations, ownerRefs, nodeSelector, configMapDataHash)
-	ds, opResult, err = createOrUpdateDaemonset(r.client, localProvisionerDSMutateFn)
+	ds, opResult, err = CreateOrUpdateDaemonset(r.client, localProvisionerDSMutateFn)
 	if err != nil {
 		return reconcile.Result{}, err
 	} else if opResult == controllerutil.OperationResultUpdated || opResult == controllerutil.OperationResultCreated {

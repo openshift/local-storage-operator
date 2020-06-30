@@ -17,26 +17,24 @@ import (
 
 func TestMutateAggregatedSpecWithNilNodeSelector(t *testing.T) {
 	ds := &appsv1.DaemonSet{}
-	mutateAggregatedSpec(
+	MutateAggregatedSpec(
 		ds,
 		reconcile.Request{},
 		[]corev1.Toleration{},
 		[]metav1.OwnerReference{},
 		nil,
 		"",
-		"",
 	)
 	assert.Nilf(t, ds.Spec.Template.Spec.Affinity, "DaemonSet affinity should be nil if nodeSelector is nil")
 
 	ds = &appsv1.DaemonSet{}
 	nodeSelector := &corev1.NodeSelector{}
-	mutateAggregatedSpec(
+	MutateAggregatedSpec(
 		ds,
 		reconcile.Request{},
 		[]corev1.Toleration{},
 		[]metav1.OwnerReference{},
 		nodeSelector,
-		"",
 		"",
 	)
 	assert.NotNilf(t, ds.Spec.Template.Spec.Affinity, "DaemonSet affinity should not be nil if nodeSelector is not nil")
