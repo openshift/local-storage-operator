@@ -151,7 +151,7 @@ DeviceLoop:
 	for _, blockDevice := range blockDevices {
 
 		devLogger := reqLogger.WithValues("Device.Name", blockDevice.Name)
-		for name, filter := range filterMap {
+		for name, filter := range FilterMap {
 			var valid bool
 			var err error
 			filterLogger := devLogger.WithValues("filter.Name", name)

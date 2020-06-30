@@ -21,10 +21,16 @@ var lvDaemonCmd = &cobra.Command{
 	Short: "Used to start an instance of the controller for a specific LocalVolume CR",
 	RunE:  startDiskMaker,
 }
+var discoveryDaemonCmd = &cobra.Command{
+	Use:   "discover",
+	Short: "Used to start device discovery for the LocalVolumeDiscovery CR",
+	RunE:  startDeviceDiscovery,
+}
 
 func main() {
 	rootCmd.AddCommand(lvDaemonCmd)
 	rootCmd.AddCommand(managerCmd)
+	rootCmd.AddCommand(discoveryDaemonCmd)
 
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Println(err)
