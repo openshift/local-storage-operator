@@ -17,6 +17,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
+	"k8s.io/apimachinery/pkg/runtime"
 	utilnet "k8s.io/apimachinery/pkg/util/net"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
@@ -81,7 +82,7 @@ func LocalVolumeTest(ctx *framework.Context, cleanupFuncs *[]cleanupFn) func(*te
 		addToCleanupFuncs(cleanupFuncs,
 			"deleteLocalVolume",
 			func(t *testing.T) error {
-				return deleteLocalVolume(localVolume, f.Client)
+				return deleteResource(localVolume, localVolume.Name, localVolume.Namespace, f.Client)
 			},
 		)
 
@@ -128,7 +129,7 @@ func LocalVolumeTest(ctx *framework.Context, cleanupFuncs *[]cleanupFn) func(*te
 				t.Errorf("error deleting created PV: %v", err)
 			}
 		}
-		err = deleteLocalVolume(localVolume, f.Client)
+		err = deleteResource(localVolume, localVolume.Name, localVolume.Namespace, f.Client)
 		if err != nil {
 			t.Fatalf("error deleting localvolume: %v", err)
 		}
@@ -138,6 +139,7 @@ func LocalVolumeTest(ctx *framework.Context, cleanupFuncs *[]cleanupFn) func(*te
 			t.Fatalf("error verifying storageClass cleanup: %v", err)
 		}
 	}
+
 }
 
 func verifyLocalVolume(lv *localv1.LocalVolume, client framework.FrameworkClient) error {
@@ -155,31 +157,6 @@ func verifyLocalVolume(lv *localv1.LocalVolume, client framework.FrameworkClient
 			return false, nil
 		}
 		return true, nil
-	})
-	return waitErr
-}
-
-func deleteLocalVolume(lv *localv1.LocalVolume, client framework.FrameworkClient) error {
-	err := client.Delete(goctx.TODO(), lv)
-	if err != nil {
-		if apierrors.IsNotFound(err) {
-			return nil
-		}
-		return err
-	}
-	waitErr := wait.PollImmediate(retryInterval, timeout, func() (bool, error) {
-		objectKey := dynclient.ObjectKey{
-			Namespace: lv.Namespace,
-			Name:      lv.Name,
-		}
-		err := client.Get(goctx.TODO(), objectKey, lv)
-		if err != nil {
-			if apierrors.IsNotFound(err) {
-				return true, nil
-			}
-			return false, err
-		}
-		return false, nil
 	})
 	return waitErr
 }
@@ -419,4 +396,29 @@ func getFakeLocalVolume(selectedNode v1.Node, selectedDisk, namespace string) *l
 	}
 
 	return localVolume
+}
+
+func deleteResource(obj runtime.Object, namespace, name string, client framework.FrameworkClient) error {
+	err := client.Delete(goctx.TODO(), obj)
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil
+		}
+		return err
+	}
+	waitErr := wait.PollImmediate(retryInterval, timeout, func() (bool, error) {
+		objectKey := dynclient.ObjectKey{
+			Namespace: namespace,
+			Name:      name,
+		}
+		err := client.Get(goctx.TODO(), objectKey, obj)
+		if err != nil {
+			if apierrors.IsNotFound(err) {
+				return true, nil
+			}
+			return false, err
+		}
+		return false, nil
+	})
+	return waitErr
 }
