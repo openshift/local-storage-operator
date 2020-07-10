@@ -36,7 +36,7 @@ metadata:
     description: >
       Configure and use local storage volumes in kubernetes and OpenShift.
       OpenShift 4.2 and above is only supported OpenShift versions.
-    olm.skipRange: '>=4.3.0 <4.4.0'
+    olm.skipRange: ">=4.3.0 <4.4.0"
   labels:
     operator-metering: "true"
 spec:
