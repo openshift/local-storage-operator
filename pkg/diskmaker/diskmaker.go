@@ -205,7 +205,7 @@ func (d *DiskMaker) symLinkDisks(diskConfig *DiskConfig) {
 			}
 
 			if symLinkErr != nil {
-				msg := fmt.Sprintf("error creating symlink %s: %v", symLinkPath, err)
+				msg := fmt.Sprintf("error creating symlink %s: %v", symLinkPath, symLinkErr)
 				e := newEvent(ErrorFindingMatchingDisk, msg, deviceNameLocation.diskNamePath)
 				d.eventSync.report(e, d.localVolume)
 				klog.Errorf(msg)
