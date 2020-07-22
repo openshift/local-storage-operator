@@ -65,6 +65,7 @@ type LocalVolumeDiscoveryResultStatus struct {
 	// - it should not be mounted anywhere
 	// - it should not be a boot device
 	// - it should not have child partitions
+	// +optional
 	DiscoveredDevices []DiscoveredDevice `json:"discoveredDevices"`
 }
 

@@ -1,12 +1,82 @@
 package discovery
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/openshift/local-storage-operator/pkg/apis/local/v1alpha1"
+	"github.com/openshift/local-storage-operator/pkg/diskmaker"
 	"github.com/stretchr/testify/assert"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
+
+func TestEnsureDiscoveryResult(t *testing.T) {
+	dd := getFakeDeviceDiscovery()
+	setEnv()
+	defer unsetEnv()
+	err := dd.ensureDiscoveryResultCR()
+	assert.NoError(t, err)
+}
+
+func TestEnsureDiscoveryResultNoEnv(t *testing.T) {
+	// failed to ensure discovery result due to missing env variables.
+	dd := getFakeDeviceDiscovery()
+	err := dd.ensureDiscoveryResultCR()
+	assert.Error(t, err)
+}
+
+func TestEnsureDiscoveryResultFail(t *testing.T) {
+	// failed to get existing discovery result object
+	mockClient := &diskmaker.MockAPIUpdater{
+		MockGetDiscoveryResult: func(name, namespace string) (*v1alpha1.LocalVolumeDiscoveryResult, error) {
+			return nil, fmt.Errorf("failed to get result object")
+		},
+	}
+
+	dd := getFakeDeviceDiscovery()
+	dd.apiClient = mockClient
+	setEnv()
+	defer unsetEnv()
+	err := dd.ensureDiscoveryResultCR()
+	assert.Error(t, err)
+	assert.EqualError(t, err, "failed to get result object")
+}
+
+func TestUpdateStatus(t *testing.T) {
+	dd := getFakeDeviceDiscovery()
+	setEnv()
+	defer unsetEnv()
+	err := dd.updateStatus()
+	assert.NoError(t, err)
+}
+
+func TestUpdateStatusFail(t *testing.T) {
+	// failed to get discovery result
+	mockClient := &diskmaker.MockAPIUpdater{
+		MockGetDiscoveryResult: func(name, namespace string) (*v1alpha1.LocalVolumeDiscoveryResult, error) {
+			return nil, fmt.Errorf("failed to get result object")
+		},
+	}
+	dd := getFakeDeviceDiscovery()
+	dd.apiClient = mockClient
+	setEnv()
+	defer unsetEnv()
+	err := dd.updateStatus()
+	assert.Error(t, err)
+
+	// failed to update discovery result status
+	mockClient = &diskmaker.MockAPIUpdater{
+		MockUpdateDiscoveryResultStatus: func(lvdr *v1alpha1.LocalVolumeDiscoveryResult) error {
+			return fmt.Errorf("failed to update status")
+		},
+	}
+	dd = getFakeDeviceDiscovery()
+	dd.apiClient = mockClient
+	setEnv()
+	defer unsetEnv()
+	err = dd.updateStatus()
+	assert.Error(t, err)
+}
 
 func TestNewDiscoveryResultInstance(t *testing.T) {
 	testCases := []struct {

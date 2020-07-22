@@ -5,32 +5,29 @@ import (
 	"fmt"
 	"os/exec"
 	"regexp"
-	"strings"
 	"time"
 
 	"k8s.io/klog"
+)
+
+var (
+	udevExclusionFilter = []string{"(?i)dm-[0-9]+", "(?i)rbd[0-9]", "(?i)nbd[0-9]+"}
+	udevEventMatch      = []string{"(?i)add", "(?i)remove"}
 )
 
 // Monitors udev for block device changes, and collapses these events such that
 // only one event is emitted per period in order to deal with flapping.
 func udevBlockMonitor(c chan string, period time.Duration) {
 	defer close(c)
-	var udevFilter []string
 
 	// return any add or remove events, but none that match device mapper
 	// events. string matching is case-insensitive
 	events := make(chan string)
 
-	// regex to ignore the list of devices where udev events should not
-	// trigger continous discovery
-	discoverUdev := "(?i)dm-[0-9]+,(?i)rbd[0-9]+,(?i)nbd[0-9]+"
+	klog.Infof("regex for matching udev events - %q", udevEventMatch)
+	klog.Infof("regex for list of devices to be ignored for udev events - %q", udevExclusionFilter)
 
-	udevFilter = strings.Split(discoverUdev, ",")
-	klog.Infof("using the regular expressions %q", udevFilter)
-
-	go rawUdevBlockMonitor(events,
-		[]string{"(?i)add", "(?i)remove"},
-		udevFilter)
+	go rawUdevBlockMonitor(events, udevEventMatch, udevExclusionFilter)
 
 	for {
 		event, ok := <-events

@@ -10,63 +10,68 @@ import (
 
 	"github.com/openshift/local-storage-operator/pkg/apis"
 	"github.com/openshift/local-storage-operator/pkg/apis/local/v1alpha1"
+	"github.com/openshift/local-storage-operator/pkg/diskmaker"
 	"github.com/openshift/local-storage-operator/pkg/diskmaker/controllers/lvset"
 	"github.com/openshift/local-storage-operator/pkg/internal"
 	"github.com/pkg/errors"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/klog"
-	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/client/config"
 
 	"k8s.io/apimachinery/pkg/api/resource"
 )
 
 const (
-	udevEventPeriod = 5 * time.Second
-	probeInterval   = 5 * time.Minute
-	resultCRName    = "discovery-result-%s"
-	resultCRLabel   = "discovery-result-node"
+	localVolumeDiscoveryComponent = "auto-discover-devices"
+	udevEventPeriod               = 5 * time.Second
+	probeInterval                 = 5 * time.Minute
+	resultCRName                  = "discovery-result-%s"
+	resultCRLabel                 = "discovery-result-node"
 )
 
+// DeviceDiscovery instance
 type DeviceDiscovery struct {
-	client client.Client
-	disks  []v1alpha1.DiscoveredDevice
+	apiClient            diskmaker.ApiUpdater
+	eventSync            *diskmaker.EventReporter
+	disks                []v1alpha1.DiscoveredDevice
+	localVolumeDiscovery *v1alpha1.LocalVolumeDiscovery
 }
 
+// NewDeviceDiscovery returns a new DeviceDiscovery instance
 func NewDeviceDiscovery() (*DeviceDiscovery, error) {
-	client, err := getClient()
-	if err != nil {
-		return nil, errors.Wrapf(err, "failed to create DevieDiscovery instance")
-	}
-	return &DeviceDiscovery{
-		client: client,
-	}, nil
-}
-
-func getClient() (client.Client, error) {
 	scheme := scheme.Scheme
 	apis.AddToScheme(scheme)
-	config, err := config.GetConfig()
+	apiUpdater, err := diskmaker.NewAPIUpdater(scheme)
 	if err != nil {
-		return nil, errors.Wrapf(err, "failed to get rest.config")
+		klog.Error(err, "failed to create new APIUpdater")
+		return &DeviceDiscovery{}, err
 	}
-	crClient, err := client.New(config, client.Options{})
+
+	dd := &DeviceDiscovery{}
+	dd.apiClient = apiUpdater
+	dd.eventSync = diskmaker.NewEventReporter(dd.apiClient)
+	lvd, err := dd.apiClient.GetLocalVolumeDiscovery(localVolumeDiscoveryComponent, os.Getenv("WATCH_NAMESPACE"))
 	if err != nil {
-		return nil, errors.Wrapf(err, "failed to create controller-runtime client")
+		klog.Error(err, "failed to get LocalVolumeDiscovery object")
+		return &DeviceDiscovery{}, err
 	}
-	return crClient, nil
+	dd.localVolumeDiscovery = lvd
+	return dd, nil
 }
 
+// Start the device discovery process
 func (discovery *DeviceDiscovery) Start() error {
 	klog.Info("starting device discovery")
 	err := discovery.ensureDiscoveryResultCR()
 	if err != nil {
-		return errors.Wrapf(err, "failed to create LocalVolumeDiscoveryResult resource.")
+		message := "failed to start device discovery"
+		e := diskmaker.NewEvent(diskmaker.ErrorCreatingDiscoveryResultObject, fmt.Sprintf("%s. Error: %+v", message, err), "")
+		discovery.eventSync.Report(e, discovery.localVolumeDiscovery)
+		return errors.Wrapf(err, message)
 	}
 
 	err = discovery.discoverDevices()
 	if err != nil {
-		errors.Wrapf(err, "failed to start device discovery")
+		errors.Wrapf(err, "failed to discover devices")
 	}
 
 	// Watch udev events for continuous discovery of devices
@@ -103,8 +108,12 @@ func (discovery *DeviceDiscovery) discoverDevices() error {
 	// List all the valid block devices on the node
 	validDevices, err := getValidBlockDevices()
 	if err != nil {
-		return errors.Wrapf(err, "failed to discover devices")
+		message := "failed to discover devices"
+		e := diskmaker.NewEvent(diskmaker.ErrorListingBlockDevices, fmt.Sprintf("%s. Error: %+v", message, err), "")
+		discovery.eventSync.Report(e, discovery.localVolumeDiscovery)
+		return errors.Wrapf(err, message)
 	}
+
 	klog.Infof("valid block devices: %+v", validDevices)
 
 	discoveredDisks := getDiscoverdDevices(validDevices)
@@ -116,9 +125,14 @@ func (discovery *DeviceDiscovery) discoverDevices() error {
 		discovery.disks = discoveredDisks
 		err = discovery.updateStatus()
 		if err != nil {
-			return errors.Wrapf(err, "failed to update status")
+			message := "failed to update LocalVolumeDiscoveryResult status"
+			e := diskmaker.NewEvent(diskmaker.ErrorUpdatingDiscoveryResultObject, fmt.Sprintf("%s. Error: %+v", message, err), "")
+			discovery.eventSync.Report(e, discovery.localVolumeDiscovery)
+			return errors.Wrapf(err, message)
 		}
-		klog.Infof("successfully update discovered device details in the LocalVolumeDiscoveryResult CR")
+		message := "successfully updated discovered device details in the LocalVolumeDiscoveryResult resource"
+		e := diskmaker.NewSuccessEvent(diskmaker.UpdatedDiscoveredDeviceList, message, "")
+		discovery.eventSync.Report(e, discovery.localVolumeDiscovery)
 	}
 
 	return nil
@@ -128,6 +142,7 @@ func (discovery *DeviceDiscovery) discoverDevices() error {
 func getValidBlockDevices() ([]internal.BlockDevice, error) {
 	blockDevices, badRows, err := internal.ListBlockDevices()
 	if err != nil {
+
 		return blockDevices, errors.Wrapf(err, "failed to list all the block devices in the node.")
 	} else if len(badRows) > 0 {
 		klog.Warningf("failed to parse all the lsblk rows. Bad rows: %+v", badRows)

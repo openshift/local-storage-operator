@@ -6,6 +6,7 @@ import (
 	"os"
 
 	localv1 "github.com/openshift/local-storage-operator/pkg/apis/local/v1"
+	"github.com/openshift/local-storage-operator/pkg/apis/local/v1alpha1"
 	"github.com/prometheus/common/log"
 
 	v1 "k8s.io/api/core/v1"
@@ -21,9 +22,14 @@ import (
 
 const componentName = "local-storage-diskmaker"
 
-type apiUpdater interface {
-	recordEvent(lv *localv1.LocalVolume, e *DiskEvent)
+type ApiUpdater interface {
+	recordEvent(obj runtime.Object, e *DiskEvent)
 	getLocalVolume(lv *localv1.LocalVolume) (*localv1.LocalVolume, error)
+	CreateDiscoveryResult(lvdr *v1alpha1.LocalVolumeDiscoveryResult) error
+	GetDiscoveryResult(name, namespace string) (*v1alpha1.LocalVolumeDiscoveryResult, error)
+	UpdateDiscoveryResultStatus(lvdr *v1alpha1.LocalVolumeDiscoveryResult) error
+	UpdateDiscoveryResult(lvdr *v1alpha1.LocalVolumeDiscoveryResult) error
+	GetLocalVolumeDiscovery(name, namespace string) (*v1alpha1.LocalVolumeDiscovery, error)
 }
 
 type sdkAPIUpdater struct {
@@ -33,8 +39,7 @@ type sdkAPIUpdater struct {
 	client client.Client
 }
 
-func newAPIUpdater(scheme *runtime.Scheme) (apiUpdater, error) {
-
+func NewAPIUpdater(scheme *runtime.Scheme) (ApiUpdater, error) {
 	recorder, err := getEventRecorder(scheme)
 	if err != nil {
 		log.Error(err, "failed to get event recorder")
@@ -77,18 +82,42 @@ func getEventRecorder(scheme *runtime.Scheme) (record.EventRecorder, error) {
 	return recorder, nil
 }
 
-func (s *sdkAPIUpdater) recordEvent(lv *localv1.LocalVolume, e *DiskEvent) {
+func (s *sdkAPIUpdater) recordEvent(obj runtime.Object, e *DiskEvent) {
 	nodeName := os.Getenv("MY_NODE_NAME")
 	message := e.Message
 	if len(nodeName) != 0 {
 		message = fmt.Sprintf("%s - %s", nodeName, message)
 	}
 
-	s.recorder.Eventf(lv, e.EventType, e.EventReason, message)
+	s.recorder.Eventf(obj, e.EventType, e.EventReason, message)
 }
 
 func (s *sdkAPIUpdater) getLocalVolume(lv *localv1.LocalVolume) (*localv1.LocalVolume, error) {
 	newLocalVolume := lv.DeepCopy()
 	err := s.client.Get(context.TODO(), types.NamespacedName{Name: newLocalVolume.GetName(), Namespace: newLocalVolume.GetNamespace()}, newLocalVolume)
 	return lv, err
+}
+
+func (s *sdkAPIUpdater) GetDiscoveryResult(name, namespace string) (*v1alpha1.LocalVolumeDiscoveryResult, error) {
+	discoveryResult := &v1alpha1.LocalVolumeDiscoveryResult{}
+	err := s.client.Get(context.TODO(), types.NamespacedName{Name: name, Namespace: namespace}, discoveryResult)
+	return discoveryResult, err
+}
+
+func (s *sdkAPIUpdater) CreateDiscoveryResult(lvdr *v1alpha1.LocalVolumeDiscoveryResult) error {
+	return s.client.Create(context.TODO(), lvdr)
+}
+
+func (s *sdkAPIUpdater) UpdateDiscoveryResultStatus(lvdr *v1alpha1.LocalVolumeDiscoveryResult) error {
+	return s.client.Status().Update(context.TODO(), lvdr)
+}
+
+func (s *sdkAPIUpdater) UpdateDiscoveryResult(lvdr *v1alpha1.LocalVolumeDiscoveryResult) error {
+	return s.client.Update(context.TODO(), lvdr)
+}
+
+func (s *sdkAPIUpdater) GetLocalVolumeDiscovery(name, namespace string) (*v1alpha1.LocalVolumeDiscovery, error) {
+	discoveryCR := &v1alpha1.LocalVolumeDiscovery{}
+	err := s.client.Get(context.TODO(), types.NamespacedName{Name: name, Namespace: namespace}, discoveryCR)
+	return discoveryCR, err
 }

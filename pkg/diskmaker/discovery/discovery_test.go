@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/openshift/local-storage-operator/pkg/apis/local/v1alpha1"
+	"github.com/openshift/local-storage-operator/pkg/diskmaker"
 	"github.com/openshift/local-storage-operator/pkg/internal"
 	"github.com/stretchr/testify/assert"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -28,6 +29,79 @@ func TestHelperProcess(t *testing.T) {
 	}
 	fmt.Fprintf(os.Stdout, os.Getenv("STDOUT"))
 	os.Exit(0)
+}
+
+func TestDiscoverDevices(t *testing.T) {
+	testcases := []struct {
+		label             string
+		deviceDiscovery   *DeviceDiscovery
+		fakeExecCmdOutput string
+		fakeGlobfunc      func(string) ([]string, error)
+		errMessage        error
+	}{
+		{
+			label:           "Case 1",
+			deviceDiscovery: getFakeDeviceDiscovery(),
+			fakeExecCmdOutput: `NAME="sda" KNAME="sda" ROTA="1" TYPE="disk" SIZE="62914560000" MODEL="VBOX HARDDISK" VENDOR="ATA" RO="0" RM="0" STATE="running" FSTYPE="" SERIAL=""` + "\n" +
+				`NAME="sda1" KNAME="sda1" ROTA="1" TYPE="part" SIZE="62913494528" MODEL="" VENDOR="" RO="0" RM="0" STATE="" FSTYPE="" SERIAL=""`,
+			fakeGlobfunc: func(name string) ([]string, error) {
+				return []string{"removable", "subsytem", "sda"}, nil
+			},
+			errMessage: nil,
+		},
+	}
+
+	for _, tc := range testcases {
+		internal.ExecResult = tc.fakeExecCmdOutput
+		internal.ExecCommand = internal.FakeExecCommand
+		internal.FilePathGlob = tc.fakeGlobfunc
+		defer func() {
+			internal.FilePathGlob = filepath.Glob
+			internal.ExecCommand = exec.Command
+		}()
+		err := tc.deviceDiscovery.discoverDevices()
+		assert.NoError(t, err)
+	}
+
+}
+func TestDiscoverDevicesFail(t *testing.T) {
+	testcases := []struct {
+		label             string
+		deviceDiscovery   *DeviceDiscovery
+		mockClient        *diskmaker.MockAPIUpdater
+		fakeExecCmdOutput string
+		fakeGlobfunc      func(string) ([]string, error)
+		errMessage        error
+	}{
+		{
+			label:           "Case 1",
+			deviceDiscovery: getFakeDeviceDiscovery(),
+			mockClient: &diskmaker.MockAPIUpdater{
+				MockUpdateDiscoveryResultStatus: func(lvdr *v1alpha1.LocalVolumeDiscoveryResult) error {
+					return fmt.Errorf("failed to update status")
+				},
+			},
+			fakeExecCmdOutput: `NAME="sda" KNAME="sda" ROTA="1" TYPE="disk" SIZE="62914560000" MODEL="VBOX HARDDISK" VENDOR="ATA" RO="1" RM="0" STATE="running" FSTYPE="" SERIAL=""` + "\n" +
+				`NAME="sda1" KNAME="sda1" ROTA="1" TYPE="part" SIZE="62913494528" MODEL="" VENDOR="" RO="0" RM="0" STATE="" FSTYPE="" SERIAL=""`,
+			fakeGlobfunc: func(name string) ([]string, error) {
+				return []string{"removable", "subsytem"}, nil
+			},
+			errMessage: nil,
+		},
+	}
+
+	for _, tc := range testcases {
+		internal.ExecResult = tc.fakeExecCmdOutput
+		internal.ExecCommand = internal.FakeExecCommand
+		internal.FilePathGlob = tc.fakeGlobfunc
+		defer func() {
+			internal.FilePathGlob = filepath.Glob
+			internal.ExecCommand = exec.Command
+		}()
+		tc.deviceDiscovery.apiClient = tc.mockClient
+		err := tc.deviceDiscovery.discoverDevices()
+		assert.Error(t, err)
+	}
 }
 
 func TestIgnoreDevices(t *testing.T) {
@@ -345,4 +419,28 @@ func TestParseDeviceProperty(t *testing.T) {
 		actual := parseDeviceProperty(tc.input)
 		assert.Equalf(t, tc.expected, actual, "[%s]: failed to parse device mechanical property", tc.label)
 	}
+}
+
+func getFakeDeviceDiscovery() *DeviceDiscovery {
+	dd := &DeviceDiscovery{}
+	dd.apiClient = &diskmaker.MockAPIUpdater{}
+	dd.eventSync = diskmaker.NewEventReporter(dd.apiClient)
+	dd.disks = []v1alpha1.DiscoveredDevice{}
+	dd.localVolumeDiscovery = &v1alpha1.LocalVolumeDiscovery{}
+
+	return dd
+}
+
+func setEnv() {
+	os.Setenv("MY_NODE_NAME", "node1")
+	os.Setenv("WATCH_NAMESPACE", "ns")
+	os.Setenv("UID", "uid")
+	os.Setenv("POD_NAME", "pod123")
+}
+
+func unsetEnv() {
+	os.Unsetenv("MY_NODE_NAME")
+	os.Unsetenv("WATCH_NAMESPACE")
+	os.Unsetenv("UID")
+	os.Unsetenv("POD_NAME")
 }

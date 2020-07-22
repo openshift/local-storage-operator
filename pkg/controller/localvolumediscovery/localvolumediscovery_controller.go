@@ -2,7 +2,10 @@ package localvolumediscovery
 
 import (
 	"context"
+	"fmt"
+	"time"
 
+	operatorv1 "github.com/openshift/api/operator/v1"
 	localv1alpha1 "github.com/openshift/local-storage-operator/pkg/apis/local/v1alpha1"
 	"github.com/openshift/local-storage-operator/pkg/common"
 	"github.com/openshift/local-storage-operator/pkg/controller/nodedaemon"
@@ -11,6 +14,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -21,18 +25,16 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/source"
 )
 
-var log = logf.Log.WithName("controller_localvolumediscovery")
+var (
+	log                             = logf.Log.WithName("controller_localvolumediscovery")
+	waitForRequeueIfDaemonsNotReady = reconcile.Result{Requeue: true, RequeueAfter: 10 * time.Second}
+)
 
 const (
 	udevPath           = "/run/udev"
 	udevVolName        = "run-udev"
 	DiskMakerDiscovery = "diskmaker-discovery"
 )
-
-/**
-* USER ACTION REQUIRED: This is a scaffold file intended for the user to modify with their own Controller
-* business logic.  Delete these comments after modifying this file.*
- */
 
 // Add creates a new LocalVolumeDiscovery Controller and adds it to the Manager. The Manager will set fields on the Controller
 // and Start it when the Manager is Started.
@@ -59,12 +61,8 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 		return err
 	}
 
-	// TODO(user): Modify this to be the types you create that are owned by the primary resource
-	// Watch for changes to secondary resource Pods and requeue the owner LocalVolumeDiscovery
-	err = c.Watch(&source.Kind{Type: &corev1.Pod{}}, &handler.EnqueueRequestForOwner{
-		IsController: true,
-		OwnerType:    &localv1alpha1.LocalVolumeDiscovery{},
-	})
+	// Watch for the child resources
+	err = c.Watch(&source.Kind{Type: &appsv1.DaemonSet{}}, &handler.EnqueueRequestForOwner{OwnerType: &localv1alpha1.LocalVolumeDiscovery{}})
 	if err != nil {
 		return err
 	}
@@ -108,21 +106,45 @@ func (r *ReconcileLocalVolumeDiscovery) Reconcile(request reconcile.Request) (re
 	diskMakerDSMutateFn := getDiskMakerDiscoveryDSMutateFn(request, instance.Spec.Tolerations, getOwnerRefs(instance), instance.Spec.NodeSelector)
 	ds, opResult, err := nodedaemon.CreateOrUpdateDaemonset(r.client, diskMakerDSMutateFn)
 	if err != nil {
-		instance.Status.Phase = localv1alpha1.DiscoveryFailed
-		err = r.updateStatus(instance)
+		message := fmt.Sprintf("failed to create discovery daemonset. Error %+v", err)
+		err := r.updateDiscoveryStatus(instance, operatorv1.OperatorStatusTypeDegraded, message,
+			operatorv1.ConditionFalse, localv1alpha1.DiscoveryFailed)
 		if err != nil {
-			reqLogger.Error(err, "failed to update status")
 			return reconcile.Result{}, err
 		}
-		return reconcile.Result{}, err
 	} else if opResult == controllerutil.OperationResultUpdated || opResult == controllerutil.OperationResultCreated {
 		reqLogger.Info("daemonset changed", "daemonset.Name", ds.GetName(), "op.Result", opResult)
 	}
 
-	instance.Status.Phase = localv1alpha1.Discovering
-	err = r.updateStatus(instance)
+	desiredDaemons, readyDaemons, err := r.getDaemonSetStatus(instance.Namespace)
 	if err != nil {
-		reqLogger.Error(err, "failed to update status")
+		reqLogger.Error(err, "failed to get discovery daemonset")
+		return reconcile.Result{}, err
+	}
+
+	if desiredDaemons == 0 {
+		message := "no discovery daemons are scheduled for running"
+		err := r.updateDiscoveryStatus(instance, operatorv1.OperatorStatusTypeDegraded, message,
+			operatorv1.ConditionFalse, localv1alpha1.DiscoveryFailed)
+		if err != nil {
+			return reconcile.Result{}, err
+		}
+		return waitForRequeueIfDaemonsNotReady, fmt.Errorf(message)
+
+	} else if !(desiredDaemons == readyDaemons) {
+		message := fmt.Sprintf("running %d out of %d discovery daemons", readyDaemons, desiredDaemons)
+		err := r.updateDiscoveryStatus(instance, operatorv1.OperatorStatusTypeProgressing, message,
+			operatorv1.ConditionFalse, localv1alpha1.Discovering)
+		if err != nil {
+			return reconcile.Result{}, err
+		}
+		return waitForRequeueIfDaemonsNotReady, fmt.Errorf(message)
+	}
+
+	message := fmt.Sprintf("successfully running %d out of %d discovery daemons", desiredDaemons, readyDaemons)
+	err = r.updateDiscoveryStatus(instance, operatorv1.OperatorStatusTypeAvailable, message,
+		operatorv1.ConditionTrue, localv1alpha1.Discovering)
+	if err != nil {
 		return reconcile.Result{}, err
 	}
 
@@ -154,7 +176,30 @@ func getDiskMakerDiscoveryDSMutateFn(request reconcile.Request,
 
 		return nil
 	}
+}
 
+// updateDiscoveryStatus updates the discovery state with conditions and phase
+func (r *ReconcileLocalVolumeDiscovery) updateDiscoveryStatus(instance *localv1alpha1.LocalVolumeDiscovery, conditionType, message string,
+	status operatorv1.ConditionStatus, phase localv1alpha1.DiscoveryPhase) error {
+	// avoid frequently updating the same status in the CR
+	if len(instance.Status.Conditions) < 1 || instance.Status.Conditions[0].Message != message {
+		condition := operatorv1.OperatorCondition{
+			Type:               conditionType,
+			Status:             status,
+			Message:            message,
+			LastTransitionTime: metav1.Now(),
+		}
+		newConditions := []operatorv1.OperatorCondition{condition}
+		instance.Status.Conditions = newConditions
+		instance.Status.Phase = phase
+		instance.Status.ObservedGeneration = instance.Generation
+		err := r.updateStatus(instance)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 func (r *ReconcileLocalVolumeDiscovery) updateStatus(lvd *localv1alpha1.LocalVolumeDiscovery) error {
@@ -164,6 +209,16 @@ func (r *ReconcileLocalVolumeDiscovery) updateStatus(lvd *localv1alpha1.LocalVol
 	}
 
 	return nil
+}
+
+func (r *ReconcileLocalVolumeDiscovery) getDaemonSetStatus(namespace string) (int32, int32, error) {
+	existingDS := &appsv1.DaemonSet{}
+	err := r.client.Get(context.TODO(), types.NamespacedName{Name: DiskMakerDiscovery, Namespace: namespace}, existingDS)
+	if err != nil {
+		return 0, 0, err
+	}
+
+	return existingDS.Status.DesiredNumberScheduled, existingDS.Status.NumberReady, nil
 }
 
 func getDiscoveryVolumesAndMounts() ([]corev1.Volume, []corev1.VolumeMount) {
@@ -211,6 +266,7 @@ func getDiscoveryVolumesAndMounts() ([]corev1.Volume, []corev1.VolumeMount) {
 			},
 		},
 	}
+
 	return volumes, volumeMounts
 }
 

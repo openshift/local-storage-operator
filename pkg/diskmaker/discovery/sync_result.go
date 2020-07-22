@@ -1,7 +1,6 @@
 package discovery
 
 import (
-	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -9,10 +8,10 @@ import (
 	"time"
 
 	"github.com/openshift/local-storage-operator/pkg/apis/local/v1alpha1"
+	"github.com/openshift/local-storage-operator/pkg/diskmaker"
 	"github.com/pkg/errors"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/types"
 	apiTypes "k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/validation"
 	"k8s.io/klog"
@@ -54,35 +53,37 @@ func (discovery *DeviceDiscovery) ensureDiscoveryResultCR() error {
 	if nodeName == "" || namespace == "" || parentObjUID == "" || parentObjName == "" {
 		return errors.New("failed to create LocalVolumeDiscoveryResult resource. missing required env variables")
 	}
-	resultCR := newDiscoveryResultInstance(nodeName, namespace, parentObjName, parentObjUID)
-	existing := v1alpha1.LocalVolumeDiscoveryResult{}
-	err := discovery.client.Get(context.TODO(), types.NamespacedName{Name: resultCR.Name, Namespace: namespace}, &existing)
+	newCR := newDiscoveryResultInstance(nodeName, namespace, parentObjName, parentObjUID)
+	existingCR, err := discovery.apiClient.GetDiscoveryResult(newCR.Name, newCR.Namespace)
 	switch {
 	case err == nil:
-		existing.ObjectMeta.OwnerReferences = resultCR.ObjectMeta.OwnerReferences
-		resultCR.ObjectMeta = existing.ObjectMeta
-		err = discovery.client.Update(context.TODO(), resultCR)
+		existingCR.ObjectMeta.OwnerReferences = newCR.ObjectMeta.OwnerReferences
+		newCR.ObjectMeta = existingCR.ObjectMeta
+		err = discovery.apiClient.UpdateDiscoveryResult(newCR)
 		if err != nil {
 			return errors.Wrapf(err, "failed to update LocalVolumeDiscoveryResult resource")
 		}
 		klog.Info("successfully updated LocalVolumeDiscoveryResult resource")
+		return nil
 	case kerrors.IsNotFound(err):
-		err = discovery.client.Create(context.TODO(), resultCR)
+		err = discovery.apiClient.CreateDiscoveryResult(newCR)
 		if err != nil {
 			return errors.Wrapf(err, "failed to create LocalVolumeDiscoveryResult resource")
 		}
-		klog.Info("successfully created LocalVolumeDiscoveryResult resource")
+		message := "successfully created LocalVolumeDiscoveryResult resource"
+		e := diskmaker.NewSuccessEvent(diskmaker.CreatedDiscoveryResultObject, message, "")
+		discovery.eventSync.Report(e, discovery.localVolumeDiscovery)
+		klog.Info(message)
+		return nil
 	}
 
-	return nil
+	return err
 }
 
 // updateStatus updates the LocalVolumeDiscoveryResult resource status
 func (discovery *DeviceDiscovery) updateStatus() error {
-	resultCR := v1alpha1.LocalVolumeDiscoveryResult{}
 	truncatedNodeName := truncateNodeName(resultCRName, os.Getenv("MY_NODE_NAME"))
-	err := discovery.client.Get(context.TODO(), types.NamespacedName{Name: truncatedNodeName,
-		Namespace: os.Getenv("WATCH_NAMESPACE")}, &resultCR)
+	resultCR, err := discovery.apiClient.GetDiscoveryResult(truncatedNodeName, os.Getenv("WATCH_NAMESPACE"))
 	if err != nil {
 		if kerrors.IsNotFound(err) {
 			klog.Warning("result resource not found. Ignoring since object must be deleted.")
@@ -95,7 +96,7 @@ func (discovery *DeviceDiscovery) updateStatus() error {
 	resultCR.Status.DiscoveredDevices = discovery.disks
 	resultCR.Status.DiscoveredTimeStamp = time.Now().UTC().Format(time.RFC3339)
 
-	err = discovery.client.Status().Update(context.TODO(), resultCR.DeepCopyObject())
+	err = discovery.apiClient.UpdateDiscoveryResultStatus(resultCR)
 	if err != nil {
 		return errors.Wrapf(err, "failed to update the device status in the LocalVolumeDiscoveryResult resource")
 	}
@@ -109,7 +110,8 @@ func hash(s string) string {
 	return hex.EncodeToString(h[:16])
 }
 
-// truncateNodeName hashes the nodeName in case it would case the name to be longer than 63 characters
+// truncateNodeName hashes the nodeName. This is done because some resource types require their names
+// to follow the DNS label standard where names can contain utmost 63 characters.
 func truncateNodeName(format, nodeName string) string {
 	if len(nodeName)+len(fmt.Sprintf(format, "")) > validation.DNS1035LabelMaxLength {
 		hashed := hash(nodeName)
