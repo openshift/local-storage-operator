@@ -21,7 +21,6 @@ import (
 	"github.com/openshift/local-storage-operator/pkg/diskmaker"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	rbacv1 "k8s.io/api/rbac/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 
@@ -143,12 +142,6 @@ func (r *ReconcileLocalVolume) syncLocalVolumeProvider(instance *localv1.LocalVo
 			return fmt.Errorf("error syncing status: %v", err)
 		}
 		return nil
-	}
-
-	err = r.syncRBACPolicies(o)
-	if err != nil {
-		klog.Error(err)
-		return r.addFailureCondition(instance, o, err)
 	}
 
 	provisionerConfigMapModified, err := r.syncProvisionerConfigMap(o)
@@ -316,144 +309,6 @@ func (r *ReconcileLocalVolume) syncDiskMakerConfigMap(o *localv1.LocalVolume) (b
 		return false, fmt.Errorf("error creating diskmarker configmap %s: %v", o.Name, err)
 	}
 	return modified, nil
-}
-
-func (r *ReconcileLocalVolume) syncRBACPolicies(o *localv1.LocalVolume) error {
-	operatorLabel := map[string]string{
-		"openshift-operator": "local-storage-operator",
-	}
-	serviceAccount := &corev1.ServiceAccount{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      provisionerServiceAccount,
-			Namespace: o.Namespace,
-			Labels:    operatorLabel,
-		},
-	}
-	addOwner(&serviceAccount.ObjectMeta, o)
-
-	_, _, err := r.apiClient.applyServiceAccount(serviceAccount)
-	if err != nil {
-		return fmt.Errorf("error applying service account %s: %v", serviceAccount.Name, err)
-	}
-
-	provisionerClusterRole := &rbacv1.ClusterRole{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      provisionerNodeRoleName,
-			Namespace: o.Namespace,
-			Labels:    operatorLabel,
-		},
-		Rules: []rbacv1.PolicyRule{
-			{
-				Verbs:     []string{"get"},
-				APIGroups: []string{""},
-				Resources: []string{"nodes"},
-			},
-		},
-	}
-	addOwner(&provisionerClusterRole.ObjectMeta, o)
-	_, _, err = r.apiClient.applyClusterRole(provisionerClusterRole)
-	if err != nil {
-		return fmt.Errorf("error applying cluster role %s: %v", provisionerClusterRole.Name, err)
-	}
-
-	pvClusterRoleBinding := &rbacv1.ClusterRoleBinding{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      provisionerPVRoleBindingName,
-			Namespace: o.Namespace,
-			Labels:    operatorLabel,
-		},
-		Subjects: []rbacv1.Subject{
-			{
-				Kind:      "ServiceAccount",
-				Name:      serviceAccount.Name,
-				Namespace: serviceAccount.Namespace,
-			},
-		},
-		RoleRef: rbacv1.RoleRef{
-			APIGroup: "rbac.authorization.k8s.io",
-			Kind:     "ClusterRole",
-			Name:     defaultPVClusterRole,
-		},
-	}
-	addOwner(&pvClusterRoleBinding.ObjectMeta, o)
-
-	_, _, err = r.apiClient.applyClusterRoleBinding(pvClusterRoleBinding)
-	if err != nil {
-		return fmt.Errorf("error applying pv cluster role binding %s: %v", pvClusterRoleBinding.Name, err)
-	}
-
-	nodeRoleBinding := &rbacv1.ClusterRoleBinding{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      provisionerNodeRoleBindingName,
-			Namespace: o.Namespace,
-			Labels:    operatorLabel,
-		},
-		Subjects: []rbacv1.Subject{
-			{
-				Kind:      "ServiceAccount",
-				Name:      serviceAccount.Name,
-				Namespace: serviceAccount.Namespace,
-			},
-		},
-		RoleRef: rbacv1.RoleRef{
-			APIGroup: "rbac.authorization.k8s.io",
-			Kind:     "ClusterRole",
-			Name:     provisionerClusterRole.Name,
-		},
-	}
-	addOwner(&nodeRoleBinding.ObjectMeta, o)
-
-	_, _, err = r.apiClient.applyClusterRoleBinding(nodeRoleBinding)
-	if err != nil {
-		return fmt.Errorf("error creating node role binding %s: %v", nodeRoleBinding.Name, err)
-	}
-
-	localVolumeRole := &rbacv1.Role{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      localVolumeRoleName,
-			Namespace: o.Namespace,
-			Labels:    operatorLabel,
-		},
-		Rules: []rbacv1.PolicyRule{
-			{
-				Verbs:     []string{"get", "list", "watch"},
-				APIGroups: []string{"local.storage.openshift.io"},
-				Resources: []string{"*"},
-			},
-		},
-	}
-	addOwner(&localVolumeRole.ObjectMeta, o)
-	_, _, err = r.apiClient.applyRole(localVolumeRole)
-	if err != nil {
-		return fmt.Errorf("error applying localvolume role %s: %v", localVolumeRole.Name, err)
-	}
-
-	localVolumeRoleBinding := &rbacv1.RoleBinding{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      localVolumeRoleBindingName,
-			Namespace: o.Namespace,
-			Labels:    operatorLabel,
-		},
-		Subjects: []rbacv1.Subject{
-			{
-				Kind:      "ServiceAccount",
-				Name:      serviceAccount.Name,
-				Namespace: serviceAccount.Namespace,
-			},
-		},
-		RoleRef: rbacv1.RoleRef{
-			APIGroup: "rbac.authorization.k8s.io",
-			Kind:     "Role",
-			Name:     localVolumeRole.Name,
-		},
-	}
-
-	addOwner(&localVolumeRoleBinding.ObjectMeta, o)
-	_, _, err = r.apiClient.applyRoleBinding(localVolumeRoleBinding)
-	if err != nil {
-		return fmt.Errorf("error applying localvolume rolebinding %s: %v", localVolumeRoleBinding.Name, err)
-	}
-	return nil
 }
 
 // CreateConfigMap Create configmap requires by the local storage provisioner
