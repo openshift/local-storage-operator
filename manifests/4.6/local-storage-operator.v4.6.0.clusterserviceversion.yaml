@@ -16,14 +16,54 @@ metadata:
             "storageClassDevices": [
               {
                 "devicePaths": [
-                    "/dev/vde",
-                    "/dev/vdf"
+                  "/dev/vde",
+                  "/dev/vdf"
                 ],
                 "fsType": "ext4",
                 "storageClassName": "foobar",
                 "volumeMode": "Filesystem"
               }
             ]
+          }
+        },
+        {
+          "apiVersion": "local.storage.openshift.io/v1alpha1",
+          "kind": "LocalVolumeSet",
+          "metadata": {
+            "name": "example-localvolumeset"
+          },
+          "spec": {
+            "deviceInclusionSpec": {
+              "deviceMechanicalProperty": [
+                "Rotational",
+                "NonRotational"
+              ],
+              "deviceTypes": [
+                "RawDisk"
+              ],
+              "maxSize": "100G",
+              "minSize": "10G"
+            },
+            "maxDeviceCount": 10,
+            "minDeviceCount": 5,
+            "nodeSelector": {
+              "nodeSelectorTerms": [
+                {
+                  "matchExpressions": [
+                    {
+                      "key": "kubernetes.io/hostname",
+                      "operator": "In",
+                      "values": [
+                        "worker-0",
+                        "worker-1"
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            "storageClassName": "example-storageclass",
+            "volumeMode": "Block"
           }
         }
       ]
@@ -143,6 +183,16 @@ spec:
             verbs:
             - update
           serviceAccountName: local-storage-operator
+        - rules:
+          - apiGroups:
+            - local.storage.openshift.io
+            resources:
+            - "*"
+            verbs:
+            - get
+            - list
+            - watch
+          serviceAccountName: local-storage-admin
       clusterPermissions:
         - rules:
           - apiGroups:
@@ -216,6 +266,36 @@ spec:
             - use
             resourceNames:
             - privileged
+          - apiGroups:
+            - ""
+            resources:
+            - nodes
+            verbs:
+            - list
+            - get
+            - watch
+          - apiGroups:
+            - ""
+            - storage.k8s.io
+            resources:
+            - configmaps
+            - storageclasses
+            - persistentvolumeclaims
+            - persistentvolumes
+            verbs:
+            - "*"
+          - apiGroups:
+            - ""
+            - events.k8s.io
+            resources:
+            - events
+            verbs:
+            - get
+            - list
+            - watch
+            - create
+            - patch
+            - update
           serviceAccountName: local-storage-admin
       deployments:
         - name: local-storage-operator
@@ -284,6 +364,47 @@ spec:
           - description: Current management state of this object
             displayName: Operator management state
             path: managementState
+          - description: Last known condition of this object
+            displayName: Conditions
+            path: conditions
+            x-descriptors:
+              - 'urn:alm:descriptor:io.kubernetes.conditions'
+      - displayName: Local Volume Set
+        group: local.storage.openshift.io
+        kind: LocalVolumeSet
+        name: localvolumesets.local.storage.openshift.io
+        description: A Local Volume set allows you to filter a set of storage volumes, group them and create a dedicated storage class to consume storage from the set of volumes.
+        version: v1alpha1
+        specDescriptors:
+          - description: Selected nodes for local storage
+            displayName: NodeSelector
+            path: nodeSelector
+            x-descriptors:
+              - 'urn:alm:descriptor:com.tectonic.ui:selector'
+          - description: StorageClassName to use for set of matched devices
+            displayName: StorageClassName
+            path: storageClassName
+          - description: VolumeMode determines whether the PV created is Block or Filesystem. By default it will be block
+            displayName:  VolumeMode
+            path: volumeMode
+          - description: FSType type to create when volumeMode is Filesystem
+            displayName: FSType
+            path: fsType
+          - description: List of tolerations to pass to the discovery daemons
+            displayName: Tolerations
+            path: tolerations
+            x-descriptors:
+              - urn:alm:descriptor:io.kubernetes:Tolerations
+          - description: Filters for including a device in the device discovery
+            displayName: deviceInclusionSpec
+            path: deviceInclusionSpec
+        statusDescriptors:
+          - description: Last generation of this object
+            displayName: ObservedGeneration
+            path: observedGeneration
+          - description: Total devices over which the PVs has been provisioned
+            displayName: TotalProvisionedDeviceCount
+            path: totalProvisionedDeviceCount
           - description: Last known condition of this object
             displayName: Conditions
             path: conditions
