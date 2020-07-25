@@ -2,12 +2,13 @@
 set -e
 
 ARTIFACT_DIR=${ARTIFACT_DIR:-_output}
-manifest=$ARTIFACT_DIR/manifest
-global_manifest=$ARTIFACT_DIR/global_manifest
+manifest=${ARTIFACT_DIR}/manifest.yaml
+global_manifest=${ARTIFACT_DIR}/global_manifest.yaml
 rm -f $manifest $global_manifest
-mkdir -p $ARTIFACT_DIR
+mkdir -p ${ARTIFACT_DIR}
 
 if [ -n "${IMAGE_FORMAT}" ] ; then
+    echo "IMAGE_FORMAT set as '${IMAGE_FORMAT}'"
     IMAGE_LOCAL_STORAGE_OPERATOR=$(sed -e "s,\${component},local-storage-operator," <(echo $IMAGE_FORMAT))
     IMAGE_LOCAL_DISKMAKER=$(sed -e "s,\${component},local-storage-diskmaker," <(echo $IMAGE_FORMAT))
 else
@@ -28,7 +29,11 @@ sed -i "s,quay.io/openshift/origin-local-storage-diskmaker,${IMAGE_LOCAL_DISKMAK
 NAMESPACE=${NAMESPACE:-default}
 LOCAL_DISK=${LOCAL_DISK:-""}
 
-TEST_NAMESPACE=${NAMESPACE} TEST_LOCAL_DISK=${LOCAL_DISK} go test ./test/e2e/... \
+export \
+    IMAGE_LOCAL_STORAGE_OPERATOR \
+    IMAGE_LOCAL_DISKMAKER
+
+TEST_NAMESPACE=${NAMESPACE} TEST_LOCAL_DISK=${LOCAL_DISK} go test -timeout 0 ./test/e2e/... \
   -root=$(pwd) \
   -kubeconfig=${KUBECONFIG} \
   -globalMan ${global_manifest} \
