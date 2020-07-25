@@ -139,18 +139,6 @@ spec:
             verbs:
             - "*"
           - apiGroups:
-            - rbac.authorization.k8s.io
-            resources:
-            - roles
-            verbs:
-            - get
-            - list
-            - watch
-            - create
-            - update
-            - patch
-            - delete
-          - apiGroups:
             - apps
             resources:
             - deployments
@@ -201,20 +189,6 @@ spec:
             - storageclasses
             verbs:
             - "*"
-          - apiGroups:
-            - rbac.authorization.k8s.io
-            resources:
-            - clusterroles
-            - clusterrolebindings
-            - rolebindings
-            verbs:
-            - get
-            - list
-            - watch
-            - create
-            - update
-            - patch
-            - delete
           - apiGroups:
             - ""
             resources:
