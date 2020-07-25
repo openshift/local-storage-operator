@@ -8,7 +8,7 @@ import (
 	localv1 "github.com/openshift/local-storage-operator/pkg/apis/local/v1"
 	"github.com/prometheus/common/log"
 
-	"k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
@@ -34,7 +34,6 @@ type sdkAPIUpdater struct {
 }
 
 func newAPIUpdater(scheme *runtime.Scheme) (apiUpdater, error) {
-	// TODO ROHAN add relevant scheme
 
 	recorder, err := getEventRecorder(scheme)
 	if err != nil {

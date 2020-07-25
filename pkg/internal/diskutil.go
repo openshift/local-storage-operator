@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/pkg/errors"
 	"golang.org/x/sys/unix"
@@ -20,13 +19,6 @@ const (
 	StateSuspended = "suspended"
 	// DiskByIDDir is the path for symlinks to the device by id.
 	DiskByIDDir = "/dev/disk/by-id/"
-)
-
-var (
-	// DefaultLockTimeout to use for WaitForPVCreationLock
-	DefaultLockTimeout = time.Second * 30
-	// DefaultLockInterval to use for
-	DefaultLockInterval = time.Second
 )
 
 // IDPathNotFoundError indicates that a symlink to the device was not found in /dev/disk/by-id/

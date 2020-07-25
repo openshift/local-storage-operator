@@ -11,6 +11,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/openshift/local-storage-operator/pkg/internal"
+
 	"github.com/ghodss/yaml"
 	"github.com/openshift/local-storage-operator/pkg/apis"
 	localv1 "github.com/openshift/local-storage-operator/pkg/apis/local/v1"
@@ -190,8 +192,27 @@ func (d *DiskMaker) symLinkDisks(diskConfig *DiskConfig) {
 
 	for storageClass, deviceArray := range deviceMap {
 		for _, deviceNameLocation := range deviceArray {
+			// get PV creation lock which checks for existing symlinks to this device
+			pvLock, pvLocked, existingSymlinks, err := internal.GetPVCreationLock(
+				deviceNameLocation.diskNamePath,
+				d.symlinkLocation,
+			)
+			unlockFunc := func() {
+				err := pvLock.Unlock()
+				if err != nil {
+					klog.Errorf("failed to unlock device: %+v", err)
+				}
+			}
+			defer unlockFunc()
+			if len(existingSymlinks) > 0 { // already claimed, fail silently
+				continue
+			} else if err != nil || !pvLocked { // locking failed for some other reasion
+				klog.Errorf("not symlinking, could not get lock: %v", err)
+				continue
+			}
+
 			symLinkDirPath := path.Join(d.symlinkLocation, storageClass)
-			err := os.MkdirAll(symLinkDirPath, 0755)
+			err = os.MkdirAll(symLinkDirPath, 0755)
 			if err != nil {
 				msg := fmt.Sprintf("error creating symlink dir %s: %v", symLinkDirPath, err)
 				e := newEvent(ErrorFindingMatchingDisk, msg, "")
@@ -205,6 +226,7 @@ func (d *DiskMaker) symLinkDisks(diskConfig *DiskConfig) {
 				klog.V(4).Infof("symlink %s already exists", symLinkPath)
 				continue
 			}
+
 			var symLinkErr error
 			if deviceNameLocation.diskID != "" {
 				klog.V(3).Infof("symlinking to %s to %s", deviceNameLocation.diskID, symLinkPath)
@@ -213,14 +235,14 @@ func (d *DiskMaker) symLinkDisks(diskConfig *DiskConfig) {
 				klog.V(3).Infof("symlinking to %s to %s", deviceNameLocation.diskNamePath, symLinkPath)
 				symLinkErr = os.Symlink(deviceNameLocation.diskNamePath, symLinkPath)
 			}
-
 			if symLinkErr != nil {
 				msg := fmt.Sprintf("error creating symlink %s: %v", symLinkPath, symLinkErr)
 				e := newEvent(ErrorFindingMatchingDisk, msg, deviceNameLocation.diskNamePath)
 				d.eventSync.report(e, d.localVolume)
 				klog.Errorf(msg)
 			}
-
+			// unlock before proceeding
+			unlockFunc()
 			successMsg := fmt.Sprintf("found matching disk %s", baseDeviceName)
 			e := newSuccessEvent(FoundMatchingDisk, successMsg, deviceNameLocation.diskNamePath)
 			d.eventSync.report(e, d.localVolume)
