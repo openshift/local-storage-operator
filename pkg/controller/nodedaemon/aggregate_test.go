@@ -111,3 +111,86 @@ func TestExtractLVSetInfo(t *testing.T) {
 	}
 
 }
+
+func TestExtractLVSetInfoWithNilNodeSelector(t *testing.T) {
+
+	lvSetWithNodeSelector := localv1alpha1.LocalVolumeSet{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "a",
+		},
+		Spec: localv1alpha1.LocalVolumeSetSpec{
+			NodeSelector: &corev1.NodeSelector{
+				// 2 terms
+				NodeSelectorTerms: []corev1.NodeSelectorTerm{
+					{MatchExpressions: []corev1.NodeSelectorRequirement{}},
+					{MatchExpressions: []corev1.NodeSelectorRequirement{}},
+				},
+			},
+			// 2 tolerations
+			Tolerations: []corev1.Toleration{
+				{
+					Key:      "key1",
+					Operator: corev1.TolerationOpExists,
+					Effect:   corev1.TaintEffectNoSchedule,
+				},
+				{
+					Key:      "key1",
+					Operator: corev1.TolerationOpExists,
+					Effect:   corev1.TaintEffectPreferNoSchedule,
+				},
+			},
+		},
+	}
+	lvSetWithoutNodeSelector := localv1alpha1.LocalVolumeSet{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "b",
+		},
+		Spec: localv1alpha1.LocalVolumeSetSpec{
+			// no nodeSelector
+			// 2 tolerations
+			Tolerations: []corev1.Toleration{
+				{
+					Key:      "key1",
+					Operator: corev1.TolerationOpEqual,
+					Value:    "value1",
+					Effect:   corev1.TaintEffectNoSchedule,
+				},
+				{
+					Key:      "key1",
+					Operator: corev1.TolerationOpEqual,
+					Value:    "value2",
+					Effect:   corev1.TaintEffectNoExecute,
+				},
+			},
+		},
+	}
+
+	count := 3
+	for i := 0; i <= count; i++ {
+		lvSets := []localv1alpha1.LocalVolumeSet{}
+		for j := 0; j <= count; j++ {
+			// place empty nodeSelector in ith place
+			if i == j {
+				lvSets = append(lvSets, lvSetWithoutNodeSelector)
+			} else {
+				lvSets = append(lvSets, lvSetWithNodeSelector)
+			}
+
+		}
+		_, _, terms := extractLVSetInfo(lvSets)
+		// empty nodeSelector in any spot should result in empty terms
+		assert.Len(t, terms, 0)
+
+	}
+	for i := 0; i <= count; i++ {
+		lvSets := []localv1alpha1.LocalVolumeSet{}
+		for j := 0; j <= count; j++ {
+			lvSets = append(lvSets, lvSetWithNodeSelector)
+		}
+		_, _, terms := extractLVSetInfo(lvSets)
+		// empty nodeSelector in any spot should result in empty terms
+		assert.Len(t, terms, len(lvSets)*2)
+
+	}
+
+}

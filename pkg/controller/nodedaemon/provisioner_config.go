@@ -2,7 +2,12 @@ package nodedaemon
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"fmt"
 	"path"
+	"sort"
+	"strings"
 
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -15,7 +20,11 @@ import (
 	"github.com/openshift/local-storage-operator/pkg/common"
 )
 
-func (r *DaemonReconciler) reconcileProvisionerConfigMap(request reconcile.Request, lvSets []localv1alpha1.LocalVolumeSet, ownerRefs []metav1.OwnerReference) (controllerutil.OperationResult, error) {
+func (r *DaemonReconciler) reconcileProvisionerConfigMap(
+	request reconcile.Request,
+	lvSets []localv1alpha1.LocalVolumeSet,
+	ownerRefs []metav1.OwnerReference,
+) (*corev1.ConfigMap, controllerutil.OperationResult, error) {
 	// object meta
 	objectMeta := metav1.ObjectMeta{
 		Name:      ProvisionerConfigMapName,
@@ -38,7 +47,7 @@ func (r *DaemonReconciler) reconcileProvisionerConfigMap(request reconcile.Reque
 		storageClassConfig[storageClassName] = mountConfig
 	}
 	// create or update
-	return controllerutil.CreateOrUpdate(context.TODO(), r.client, configMap, func() error {
+	opResult, err := controllerutil.CreateOrUpdate(context.TODO(), r.client, configMap, func() error {
 		if configMap.CreationTimestamp.IsZero() {
 			configMap.ObjectMeta = objectMeta
 		}
@@ -55,4 +64,16 @@ func (r *DaemonReconciler) reconcileProvisionerConfigMap(request reconcile.Reque
 
 		return nil
 	})
+	return configMap, opResult, err
+}
+
+func dataHash(data map[string]string) string {
+	var entries []string
+	for key, value := range data {
+		entries = append(entries, fmt.Sprintf("%s-%s", key, value))
+	}
+	sort.Strings(entries)
+	s := strings.Join(entries, "--")
+	h := sha256.Sum256([]byte(s))
+	return hex.EncodeToString(h[:])
 }

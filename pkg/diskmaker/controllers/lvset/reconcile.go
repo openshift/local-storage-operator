@@ -276,7 +276,7 @@ func symLinkDisk(devLogger logr.Logger, dev internal.BlockDevice, symLinkDir str
 
 func nodeSelectorMatchesNodeLabels(node *corev1.Node, nodeSelector *corev1.NodeSelector) (bool, error) {
 	if nodeSelector == nil {
-		return false, fmt.Errorf("the nodeSelector var is nil")
+		return true, nil
 	}
 	if node == nil {
 		return false, fmt.Errorf("the node var is nil")

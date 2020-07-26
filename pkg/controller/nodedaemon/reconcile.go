@@ -17,6 +17,8 @@ const (
 	DiskMakerName = "diskmaker-manager"
 	// ProvisionerConfigMapName is the name of the local-static-provisioner configmap
 	ProvisionerConfigMapName = "local-volumeset-provisioner"
+
+	dataHashAnnotationKey = "local.storage.openshift.io/configMapDataHash"
 )
 
 var log = logf.Log.WithName(controllerName)
@@ -24,7 +26,7 @@ var log = logf.Log.WithName(controllerName)
 // blank assignment to verify that DaemonReconciler implements reconcile.Reconciler
 var _ reconcile.Reconciler = &DaemonReconciler{}
 
-// DaemonReconciler reconciles all LocalVolumeSet obects at once
+// DaemonReconciler reconciles all LocalVolumeSet objects at once
 type DaemonReconciler struct {
 	// This client, initialized using mgr.Client() above, is a split client
 	// that reads objects from the cache and writes to the apiserver
@@ -49,27 +51,30 @@ func (r *DaemonReconciler) Reconcile(request reconcile.Request) (reconcile.Resul
 		return reconcile.Result{}, nil
 	}
 
-	opResult, err := r.reconcileProvisionerConfigMap(request, lvSets.Items, ownerRefs)
+	configMap, opResult, err := r.reconcileProvisionerConfigMap(request, lvSets.Items, ownerRefs)
 	if err != nil {
 		return reconcile.Result{}, err
 	} else if opResult == controllerutil.OperationResultUpdated || opResult == controllerutil.OperationResultCreated {
 		r.reqLogger.Info("provisioner configmap changed")
 	}
 
-	desiredDm := generateDiskMakerDaemonset(request, tolerations, ownerRefs, nodeSelector)
-	opResult, err = createOrUpdateDaemonset(r.client, desiredDm)
+	// hash the configMap data to include in daemonsets and ensure they update when data changes
+	configMapDataHash := dataHash(configMap.Data)
+
+	diskMakerDSMutateFn := getDiskMakerDSMutateFn(request, tolerations, ownerRefs, nodeSelector, configMapDataHash)
+	ds, opResult, err := createOrUpdateDaemonset(r.client, diskMakerDSMutateFn)
 	if err != nil {
 		return reconcile.Result{}, err
 	} else if opResult == controllerutil.OperationResultUpdated || opResult == controllerutil.OperationResultCreated {
-		r.reqLogger.Info("daemonset changed", "daemonset.Name", desiredDm.GetName(), "op.Result", opResult)
+		r.reqLogger.Info("daemonset changed", "daemonset.Name", ds.GetName(), "op.Result", opResult)
 	}
 
-	desiredDm = generateLocalProvisionerDaemonset(request, tolerations, ownerRefs, nodeSelector)
-	opResult, err = createOrUpdateDaemonset(r.client, desiredDm)
+	localProvisionerDSMutateFn := getLocalProvisionerDSMutateFn(request, tolerations, ownerRefs, nodeSelector, configMapDataHash)
+	ds, opResult, err = createOrUpdateDaemonset(r.client, localProvisionerDSMutateFn)
 	if err != nil {
 		return reconcile.Result{}, err
 	} else if opResult == controllerutil.OperationResultUpdated || opResult == controllerutil.OperationResultCreated {
-		r.reqLogger.Info("daemonset changed", "daemonset.Name", desiredDm.GetName(), "op.Result", opResult)
+		r.reqLogger.Info("daemonset changed", "daemonset.Name", ds.GetName(), "op.Result", opResult)
 	}
 
 	return reconcile.Result{}, nil

@@ -33,7 +33,7 @@ func AddDaemonReconciler(mgr manager.Manager) error {
 	}
 
 	// The controller will ignore the name part of the enqueued request as
-	// every reconcile gathers multiple resources an acts on a few one-per-namespace obects.
+	// every reconcile gathers multiple resources an acts on a few one-per-namespace objects.
 	enqueueOnlyNamespace := &handler.EnqueueRequestsFromMapFunc{
 		ToRequests: handler.ToRequestsFunc(func(obj handler.MapObject) []reconcile.Request {
 			req := reconcile.Request{

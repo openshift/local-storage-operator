@@ -15,24 +15,30 @@ import (
 	localv1alpha1 "github.com/openshift/local-storage-operator/pkg/apis/local/v1alpha1"
 )
 
-func (r *DaemonReconciler) aggregateDeamonInfo(request reconcile.Request) (localv1alpha1.LocalVolumeSetList, []corev1.Toleration, []metav1.OwnerReference, corev1.NodeSelector, error) {
+func (r *DaemonReconciler) aggregateDeamonInfo(request reconcile.Request) (localv1alpha1.LocalVolumeSetList, []corev1.Toleration, []metav1.OwnerReference, *corev1.NodeSelector, error) {
 	//list
 	lvSetList := localv1alpha1.LocalVolumeSetList{}
 	err := r.client.List(context.TODO(), &lvSetList, client.InNamespace(request.Namespace))
 	if err != nil {
-		return localv1alpha1.LocalVolumeSetList{}, []corev1.Toleration{}, []metav1.OwnerReference{}, corev1.NodeSelector{}, fmt.Errorf("could not fetch localvolumeset link: %w", err)
+		return localv1alpha1.LocalVolumeSetList{}, []corev1.Toleration{}, []metav1.OwnerReference{}, nil, fmt.Errorf("could not fetch localvolumeset link: %w", err)
 	}
 
 	lvSets := lvSetList.Items
 	tolerations, ownerRefs, terms := extractLVSetInfo(lvSets)
+	var nodeSelector *corev1.NodeSelector = nil
+	if len(terms) > 0 {
+		nodeSelector = &corev1.NodeSelector{NodeSelectorTerms: terms}
+	}
 
-	return lvSetList, tolerations, ownerRefs, corev1.NodeSelector{NodeSelectorTerms: terms}, err
+	return lvSetList, tolerations, ownerRefs, nodeSelector, err
 }
 
 func extractLVSetInfo(lvsets []localv1alpha1.LocalVolumeSet) ([]corev1.Toleration, []metav1.OwnerReference, []corev1.NodeSelectorTerm) {
 	tolerations := make([]corev1.Toleration, 0)
 	ownerRefs := make([]metav1.OwnerReference, 0)
 	terms := make([]corev1.NodeSelectorTerm, 0)
+	// if any one of the lvset nodeSelectors are nil, the terms should be empty to indicate matchAllNodes
+	matchAllNodes := false
 
 	// sort so that changing order doesn't cause unneccesary updates
 	sort.SliceStable(lvsets, func(i, j int) bool {
@@ -52,12 +58,15 @@ func extractLVSetInfo(lvsets []localv1alpha1.LocalVolumeSet) ([]corev1.Toleratio
 			Controller:         &falseVar,
 			BlockOwnerDeletion: &falseVar,
 		})
-
-		selector := lvset.Spec.NodeSelector
-		if selector != nil {
-			terms = append(terms, selector.NodeSelectorTerms...)
+		if lvset.Spec.NodeSelector != nil {
+			terms = append(terms, lvset.Spec.NodeSelector.NodeSelectorTerms...)
+		} else {
+			matchAllNodes = true
 		}
 
+	}
+	if matchAllNodes {
+		terms = make([]corev1.NodeSelectorTerm, 0)
 	}
 
 	return tolerations, ownerRefs, terms
