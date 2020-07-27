@@ -22,7 +22,7 @@ import (
 const componentName = "local-storage-diskmaker"
 
 type apiUpdater interface {
-	recordEvent(lv *localv1.LocalVolume, e *event)
+	recordEvent(lv *localv1.LocalVolume, e *DiskEvent)
 	getLocalVolume(lv *localv1.LocalVolume) (*localv1.LocalVolume, error)
 }
 
@@ -77,14 +77,14 @@ func getEventRecorder(scheme *runtime.Scheme) (record.EventRecorder, error) {
 	return recorder, nil
 }
 
-func (s *sdkAPIUpdater) recordEvent(lv *localv1.LocalVolume, e *event) {
+func (s *sdkAPIUpdater) recordEvent(lv *localv1.LocalVolume, e *DiskEvent) {
 	nodeName := os.Getenv("MY_NODE_NAME")
-	message := e.message
+	message := e.Message
 	if len(nodeName) != 0 {
 		message = fmt.Sprintf("%s - %s", nodeName, message)
 	}
 
-	s.recorder.Eventf(lv, e.eventType, e.eventReason, message)
+	s.recorder.Eventf(lv, e.EventType, e.EventReason, message)
 }
 
 func (s *sdkAPIUpdater) getLocalVolume(lv *localv1.LocalVolume) (*localv1.LocalVolume, error) {

@@ -18,19 +18,19 @@ const (
 	FoundMatchingDisk = "FoundMatchingDisk"
 )
 
-type event struct {
-	eventType   string
-	eventReason string
-	disk        string
-	message     string
+type DiskEvent struct {
+	EventType   string
+	EventReason string
+	Disk        string
+	Message     string
 }
 
-func newEvent(eventReason, message, disk string) *event {
-	return &event{eventReason: eventReason, disk: disk, message: message, eventType: corev1.EventTypeWarning}
+func newEvent(eventReason, message, disk string) *DiskEvent {
+	return &DiskEvent{EventReason: eventReason, Disk: disk, Message: message, EventType: corev1.EventTypeWarning}
 }
 
-func newSuccessEvent(eventReason, message, disk string) *event {
-	return &event{eventReason: eventReason, disk: disk, message: message, eventType: corev1.EventTypeNormal}
+func newSuccessEvent(eventReason, message, disk string) *DiskEvent {
+	return &DiskEvent{EventReason: eventReason, Disk: disk, Message: message, EventType: corev1.EventTypeNormal}
 }
 
 type eventReporter struct {
@@ -45,8 +45,8 @@ func newEventReporter(apiClient apiUpdater) *eventReporter {
 }
 
 // report function is not thread safe
-func (reporter *eventReporter) report(e *event, lv *localv1.LocalVolume) {
-	eventKey := fmt.Sprintf("%s:%s:%s", e.eventReason, e.eventType, e.disk)
+func (reporter *eventReporter) report(e *DiskEvent, lv *localv1.LocalVolume) {
+	eventKey := fmt.Sprintf("%s:%s:%s", e.EventReason, e.EventType, e.Disk)
 	if reporter.reportedEvents.Has(eventKey) {
 		return
 	}
