@@ -4,6 +4,9 @@ package localvolumeset
 
 import (
 	localv1alpha1 "github.com/openshift/local-storage-operator/pkg/apis/local/v1alpha1"
+	"github.com/openshift/local-storage-operator/pkg/common"
+	"github.com/openshift/local-storage-operator/pkg/controller/nodedaemon"
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
@@ -15,7 +18,7 @@ import (
 )
 
 const (
-	controllerName      = "localvolumeset-controller"
+	ComponentName       = "localvolumeset-controller"
 	pvStorageClassField = "spec.storageClassName"
 )
 
@@ -28,7 +31,7 @@ func AddLocalVolumeSetReconciler(mgr manager.Manager) error {
 
 	r := &LocalVolumeSetReconciler{client: mgr.GetClient(), scheme: mgr.GetScheme(), lvSetMap: lvSetMap}
 	// Create a new controller
-	c, err := controller.New(controllerName, mgr, controller.Options{Reconciler: r})
+	c, err := controller.New(ComponentName, mgr, controller.Options{Reconciler: r})
 	if err != nil {
 		return err
 	}
@@ -48,6 +51,12 @@ func AddLocalVolumeSetReconciler(mgr manager.Manager) error {
 
 	// Watch for changes to primary resource LocalVolumeSet
 	err = c.Watch(&source.Kind{Type: &localv1alpha1.LocalVolumeSet{}}, &handler.EnqueueRequestForObject{})
+	if err != nil {
+		return err
+	}
+
+	// watch provisioner, diskmaker-manager daemonsets and enqueue owning object to update status.conditions
+	err = c.Watch(&source.Kind{Type: &appsv1.DaemonSet{}}, &handler.EnqueueRequestForOwner{OwnerType: &localv1alpha1.LocalVolumeSet{}}, common.EnqueueOnlyLabeledSubcomponents(nodedaemon.DiskMakerName, nodedaemon.ProvisionerName))
 	if err != nil {
 		return err
 	}

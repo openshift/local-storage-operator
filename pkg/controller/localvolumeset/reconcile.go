@@ -8,7 +8,6 @@ import (
 	"github.com/openshift/local-storage-operator/pkg/common"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -42,17 +41,22 @@ type LocalVolumeSetReconciler struct {
 // The Controller will requeue the Request to be processed again if the returned error is non-nil or
 // Result.Requeue is true, otherwise upon completion it will remove the work from the queue.
 func (r *LocalVolumeSetReconciler) Reconcile(request reconcile.Request) (reconcile.Result, error) {
-	r.reqLogger = logf.Log.WithName(controllerName).WithValues("Request.Namespace", request.Namespace, "Request.Name", request.Name)
+	result, err := r.reconcile(request)
+	// sets conditions based on the exit status of reconcile
+	return r.addAvailabilityConditions(request, result, err)
+}
+func (r *LocalVolumeSetReconciler) reconcile(request reconcile.Request) (reconcile.Result, error) {
+	r.reqLogger = logf.Log.WithName(ComponentName).WithValues("Request.Namespace", request.Namespace, "Request.Name", request.Name)
 	r.reqLogger.Info("Reconciling LocalVolumeSet")
 	// Fetch the LocalVolumeSet instance
-	instance := &localv1alpha1.LocalVolumeSet{}
-	err := r.client.Get(context.TODO(), request.NamespacedName, instance)
+	lvSet := &localv1alpha1.LocalVolumeSet{}
+	err := r.client.Get(context.TODO(), request.NamespacedName, lvSet)
 	if err != nil {
 		if kerrors.IsNotFound(err) {
 			// Request object not found, could have been deleted after reconcile request.
 			// Owned objects are automatically garbage collected. For additional cleanup logic use finalizers.
 			// Return and don't requeue
-			r.lvSetMap.deregisterLocalVolumeSet(instance.Spec.StorageClassName, request.NamespacedName)
+			r.lvSetMap.deregisterLocalVolumeSet(lvSet.Spec.StorageClassName, request.NamespacedName)
 			return reconcile.Result{}, nil
 		}
 		// Error reading the object - requeue the request.
@@ -61,43 +65,31 @@ func (r *LocalVolumeSetReconciler) Reconcile(request reconcile.Request) (reconci
 	}
 
 	// store a one to many association from storageClass to LocalVolumeSet
-	r.lvSetMap.registerLocalVolumeSet(instance.Spec.StorageClassName, request.NamespacedName)
+	r.lvSetMap.registerLocalVolumeSet(lvSet.Spec.StorageClassName, request.NamespacedName)
 
 	// The diskmaker daemonset, local-staic-provisioner daemonset and configmap are created in pkg/daemon
 	// this way, there can be one daemonset for all LocalVolumeSets
 
-	err = r.syncStorageClass(instance)
+	err = r.syncStorageClass(lvSet)
 	if err != nil {
 		r.reqLogger.Error(err, "failed to sync storageclass")
 		return reconcile.Result{}, err
 	}
-
 	r.reqLogger.Info("updating status")
-	err = r.updateStatus(instance)
+
+	err = r.updateDaemonSetsCondition(request)
+	if err != nil {
+		r.reqLogger.Error(err, "failed to update status")
+		return reconcile.Result{}, err
+	}
+
+	err = r.updateTotalProvisionedDeviceCountStatus(request)
 	if err != nil {
 		r.reqLogger.Error(err, "failed to update status")
 		return reconcile.Result{}, err
 	}
 
 	return reconcile.Result{}, nil
-}
-
-func (r *LocalVolumeSetReconciler) updateStatus(lvs *localv1alpha1.LocalVolumeSet) error {
-	// fetch PVs that match the storageclass
-	pvs := &corev1.PersistentVolumeList{}
-	err := r.client.List(context.TODO(), pvs, client.MatchingFields{pvStorageClassField: lvs.Spec.StorageClassName})
-	if err != nil {
-		return err
-	}
-	totalPVCount := int32(len(pvs.Items))
-	lvs.Status.TotalProvisionedDeviceCount = &totalPVCount
-	lvs.Status.ObservedGeneration = lvs.Generation
-	err = r.client.Status().Update(context.TODO(), lvs)
-	if err != nil {
-		return err
-	}
-
-	return nil
 }
 
 func (r *LocalVolumeSetReconciler) syncStorageClass(lvs *localv1alpha1.LocalVolumeSet) error {
@@ -118,7 +110,7 @@ func (r *LocalVolumeSetReconciler) syncStorageClass(lvs *localv1alpha1.LocalVolu
 	}
 
 	err := r.client.Create(context.TODO(), storageClass)
-	if err != nil && !errors.IsAlreadyExists(err) {
+	if err != nil && !kerrors.IsAlreadyExists(err) {
 		return err
 	}
 	return nil
