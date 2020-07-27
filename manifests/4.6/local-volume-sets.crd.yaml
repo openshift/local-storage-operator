@@ -22,6 +22,9 @@ spec:
     listKind: LocalVolumeSetList
     plural: localvolumesets
     singular: localvolumeset
+    shortNames:
+    - lvset
+    - lvsets
   scope: Namespaced
   preserveUnknownFields: false
   subresources:
