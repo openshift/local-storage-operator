@@ -23,7 +23,11 @@ var log = logf.Log.WithName(ComponentName)
 
 // Add adds a new nodeside lvset controller to mgr
 func Add(mgr manager.Manager) error {
-	r := &ReconcileLocalVolumeSet{client: mgr.GetClient(), scheme: mgr.GetScheme()}
+	r := &ReconcileLocalVolumeSet{
+		client:        mgr.GetClient(),
+		scheme:        mgr.GetScheme(),
+		eventReporter: newEventReporter(mgr.GetEventRecorderFor(ComponentName)),
+	}
 	// Create a new controller
 	c, err := controller.New(ComponentName, mgr, controller.Options{Reconciler: r})
 	if err != nil {
@@ -53,8 +57,9 @@ func Add(mgr manager.Manager) error {
 type ReconcileLocalVolumeSet struct {
 	// This client, initialized using mgr.Client() above, is a split client
 	// that reads objects from the cache and writes to the apiserver
-	client client.Client
-	scheme *runtime.Scheme
+	client        client.Client
+	scheme        *runtime.Scheme
+	eventReporter *eventReporter
 }
 
 var _ reconcile.Reconciler = &ReconcileLocalVolumeSet{}
