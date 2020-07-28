@@ -62,6 +62,9 @@ spec:
                     description: DeviceType is the types that will be supported by
                       the LSO.
                     type: string
+                    enum:
+                      - disk
+                      - part
                   type: array
                 maxSize:
                   description: MaxSize is the maximum size of the device which needs
