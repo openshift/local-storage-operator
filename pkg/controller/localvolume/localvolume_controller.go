@@ -5,7 +5,6 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
-	"os"
 
 	"gopkg.in/yaml.v2"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -17,6 +16,7 @@ import (
 	operatorv1 "github.com/openshift/api/operator/v1"
 	secv1client "github.com/openshift/client-go/security/clientset/versioned/typed/security/v1"
 	localv1 "github.com/openshift/local-storage-operator/pkg/apis/local/v1"
+	"github.com/openshift/local-storage-operator/pkg/common"
 	commontypes "github.com/openshift/local-storage-operator/pkg/common"
 	"github.com/openshift/local-storage-operator/pkg/diskmaker"
 	appsv1 "k8s.io/api/apps/v1"
@@ -53,12 +53,6 @@ const (
 	provisionerNodeRoleBindingName = "local-storage-provisioner-node-binding"
 	ownerNamespaceLabel            = "local.storage.openshift.io/owner-namespace"
 	ownerNameLabel                 = "local.storage.openshift.io/owner-name"
-
-	defaultDiskMakerImageVersion = "quay.io/openshift/origin-local-storage-diskmaker"
-	defaultProvisionImage        = "quay.io/openshift/origin-local-storage-static-provisioner"
-
-	diskMakerImageEnv   = "DISKMAKER_IMAGE"
-	provisionerImageEnv = "PROVISIONER_IMAGE"
 
 	localVolumeFinalizer = "storage.openshift.com/local-volume-protection"
 
@@ -265,20 +259,6 @@ func (r *ReconcileLocalVolume) addSuccessCondition(lv *localv1.LocalVolume) *loc
 	}
 	lv.Status.Conditions = newConditions
 	return lv
-}
-
-func (r *ReconcileLocalVolume) localProvisionerImage() string {
-	if provisionerImageFromEnv := os.Getenv(provisionerImageEnv); provisionerImageFromEnv != "" {
-		return provisionerImageFromEnv
-	}
-	return defaultProvisionImage
-}
-
-func (r *ReconcileLocalVolume) diskMakerImage() string {
-	if diskMakerImageFromEnv := os.Getenv(diskMakerImageEnv); diskMakerImageFromEnv != "" {
-		return diskMakerImageFromEnv
-	}
-	return defaultDiskMakerImageVersion
 }
 
 func (r *ReconcileLocalVolume) cleanupLocalVolumeDeployment(lv *localv1.LocalVolume) error {
@@ -638,7 +618,7 @@ func (r *ReconcileLocalVolume) generateLocalProvisionerDaemonset(cr *localv1.Loc
 	containers := []corev1.Container{
 		{
 			Name:  "local-storage-provisioner",
-			Image: r.localProvisionerImage(),
+			Image: common.GetLocalProvisionerImage(),
 			SecurityContext: &corev1.SecurityContext{
 				Privileged: &privileged,
 			},
@@ -757,7 +737,8 @@ func (r *ReconcileLocalVolume) generateDiskMakerDaemonSet(cr *localv1.LocalVolum
 	containers := []corev1.Container{
 		{
 			Name:  "local-diskmaker",
-			Image: r.diskMakerImage(),
+			Image: common.GetDiskMakerImage(),
+			Args:  []string{"lv-controller"},
 			SecurityContext: &corev1.SecurityContext{
 				Privileged: &privileged,
 			},
