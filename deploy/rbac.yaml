@@ -1,3 +1,4 @@
+---
 kind: Role
 apiVersion: rbac.authorization.k8s.io/v1beta1
 metadata:
@@ -134,9 +135,9 @@ roleRef:
   kind: ClusterRole
   name: local-storage-operator
 subjects:
-  - kind: ServiceAccount
-    name: local-storage-operator
-    namespace: default
+- kind: ServiceAccount
+  name: local-storage-operator
+  namespace: default
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -149,5 +150,91 @@ subjects:
 roleRef:
   kind: ClusterRole
   name: system:persistent-volume-provisioner
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: local-storage-provisioner-pv-binding
+subjects:
+- kind: ServiceAccount
+  name: local-storage-admin
+  namespace: default
+roleRef:
+  kind: ClusterRole
+  name: system:persistent-volume-provisioner
+  apiGroup: rbac.authorization.k8s.io
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: local-storage-provisioner-node-binding
+subjects:
+- kind: ServiceAccount
+  name: local-storage-admin
+  namespace: default
+roleRef:
+  kind: ClusterRole
+  name: local-storage-provisioner-node-clusterrole
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: local-storage-provisioner-node-clusterrole
+rules:
+- apiGroups:
+  - security.openshift.io
+  resources:
+  - securitycontextconstraints
+  verbs:
+  - use
+  resourceNames:
+  - privileged
+- apiGroups:
+  - ""
+  resources:
+  - nodes
+  verbs:
+  - list
+  - get
+  - watch
+- apiGroups:
+  - ""
+  - storage.k8s.io
+  resources:
+  - configmaps
+  - storageclasses
+  - persistentvolumeclaims
+  - persistentvolumes
+  verbs:
+  - "*"
+
+---
+kind: Role
+apiVersion: rbac.authorization.k8s.io/v1beta1
+metadata:
+  name: local-storage-admin
+rules:
+- apiGroups:
+  - local.storage.openshift.io
+  resources:
+  - "*"
+  verbs:
+  - get
+  - list
+  - watch
+---
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1beta1
+metadata:
+  name: local-storage-admin
+subjects:
+- kind: ServiceAccount
+  name: local-storage-admin
+roleRef:
+  kind: Role
+  name: local-storage-admin
   apiGroup: rbac.authorization.k8s.io
 ---

@@ -10,12 +10,12 @@ import (
 )
 
 type fakeApiUpdater struct {
-	events []*event
+	events []*DiskEvent
 }
 
 var _ apiUpdater = &fakeApiUpdater{}
 
-func (f *fakeApiUpdater) recordEvent(lv *localv1.LocalVolume, e *event) {
+func (f *fakeApiUpdater) recordEvent(lv *localv1.LocalVolume, e *DiskEvent) {
 	f.events = append(f.events, e)
 }
 

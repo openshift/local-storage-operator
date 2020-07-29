@@ -11,12 +11,16 @@ import (
 	"strings"
 	"time"
 
+	"github.com/openshift/local-storage-operator/pkg/internal"
+
 	"github.com/ghodss/yaml"
+	"github.com/openshift/local-storage-operator/pkg/apis"
 	localv1 "github.com/openshift/local-storage-operator/pkg/apis/local/v1"
+	"github.com/prometheus/common/log"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/klog"
-	"sigs.k8s.io/controller-runtime/pkg/manager"
 )
 
 // DiskMaker is a small utility that reads configmap and
@@ -42,14 +46,22 @@ type DiskLocation struct {
 	diskID       string
 }
 
-// DiskMaker returns a new instance of DiskMaker
-func NewDiskMaker(configLocation, symLinkLocation string, mgr manager.Manager) *DiskMaker {
+// NewDiskMaker returns a new instance of DiskMaker
+func NewDiskMaker(configLocation, symLinkLocation string) (*DiskMaker, error) {
+	scheme := scheme.Scheme
+	apis.AddToScheme(scheme)
+	apiUpdater, err := newAPIUpdater(scheme)
+	if err != nil {
+		log.Error(err, "failed to create new APIUpdater")
+		return &DiskMaker{}, err
+	}
+
 	t := &DiskMaker{}
 	t.configLocation = configLocation
 	t.symlinkLocation = symLinkLocation
-	t.apiClient = newAPIUpdater(mgr)
+	t.apiClient = apiUpdater
 	t.eventSync = newEventReporter(t.apiClient)
-	return t
+	return t, nil
 }
 
 func (d *DiskMaker) loadConfig() (*DiskConfig, error) {
@@ -180,21 +192,50 @@ func (d *DiskMaker) symLinkDisks(diskConfig *DiskConfig) {
 
 	for storageClass, deviceArray := range deviceMap {
 		for _, deviceNameLocation := range deviceArray {
+			//
 			symLinkDirPath := path.Join(d.symlinkLocation, storageClass)
-			err := os.MkdirAll(symLinkDirPath, 0755)
+			baseDeviceName := filepath.Base(deviceNameLocation.diskNamePath)
+			symLinkPath := path.Join(symLinkDirPath, baseDeviceName)
+
+			// get PV creation lock which checks for existing symlinks to this device
+			pvLock, pvLocked, existingSymlinks, err := internal.GetPVCreationLock(
+				deviceNameLocation.diskNamePath,
+				d.symlinkLocation,
+			)
+			unlockFunc := func() {
+				err := pvLock.Unlock()
+				if err != nil {
+					klog.Errorf("failed to unlock device: %+v", err)
+				}
+			}
+			defer unlockFunc()
+			if len(existingSymlinks) > 0 { // already claimed, fail silently
+				e := newEvent(DeviceSymlinkExists, "this device is already matched by another LocalVolume or LocalVolumeSet", symLinkPath)
+				d.eventSync.report(e, d.localVolume)
+				unlockFunc()
+				continue
+			} else if err != nil || !pvLocked { // locking failed for some other reasion
+				klog.Errorf("not symlinking, could not get lock: %v", err)
+				unlockFunc()
+				continue
+			}
+
+			err = os.MkdirAll(symLinkDirPath, 0755)
 			if err != nil {
 				msg := fmt.Sprintf("error creating symlink dir %s: %v", symLinkDirPath, err)
-				e := newEvent(ErrorFindingMatchingDisk, msg, "")
+				e := newEvent(ErrorFindingMatchingDisk, msg, symLinkPath)
 				d.eventSync.report(e, d.localVolume)
+				unlockFunc()
 				klog.Errorf(msg)
 				continue
 			}
-			baseDeviceName := filepath.Base(deviceNameLocation.diskNamePath)
-			symLinkPath := path.Join(symLinkDirPath, baseDeviceName)
+
 			if fileExists(symLinkPath) {
+				unlockFunc()
 				klog.V(4).Infof("symlink %s already exists", symLinkPath)
 				continue
 			}
+
 			var symLinkErr error
 			if deviceNameLocation.diskID != "" {
 				klog.V(3).Infof("symlinking to %s to %s", deviceNameLocation.diskID, symLinkPath)
@@ -203,14 +244,14 @@ func (d *DiskMaker) symLinkDisks(diskConfig *DiskConfig) {
 				klog.V(3).Infof("symlinking to %s to %s", deviceNameLocation.diskNamePath, symLinkPath)
 				symLinkErr = os.Symlink(deviceNameLocation.diskNamePath, symLinkPath)
 			}
-
 			if symLinkErr != nil {
 				msg := fmt.Sprintf("error creating symlink %s: %v", symLinkPath, symLinkErr)
 				e := newEvent(ErrorFindingMatchingDisk, msg, deviceNameLocation.diskNamePath)
 				d.eventSync.report(e, d.localVolume)
 				klog.Errorf(msg)
 			}
-
+			// unlock before proceeding
+			unlockFunc()
 			successMsg := fmt.Sprintf("found matching disk %s", baseDeviceName)
 			e := newSuccessEvent(FoundMatchingDisk, successMsg, deviceNameLocation.diskNamePath)
 			d.eventSync.report(e, d.localVolume)

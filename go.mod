@@ -3,19 +3,31 @@ module github.com/openshift/local-storage-operator
 go 1.13
 
 require (
+	github.com/aws/aws-sdk-go v1.17.7
 	github.com/ghodss/yaml v1.0.1-0.20190212211648-25d852aebe32
+	github.com/go-logr/logr v0.1.0
+	github.com/onsi/gomega v1.8.1
 	github.com/openshift/api v3.9.1-0.20190924102528-32369d4db2ad+incompatible
 	github.com/openshift/client-go v0.0.0-20200116152001-92a2713fa240
 	github.com/openshift/library-go v0.0.0-20200314142707-3c25293448b0
+	github.com/openshift/sig-storage-local-static-provisioner v2.3.3-0.20200415071547-424ccbd206b3+incompatible
 	github.com/operator-framework/operator-sdk v0.16.0
+	github.com/pkg/errors v0.8.1
 	github.com/prometheus/common v0.7.0
+	github.com/spf13/cobra v0.0.5
 	github.com/spf13/pflag v1.0.5
+	github.com/stretchr/testify v1.4.0
+	golang.org/x/sys v0.0.0-20191028164358-195ce5e7f934
 	gopkg.in/yaml.v2 v2.2.8
 	k8s.io/api v0.18.0
 	k8s.io/apimachinery v0.18.0
 	k8s.io/client-go v12.0.0+incompatible
 	k8s.io/klog v1.0.0
-	sigs.k8s.io/controller-runtime v0.4.0
+	k8s.io/kube-openapi v0.0.0-20190918143330-0270cf2f1c1d
+	k8s.io/kubernetes v1.16.2
+	sigs.k8s.io/controller-runtime v0.5.2
+	sigs.k8s.io/sig-storage-lib-external-provisioner v4.1.0+incompatible // indirect
+	sigs.k8s.io/sig-storage-local-static-provisioner v2.3.4+incompatible
 )
 
 // Pinned to kubernetes-1.16.2

@@ -5,7 +5,6 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
-	"os"
 
 	"gopkg.in/yaml.v2"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -17,11 +16,11 @@ import (
 	operatorv1 "github.com/openshift/api/operator/v1"
 	secv1client "github.com/openshift/client-go/security/clientset/versioned/typed/security/v1"
 	localv1 "github.com/openshift/local-storage-operator/pkg/apis/local/v1"
+	"github.com/openshift/local-storage-operator/pkg/common"
 	commontypes "github.com/openshift/local-storage-operator/pkg/common"
 	"github.com/openshift/local-storage-operator/pkg/diskmaker"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	rbacv1 "k8s.io/api/rbac/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 
@@ -53,12 +52,6 @@ const (
 	provisionerNodeRoleBindingName = "local-storage-provisioner-node-binding"
 	ownerNamespaceLabel            = "local.storage.openshift.io/owner-namespace"
 	ownerNameLabel                 = "local.storage.openshift.io/owner-name"
-
-	defaultDiskMakerImageVersion = "quay.io/openshift/origin-local-storage-diskmaker"
-	defaultProvisionImage        = "quay.io/openshift/origin-local-storage-static-provisioner"
-
-	diskMakerImageEnv   = "DISKMAKER_IMAGE"
-	provisionerImageEnv = "PROVISIONER_IMAGE"
 
 	localVolumeFinalizer = "storage.openshift.com/local-volume-protection"
 
@@ -149,12 +142,6 @@ func (r *ReconcileLocalVolume) syncLocalVolumeProvider(instance *localv1.LocalVo
 			return fmt.Errorf("error syncing status: %v", err)
 		}
 		return nil
-	}
-
-	err = r.syncRBACPolicies(o)
-	if err != nil {
-		klog.Error(err)
-		return r.addFailureCondition(instance, o, err)
 	}
 
 	provisionerConfigMapModified, err := r.syncProvisionerConfigMap(o)
@@ -267,20 +254,6 @@ func (r *ReconcileLocalVolume) addSuccessCondition(lv *localv1.LocalVolume) *loc
 	return lv
 }
 
-func (r *ReconcileLocalVolume) localProvisionerImage() string {
-	if provisionerImageFromEnv := os.Getenv(provisionerImageEnv); provisionerImageFromEnv != "" {
-		return provisionerImageFromEnv
-	}
-	return defaultProvisionImage
-}
-
-func (r *ReconcileLocalVolume) diskMakerImage() string {
-	if diskMakerImageFromEnv := os.Getenv(diskMakerImageEnv); diskMakerImageFromEnv != "" {
-		return diskMakerImageFromEnv
-	}
-	return defaultDiskMakerImageVersion
-}
-
 func (r *ReconcileLocalVolume) cleanupLocalVolumeDeployment(lv *localv1.LocalVolume) error {
 	klog.Infof("Deleting localvolume: %s", commontypes.LocalVolumeKey(lv))
 	childPersistentVolumes, err := r.apiClient.listPersistentVolumes(metav1.ListOptions{LabelSelector: commontypes.GetPVOwnerSelector(lv).String()})
@@ -336,144 +309,6 @@ func (r *ReconcileLocalVolume) syncDiskMakerConfigMap(o *localv1.LocalVolume) (b
 		return false, fmt.Errorf("error creating diskmarker configmap %s: %v", o.Name, err)
 	}
 	return modified, nil
-}
-
-func (r *ReconcileLocalVolume) syncRBACPolicies(o *localv1.LocalVolume) error {
-	operatorLabel := map[string]string{
-		"openshift-operator": "local-storage-operator",
-	}
-	serviceAccount := &corev1.ServiceAccount{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      provisionerServiceAccount,
-			Namespace: o.Namespace,
-			Labels:    operatorLabel,
-		},
-	}
-	addOwner(&serviceAccount.ObjectMeta, o)
-
-	_, _, err := r.apiClient.applyServiceAccount(serviceAccount)
-	if err != nil {
-		return fmt.Errorf("error applying service account %s: %v", serviceAccount.Name, err)
-	}
-
-	provisionerClusterRole := &rbacv1.ClusterRole{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      provisionerNodeRoleName,
-			Namespace: o.Namespace,
-			Labels:    operatorLabel,
-		},
-		Rules: []rbacv1.PolicyRule{
-			{
-				Verbs:     []string{"get"},
-				APIGroups: []string{""},
-				Resources: []string{"nodes"},
-			},
-		},
-	}
-	addOwner(&provisionerClusterRole.ObjectMeta, o)
-	_, _, err = r.apiClient.applyClusterRole(provisionerClusterRole)
-	if err != nil {
-		return fmt.Errorf("error applying cluster role %s: %v", provisionerClusterRole.Name, err)
-	}
-
-	pvClusterRoleBinding := &rbacv1.ClusterRoleBinding{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      provisionerPVRoleBindingName,
-			Namespace: o.Namespace,
-			Labels:    operatorLabel,
-		},
-		Subjects: []rbacv1.Subject{
-			{
-				Kind:      "ServiceAccount",
-				Name:      serviceAccount.Name,
-				Namespace: serviceAccount.Namespace,
-			},
-		},
-		RoleRef: rbacv1.RoleRef{
-			APIGroup: "rbac.authorization.k8s.io",
-			Kind:     "ClusterRole",
-			Name:     defaultPVClusterRole,
-		},
-	}
-	addOwner(&pvClusterRoleBinding.ObjectMeta, o)
-
-	_, _, err = r.apiClient.applyClusterRoleBinding(pvClusterRoleBinding)
-	if err != nil {
-		return fmt.Errorf("error applying pv cluster role binding %s: %v", pvClusterRoleBinding.Name, err)
-	}
-
-	nodeRoleBinding := &rbacv1.ClusterRoleBinding{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      provisionerNodeRoleBindingName,
-			Namespace: o.Namespace,
-			Labels:    operatorLabel,
-		},
-		Subjects: []rbacv1.Subject{
-			{
-				Kind:      "ServiceAccount",
-				Name:      serviceAccount.Name,
-				Namespace: serviceAccount.Namespace,
-			},
-		},
-		RoleRef: rbacv1.RoleRef{
-			APIGroup: "rbac.authorization.k8s.io",
-			Kind:     "ClusterRole",
-			Name:     provisionerClusterRole.Name,
-		},
-	}
-	addOwner(&nodeRoleBinding.ObjectMeta, o)
-
-	_, _, err = r.apiClient.applyClusterRoleBinding(nodeRoleBinding)
-	if err != nil {
-		return fmt.Errorf("error creating node role binding %s: %v", nodeRoleBinding.Name, err)
-	}
-
-	localVolumeRole := &rbacv1.Role{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      localVolumeRoleName,
-			Namespace: o.Namespace,
-			Labels:    operatorLabel,
-		},
-		Rules: []rbacv1.PolicyRule{
-			{
-				Verbs:     []string{"get", "list", "watch"},
-				APIGroups: []string{"local.storage.openshift.io"},
-				Resources: []string{"*"},
-			},
-		},
-	}
-	addOwner(&localVolumeRole.ObjectMeta, o)
-	_, _, err = r.apiClient.applyRole(localVolumeRole)
-	if err != nil {
-		return fmt.Errorf("error applying localvolume role %s: %v", localVolumeRole.Name, err)
-	}
-
-	localVolumeRoleBinding := &rbacv1.RoleBinding{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      localVolumeRoleBindingName,
-			Namespace: o.Namespace,
-			Labels:    operatorLabel,
-		},
-		Subjects: []rbacv1.Subject{
-			{
-				Kind:      "ServiceAccount",
-				Name:      serviceAccount.Name,
-				Namespace: serviceAccount.Namespace,
-			},
-		},
-		RoleRef: rbacv1.RoleRef{
-			APIGroup: "rbac.authorization.k8s.io",
-			Kind:     "Role",
-			Name:     localVolumeRole.Name,
-		},
-	}
-
-	addOwner(&localVolumeRoleBinding.ObjectMeta, o)
-	_, _, err = r.apiClient.applyRoleBinding(localVolumeRoleBinding)
-	if err != nil {
-		return fmt.Errorf("error applying localvolume rolebinding %s: %v", localVolumeRoleBinding.Name, err)
-	}
-	return nil
 }
 
 // CreateConfigMap Create configmap requires by the local storage provisioner
@@ -638,7 +473,7 @@ func (r *ReconcileLocalVolume) generateLocalProvisionerDaemonset(cr *localv1.Loc
 	containers := []corev1.Container{
 		{
 			Name:  "local-storage-provisioner",
-			Image: r.localProvisionerImage(),
+			Image: common.GetLocalProvisionerImage(),
 			SecurityContext: &corev1.SecurityContext{
 				Privileged: &privileged,
 			},
@@ -757,7 +592,8 @@ func (r *ReconcileLocalVolume) generateDiskMakerDaemonSet(cr *localv1.LocalVolum
 	containers := []corev1.Container{
 		{
 			Name:  "local-diskmaker",
-			Image: r.diskMakerImage(),
+			Image: common.GetDiskMakerImage(),
+			Args:  []string{"lv-controller"},
 			SecurityContext: &corev1.SecurityContext{
 				Privileged: &privileged,
 			},
