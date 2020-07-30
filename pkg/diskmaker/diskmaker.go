@@ -338,7 +338,7 @@ func (d *DiskMaker) findMatchingDisks(diskConfig *DiskConfig, deviceSet sets.Str
 func (d *DiskMaker) findDeviceByID(deviceID string) (string, string, error) {
 	diskDevPath, err := filepath.EvalSymlinks(deviceID)
 	if err != nil {
-		return "", "", fmt.Errorf("unable to find device with id %s", deviceID)
+		return "", "", fmt.Errorf("unable to find device at path %s: %v", deviceID, err)
 	}
 	return deviceID, diskDevPath, nil
 }
