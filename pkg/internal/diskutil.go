@@ -1,7 +1,6 @@
 package internal
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -13,6 +12,14 @@ import (
 	"github.com/pkg/errors"
 	"golang.org/x/sys/unix"
 )
+
+var (
+	ExecCommand          = exec.Command
+	FilePathGlob         = filepath.Glob
+	FilePathEvalSymLinks = filepath.EvalSymlinks
+)
+
+var ExecResult string
 
 const (
 	// StateSuspended is a possible value of BlockDevice.State
@@ -36,7 +43,7 @@ type BlockDevice struct {
 	Name   string `json:"name"`
 	KName  string `json:"kname"`
 	Type   string `json:"type"`
-	Model  string `json:"mode,omitempty"`
+	Model  string `json:"model,omitempty"`
 	Vendor string `json:"vendor,omitempty"`
 	State  string `json:"state,omitempty"`
 	FSType string `json:"fsType"`
@@ -45,7 +52,8 @@ type BlockDevice struct {
 	Rotational string `json:"rota"`
 	ReadOnly   string `json:"ro,omitempty"`
 	Removable  string `json:"rm,omitempty"`
-	pathByID   string
+	PathByID   string `json:"pathByID,omitempty"`
+	Serial     string `json:"serial,omitempty"`
 }
 
 // IDPathNotFoundError indicates that a symlink to the device was not found in /dev/disk/by-id/
@@ -98,9 +106,9 @@ func (b BlockDevice) GetSize() (int64, error) {
 // HasChildren check on BlockDevice
 func (b BlockDevice) HasChildren() (bool, error) {
 	sysDevDir := filepath.Join("/sys/block/", b.KName, "/*")
-	paths, err := filepath.Glob(sysDevDir)
+	paths, err := FilePathGlob(sysDevDir)
 	if err != nil {
-		return false, errors.Wrapf(err, "could not glob path: %q to verify partiions", sysDevDir)
+		return false, errors.Wrapf(err, "failed to check if device %q has partitions", b.Name)
 	}
 	for _, path := range paths {
 		name := filepath.Base(path)
@@ -123,15 +131,15 @@ func (b BlockDevice) GetDevPath() (string, error) {
 func (b BlockDevice) GetPathByID() (string, error) {
 
 	// return if previously populated value is valid
-	if len(b.pathByID) > 0 && strings.HasPrefix(b.pathByID, DiskByIDDir) {
-		evalsCorrectly, err := PathEvalsToDiskLabel(b.pathByID, b.KName)
+	if len(b.PathByID) > 0 && strings.HasPrefix(b.PathByID, DiskByIDDir) {
+		evalsCorrectly, err := PathEvalsToDiskLabel(b.PathByID, b.Name)
 		if err == nil && evalsCorrectly {
-			return b.pathByID, nil
+			return b.PathByID, nil
 		}
 	}
-	b.pathByID = ""
+	b.PathByID = ""
 	diskByIDDir := filepath.Join(DiskByIDDir, "/*")
-	paths, err := filepath.Glob(diskByIDDir)
+	paths, err := FilePathGlob(diskByIDDir)
 	if err != nil {
 		return "", fmt.Errorf("could not list files in %q: %w", DiskByIDDir, err)
 	}
@@ -141,7 +149,7 @@ func (b BlockDevice) GetPathByID() (string, error) {
 			return "", err
 		}
 		if isMatch {
-			b.pathByID = path
+			b.PathByID = path
 			return path, nil
 		}
 	}
@@ -155,7 +163,7 @@ func (b BlockDevice) GetPathByID() (string, error) {
 
 // PathEvalsToDiskLabel checks if the path is a symplink to a file devName
 func PathEvalsToDiskLabel(path, devName string) (bool, error) {
-	devPath, err := filepath.EvalSymlinks(path)
+	devPath, err := FilePathEvalSymLinks(path)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return false, nil
@@ -170,22 +178,20 @@ func PathEvalsToDiskLabel(path, devName string) (bool, error) {
 
 // ListBlockDevices using the lsblk command
 func ListBlockDevices() ([]BlockDevice, []string, error) {
-	var output bytes.Buffer
+	// var output bytes.Buffer
 	var blockDevices []BlockDevice
 
-	columns := "NAME,ROTA,TYPE,SIZE,MODEL,VENDOR,RO,RM,STATE,FSTYPE,KNAME"
+	columns := "NAME,ROTA,TYPE,SIZE,MODEL,VENDOR,RO,RM,STATE,FSTYPE,KNAME,SERIAL"
 	args := []string{"--pairs", "-b", "-o", columns}
-	cmd := exec.Command("lsblk", args...)
-	cmd.Stdout = &output
-	err := cmd.Run()
+	cmd := ExecCommand("lsblk", args...)
+	output, err := executeCmdWithCombinedOutput(cmd)
 	if err != nil {
 		return []BlockDevice{}, []string{}, err
 	}
-
 	badRows := make([]string, 0)
 	// convert to json and then Marshal.
 	outputMapList := make([]map[string]interface{}, 0)
-	rowList := strings.Split(output.String(), "\n")
+	rowList := strings.Split(output, "\n")
 	for _, row := range rowList {
 		if len(strings.Trim(row, " ")) == 0 {
 			break
@@ -261,7 +267,7 @@ func GetPVCreationLock(device string, symlinkDirs ...string) (ExclusiveFileLock,
 // it works using `find -L dir1 dir2 dirn -samefile path`
 func GetMatchingSymlinksInDirs(path string, dirs ...string) ([]string, error) {
 	cmd := exec.Command("find", "-L", strings.Join(dirs, " "), "-samefile", path)
-	output, err := executeCmd(cmd)
+	output, err := executeCmdWithCombinedOutput(cmd)
 	if err != nil {
 		return []string{}, fmt.Errorf("failed to get symlinks in directories: %q for device path %q. %v", dirs, path, err)
 	}
@@ -278,18 +284,6 @@ func GetMatchingSymlinksInDirs(path string, dirs ...string) ([]string, error) {
 		}
 	}
 	return links, nil
-}
-
-func executeCmd(cmd *exec.Cmd) (string, error) {
-	var out bytes.Buffer
-	var err error
-	cmd.Stdout = &out
-	err = cmd.Run()
-	if err != nil {
-		return "", err
-	}
-
-	return out.String(), nil
 }
 
 type ExclusiveFileLock struct {
@@ -327,4 +321,22 @@ func (e *ExclusiveFileLock) Unlock() error {
 	}
 	return nil
 
+}
+
+func executeCmdWithCombinedOutput(cmd *exec.Cmd) (string, error) {
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return "", err
+	}
+
+	return strings.TrimSpace(string(output)), nil
+}
+
+// FakeExecCommand returns a fake exec.Cmd for unit tests
+func FakeExecCommand(command string, args ...string) *exec.Cmd {
+	cs := []string{"-test.run=TestHelperProcess", "--", command}
+	cs = append(cs, args...)
+	cmd := exec.Command(os.Args[0], cs...)
+	cmd.Env = []string{"GO_WANT_HELPER_PROCESS=1", fmt.Sprintf("STDOUT=%s", ExecResult)}
+	return cmd
 }

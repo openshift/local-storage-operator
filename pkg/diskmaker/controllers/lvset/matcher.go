@@ -33,7 +33,7 @@ const (
 // These are passed the localv1alpha1.DeviceInclusionSpec to make testing easier,
 // but they aren't expected to use it
 // they verify that the device itself is good to use
-var filterMap = map[string]func(internal.BlockDevice, *localv1alpha1.DeviceInclusionSpec) (bool, error){
+var FilterMap = map[string]func(internal.BlockDevice, *localv1alpha1.DeviceInclusionSpec) (bool, error){
 	notReadOnly: func(dev internal.BlockDevice, spec *localv1alpha1.DeviceInclusionSpec) (bool, error) {
 		readOnly, err := dev.GetReadOnly()
 		return !readOnly, err

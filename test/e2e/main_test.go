@@ -28,8 +28,9 @@ var (
 	// test-wrapper returns a func that can be run with t.Run(func(*testing.T), but
 	// has access to a framework.Context and cleanupFuncs via closure.
 	testMap = map[string]func(*framework.Context, *[]cleanupFn) func(*testing.T){
-		"LocalVolumeSet": LocalVolumeSetTest,
-		"LocalVolume":    LocalVolumeTest,
+		"LocalVolumeDiscovery": LocalVolumeDiscoveryTest,
+		"LocalVolume":          LocalVolumeTest,
+		"LocalVolumeSet":       LocalVolumeSetTest,
 	}
 )
 
@@ -43,8 +44,14 @@ func TestMain(m *testing.M) {
 func TestLocalStorage(t *testing.T) {
 
 	// register CRD schemes
+	localVolumeDiscoveryList := &localv1alpha1.LocalVolumeDiscoveryList{}
+	err := framework.AddToFrameworkScheme(localapisv1.AddToScheme, localVolumeDiscoveryList)
+	if err != nil {
+		t.Fatalf("error adding local volume discovery list : %v", err)
+	}
+
 	localVolumeList := &localv1.LocalVolumeList{}
-	err := framework.AddToFrameworkScheme(localapisv1.AddToScheme, localVolumeList)
+	err = framework.AddToFrameworkScheme(localapisv1.AddToScheme, localVolumeList)
 	if err != nil {
 		t.Fatalf("error adding local volume list : %v", err)
 	}

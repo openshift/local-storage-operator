@@ -65,6 +65,31 @@ metadata:
             "storageClassName": "example-storageclass",
             "volumeMode": "Block"
           }
+        },
+        {
+          "apiVersion": "local.storage.openshift.io/v1alpha1",
+          "kind": "LocalVolumeDiscovery",
+          "metadata": {
+            "name": "auto-discover-devices"
+          },
+          "spec": {
+            "nodeSelector": {
+              "nodeSelectorTerms": [
+                {
+                  "matchExpressions": [
+                    {
+                      "key": "kubernetes.io/hostname",
+                      "operator": "In",
+                      "values": [
+                        "worker-0",
+                        "worker-1"
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          }
         }
       ]
     categories: Storage
@@ -180,6 +205,8 @@ spec:
             - get
             - list
             - watch
+            - create
+            - update
           serviceAccountName: local-storage-admin
       clusterPermissions:
         - rules:
@@ -379,6 +406,35 @@ spec:
           - description: Total devices over which the PVs has been provisioned
             displayName: TotalProvisionedDeviceCount
             path: totalProvisionedDeviceCount
+          - description: Last known condition of this object
+            displayName: Conditions
+            path: conditions
+            x-descriptors:
+              - 'urn:alm:descriptor:io.kubernetes.conditions'
+      - displayName: Local Volume Discovery
+        group: local.storage.openshift.io
+        kind: LocalVolumeDiscovery
+        name: localvolumediscoveries.local.storage.openshift.io
+        description: Discover list of potentially usable disks on the chosen set of nodes
+        version: v1alpha1
+        specDescriptors:
+          - description: Selected nodes for discovery
+            displayName: NodeSelector
+            path: nodeSelector
+            x-descriptors:
+              - 'urn:alm:descriptor:com.tectonic.ui:selector'
+          - description: List of tolerations to pass to the discovery daemons
+            displayName: Tolerations
+            path: tolerations
+            x-descriptors:
+              - urn:alm:descriptor:io.kubernetes:Tolerations
+        statusDescriptors:
+          - description: Current phase of the discovery
+            displayName: Phase
+            path: phase
+          - description: Last generation of this object
+            displayName: ObservedGeneration
+            path: observedGeneration
           - description: Last known condition of this object
             displayName: Conditions
             path: conditions

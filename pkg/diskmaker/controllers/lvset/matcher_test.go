@@ -20,7 +20,7 @@ const (
 // test filters
 
 func TestNotReadOnly(t *testing.T) {
-	matcherMap := filterMap
+	matcherMap := FilterMap
 	matcher := notReadOnly
 	results := []knownMatcherResult{
 		// true, no error
@@ -66,7 +66,7 @@ func TestNotReadOnly(t *testing.T) {
 }
 
 func TestNotRemovable(t *testing.T) {
-	matcherMap := filterMap
+	matcherMap := FilterMap
 	matcher := notRemovable
 	results := []knownMatcherResult{
 		// true, no error
@@ -112,7 +112,7 @@ func TestNotRemovable(t *testing.T) {
 }
 
 func TestNotSuspended(t *testing.T) {
-	matcherMap := filterMap
+	matcherMap := FilterMap
 	matcher := notSuspended
 	results := []knownMatcherResult{
 		// true
@@ -142,7 +142,7 @@ func TestNotSuspended(t *testing.T) {
 }
 
 func TestNoFilesystemSignature(t *testing.T) {
-	matcherMap := filterMap
+	matcherMap := FilterMap
 	matcher := noFilesystemSignature
 	results := []knownMatcherResult{
 		// true

@@ -9,20 +9,6 @@ import (
 	localv1 "github.com/openshift/local-storage-operator/pkg/apis/local/v1"
 )
 
-type fakeApiUpdater struct {
-	events []*DiskEvent
-}
-
-var _ apiUpdater = &fakeApiUpdater{}
-
-func (f *fakeApiUpdater) recordEvent(lv *localv1.LocalVolume, e *DiskEvent) {
-	f.events = append(f.events, e)
-}
-
-func (f *fakeApiUpdater) getLocalVolume(lv *localv1.LocalVolume) (*localv1.LocalVolume, error) {
-	return lv, nil
-}
-
 func TestFindMatchingDisk(t *testing.T) {
 	d := getFakeDiskMaker("/tmp/foo", "/mnt/local-storage")
 	deviceSet := d.findNewDisks(getRawOutput())
@@ -94,8 +80,8 @@ func TestLoadConfig(t *testing.T) {
 
 func getFakeDiskMaker(configLocation, symlinkLocation string) *DiskMaker {
 	d := &DiskMaker{configLocation: configLocation, symlinkLocation: symlinkLocation}
-	d.apiClient = &fakeApiUpdater{}
-	d.eventSync = newEventReporter(d.apiClient)
+	d.apiClient = &MockAPIUpdater{}
+	d.eventSync = NewEventReporter(d.apiClient)
 	return d
 }
 

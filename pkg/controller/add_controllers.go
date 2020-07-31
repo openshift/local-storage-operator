@@ -2,6 +2,7 @@ package controller
 
 import (
 	localv1 "github.com/openshift/local-storage-operator/pkg/controller/localvolume"
+	"github.com/openshift/local-storage-operator/pkg/controller/localvolumediscovery"
 	"github.com/openshift/local-storage-operator/pkg/controller/localvolumeset"
 	"github.com/openshift/local-storage-operator/pkg/controller/nodedaemon"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
@@ -12,6 +13,7 @@ var AddToManagerFuncs = []func(manager.Manager) error{
 	localv1.Add,
 	localvolumeset.AddLocalVolumeSetReconciler,
 	nodedaemon.AddDaemonReconciler,
+	localvolumediscovery.Add,
 }
 
 // AddToManager adds all Controllers to the Manager
