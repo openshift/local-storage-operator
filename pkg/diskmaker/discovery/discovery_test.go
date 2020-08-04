@@ -11,7 +11,6 @@ import (
 	"github.com/openshift/local-storage-operator/pkg/diskmaker"
 	"github.com/openshift/local-storage-operator/pkg/internal"
 	"github.com/stretchr/testify/assert"
-	"k8s.io/apimachinery/pkg/api/resource"
 )
 
 func TestHelperProcess(t *testing.T) {
@@ -275,7 +274,7 @@ func TestGetDiscoveredDevices(t *testing.T) {
 					Type:     "disk",
 					Vendor:   "ATA",
 					Serial:   "DEVICE_SERIAL_NUMBER",
-					Size:     resource.MustParse("62914560000"),
+					Size:     int64(62914560000),
 					Property: "Rotational",
 					FSType:   "ext4",
 					Status:   v1alpha1.DeviceStatus{State: "NotAvailable"},
@@ -315,7 +314,7 @@ func TestGetDiscoveredDevices(t *testing.T) {
 					Type:     "part",
 					Vendor:   "",
 					Serial:   "",
-					Size:     resource.MustParse("62913494528"),
+					Size:     int64(62913494528),
 					Property: "NonRotational",
 					FSType:   "ext4",
 					Status:   v1alpha1.DeviceStatus{State: "NotAvailable"},
@@ -355,7 +354,7 @@ func TestGetDiscoveredDevices(t *testing.T) {
 					Type:     "part",
 					Vendor:   "",
 					Serial:   "",
-					Size:     resource.MustParse("62913494528"),
+					Size:     int64(62913494528),
 					Property: "NonRotational",
 					FSType:   "",
 					Status:   v1alpha1.DeviceStatus{State: "NotAvailable"},
@@ -395,7 +394,7 @@ func TestGetDiscoveredDevices(t *testing.T) {
 					Type:     "part",
 					Vendor:   "",
 					Serial:   "",
-					Size:     resource.MustParse("62913494528"),
+					Size:     int64(62913494528),
 					Property: "NonRotational",
 					FSType:   "",
 					Status:   v1alpha1.DeviceStatus{State: "NotAvailable"},

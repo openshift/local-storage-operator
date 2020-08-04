@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/signal"
 	"reflect"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -16,8 +17,6 @@ import (
 	"github.com/pkg/errors"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/klog"
-
-	"k8s.io/apimachinery/pkg/api/resource"
 )
 
 const (
@@ -171,7 +170,8 @@ func getDiscoverdDevices(blockDevices []internal.BlockDevice) []v1alpha1.Discove
 			klog.Warningf("failed to get persisent ID for the device %q. Error %v", blockDevice.Name, err)
 			deviceID = ""
 		}
-		size, err := resource.ParseQuantity(blockDevice.Size)
+
+		size, err := strconv.ParseInt(blockDevice.Size, 10, 64)
 		if err != nil {
 			klog.Warningf("failed to parse size for the device %q. Error %v", blockDevice.Name, err)
 		}

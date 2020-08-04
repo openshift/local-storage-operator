@@ -35,10 +35,7 @@ spec:
             LocalVolumeDiscoveryResult
           properties:
             nodeName:
-              description: 'INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
-                Important: Run "operator-sdk generate k8s" to regenerate code after
-                modifying this file Add custom validation using kubebuilder tags:
-                https://book-v1.book.kubebuilder.io/beyond_basics/generating_crd.html'
+              description: Node on which the devices are discovered
               type: string
           required:
           - nodeName
@@ -53,10 +50,10 @@ spec:
                 these following conditions. - it should be a non-removable device.
                 - it should not be a read-only device. - it should not be mounted
                 anywhere - it should not be a boot device - it should not have child
-                partition in lsblk output
+                partitions
               items:
-                description: DiscoveredDevice represents the properties of the discovered
-                  devices
+                description: DiscoveredDevice shows the list of discovered devices
+                  with their properties
                 properties:
                   deviceID:
                     description: DeviceID represents the persistent name of the device.
@@ -81,7 +78,8 @@ spec:
                     type: string
                   size:
                     description: Size of the discovered device
-                    type: string
+                    format: int64
+                    type: integer
                   status:
                     description: Status defines whether the device is available for
                       use or not
@@ -112,13 +110,9 @@ spec:
                 type: object
               type: array
             discoveredTimeStamp:
-              description: 'INSERT ADDITIONAL STATUS FIELD - define observed state
-                of cluster Important: Run "operator-sdk generate k8s" to regenerate
-                code after modifying this file Add custom validation using kubebuilder
-                tags: https://book-v1.book.kubebuilder.io/beyond_basics/generating_crd.html'
+              description: DiscoveredTimeStamp is the last timestamp when the list
+                of discovered devices was updated
               type: string
-          required:
-          - discoveredDevices
           type: object
       type: object
   version: v1alpha1
