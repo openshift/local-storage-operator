@@ -1,0 +1,10 @@
+FROM quay.io/openshift/origin-must-gather:4.5.0 as builder
+
+FROM registry.access.redhat.com/ubi8-minimal:latest
+
+RUN microdnf -y install rsync
+
+COPY --from=builder /usr/bin/oc /usr/bin/oc
+COPY must-gather/* /usr/bin/
+
+ENTRYPOINT /usr/bin/gather
