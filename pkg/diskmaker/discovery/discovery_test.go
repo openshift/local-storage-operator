@@ -103,7 +103,7 @@ func TestIgnoreDevices(t *testing.T) {
 		errMessage   error
 	}{
 		{
-			label: "Case 1",
+			label: "Case 1", // don't ignore disk type
 			blockDevice: internal.BlockDevice{
 				Name:     "sdb",
 				KName:    "sdb",
@@ -118,7 +118,22 @@ func TestIgnoreDevices(t *testing.T) {
 			errMessage: fmt.Errorf("ignored wrong device"),
 		},
 		{
-			label: "Case 2",
+			label: "Case 2", // don't ignore lvm type
+			blockDevice: internal.BlockDevice{
+				Name:     "sdb",
+				KName:    "sdb",
+				ReadOnly: "0",
+				State:    "running",
+				Type:     "lvm",
+			},
+			fakeGlobfunc: func(name string) ([]string, error) {
+				return []string{"removable", "subsytem"}, nil
+			},
+			expected:   false,
+			errMessage: fmt.Errorf("ignored wrong device"),
+		},
+		{
+			label: "Case 3", // ignore read only devices
 			blockDevice: internal.BlockDevice{
 				Name:     "sdb",
 				KName:    "sdb",
@@ -133,7 +148,7 @@ func TestIgnoreDevices(t *testing.T) {
 			errMessage: fmt.Errorf("failed to ignore read only device"),
 		},
 		{
-			label: "Case 3",
+			label: "Case 4", // ignore devices in suspended state
 			blockDevice: internal.BlockDevice{
 				Name:     "sdb",
 				KName:    "sdb",
@@ -148,7 +163,7 @@ func TestIgnoreDevices(t *testing.T) {
 			errMessage: fmt.Errorf("ignored wrong suspended device"),
 		},
 		{
-			label: "Case 4",
+			label: "Case 5", // ignore root device with children
 			blockDevice: internal.BlockDevice{
 				Name:     "sdb",
 				KName:    "sdb",
@@ -437,20 +452,25 @@ func TestParseDeviceType(t *testing.T) {
 	testcases := []struct {
 		label    string
 		input    string
-		expected v1alpha1.DeviceType
+		expected v1alpha1.DiscoveredDeviceType
 	}{
 		{
 			label:    "Case 1",
 			input:    "disk",
-			expected: v1alpha1.RawDisk,
+			expected: v1alpha1.DiskType,
 		},
 		{
 			label:    "Case 1",
 			input:    "part",
-			expected: v1alpha1.Partition,
+			expected: v1alpha1.PartType,
 		},
 		{
 			label:    "Case 3",
+			input:    "lvm",
+			expected: v1alpha1.LVMType,
+		},
+		{
+			label:    "Case 4",
 			input:    "loop",
 			expected: "",
 		},
