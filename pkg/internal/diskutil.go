@@ -54,6 +54,7 @@ type BlockDevice struct {
 	Removable  string `json:"rm,omitempty"`
 	PathByID   string `json:"pathByID,omitempty"`
 	Serial     string `json:"serial,omitempty"`
+	PartLabel  string `json:"partLabel,omitempty"`
 }
 
 // IDPathNotFoundError indicates that a symlink to the device was not found in /dev/disk/by-id/
@@ -181,7 +182,7 @@ func ListBlockDevices() ([]BlockDevice, []string, error) {
 	// var output bytes.Buffer
 	var blockDevices []BlockDevice
 
-	columns := "NAME,ROTA,TYPE,SIZE,MODEL,VENDOR,RO,RM,STATE,FSTYPE,KNAME,SERIAL"
+	columns := "NAME,ROTA,TYPE,SIZE,MODEL,VENDOR,RO,RM,STATE,FSTYPE,KNAME,SERIAL,PARTLABEL"
 	args := []string{"--pairs", "-b", "-o", columns}
 	cmd := ExecCommand("lsblk", args...)
 	output, err := executeCmdWithCombinedOutput(cmd)
