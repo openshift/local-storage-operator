@@ -11,8 +11,8 @@ import (
 )
 
 const (
-	lsblkOutput1 = `NAME="sda" KNAME="sda" ROTA="1" TYPE="disk" SIZE="62914560000" MODEL="VBOX HARDDISK" VENDOR="ATA" RO="0" RM="0" STATE="running" FSTYPE="" SERIAL=""
-NAME="sda1" KNAME="sda1" ROTA="1" TYPE="part" SIZE="62913494528" MODEL="" VENDOR="" RO="0" RM="0" STATE="" FSTYPE="" SERIAL=""
+	lsblkOutput1 = `NAME="sda" KNAME="sda" ROTA="1" TYPE="disk" SIZE="62914560000" MODEL="VBOX HARDDISK" VENDOR="ATA" RO="0" RM="0" STATE="running" FSTYPE="" SERIAL="" PARTLABEL=""
+NAME="sda1" KNAME="sda1" ROTA="1" TYPE="part" SIZE="62913494528" MODEL="" VENDOR="" RO="0" RM="0" STATE="" FSTYPE="" SERIAL="" PARTLABEL="BIOS-BOOT"
 `
 	lsblkOutput2 = `NAME="sdc" KNAME="sdc" ROTA="1" TYPE="disk" SIZE="62914560000" MODEL="VBOX HARDDISK" VENDOR="ATA" RO="0" RM="1" STATE="running" FSTYPE="ext4" SERIAL=""
 NAME="sdc3" KNAME="sdc3" ROTA="1" TYPE="part" SIZE="62913494528" MODEL="" VENDOR="" RO="0" RM="1" STATE="" FSTYPE="ext4" SERIAL=""
@@ -54,6 +54,7 @@ func TestListBlockDevices(t *testing.T) {
 					ReadOnly:   "0",
 					Removable:  "0",
 					State:      "running",
+					PartLabel:  "",
 				},
 				{
 
@@ -68,6 +69,7 @@ func TestListBlockDevices(t *testing.T) {
 					ReadOnly:   "0",
 					Removable:  "0",
 					State:      "running",
+					PartLabel:  "BIOS-BOOT",
 				},
 			},
 		},
@@ -89,6 +91,7 @@ func TestListBlockDevices(t *testing.T) {
 					ReadOnly:   "0",
 					Removable:  "1",
 					State:      "running",
+					PartLabel:  "",
 				},
 				{
 
@@ -103,6 +106,7 @@ func TestListBlockDevices(t *testing.T) {
 					ReadOnly:   "0",
 					Removable:  "1",
 					State:      "running",
+					PartLabel:  "",
 				},
 			},
 		},
@@ -133,6 +137,7 @@ func TestListBlockDevices(t *testing.T) {
 			assert.Equalf(t, tc.expected[i].Serial, blockDevices[i].Serial, "[%q: Device: %d]: invalid block device serial", tc.label, i+1)
 			assert.Equalf(t, tc.expected[i].Rotational, blockDevices[i].Rotational, "[%q: Device: %d]: invalid block device rotational property", tc.label, i+1)
 			assert.Equalf(t, tc.expected[i].ReadOnly, blockDevices[i].ReadOnly, "[%q: Device: %d]: invalid block device read only value", tc.label, i+1)
+			assert.Equalf(t, tc.expected[i].PartLabel, blockDevices[i].PartLabel, "[%q: Device: %d]: invalid block device PartLabel value", tc.label, i+1)
 		}
 	}
 

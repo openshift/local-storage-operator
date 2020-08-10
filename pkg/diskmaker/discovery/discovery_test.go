@@ -14,15 +14,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 )
 
-const (
-	testData1 = `NAME="sda" ROTA="1" TYPE="disk" SIZE="62914560000" MODEL="VBOX HARDDISK" VENDOR="ATA" RO="1" RM="0" STATE="running" FSTYPE="" SERIAL=""
-NAME="sda1" ROTA="1" TYPE="part" SIZE="62913494528" MODEL="" VENDOR="" RO="1" RM="0" STATE="" FSTYPE="" SERIAL=""
-`
-	testData2 = `NAME="sdc" ROTA="1" TYPE="disk" SIZE="62914560000" MODEL="VBOX HARDDISK" VENDOR="ATA" RO="0" RM="1" STATE="running" FSTYPE="ext4" SERIAL=""
-NAME="sdc3" ROTA="1" TYPE="part" SIZE="62913494528" MODEL="" VENDOR="" RO="0" RM="1" STATE="" FSTYPE="ext4" SERIAL=""
-`
-)
-
 func TestHelperProcess(t *testing.T) {
 	if os.Getenv("GO_WANT_HELPER_PROCESS") != "1" {
 		return
@@ -327,6 +318,86 @@ func TestGetDiscoveredDevices(t *testing.T) {
 					Size:     resource.MustParse("62913494528"),
 					Property: "NonRotational",
 					FSType:   "ext4",
+					Status:   v1alpha1.DeviceStatus{State: "NotAvailable"},
+				},
+			},
+			fakeGlobfunc: func(name string) ([]string, error) {
+				return []string{"/dev/disk/by-id/sda1"}, nil
+			},
+			fakeEvalSymlinkfunc: func(path string) (string, error) {
+				return "/dev/disk/by-id/sda1", nil
+			},
+		},
+		{
+			label: "Case 3",
+			blockDevices: []internal.BlockDevice{
+				{
+					Name:       "sda1",
+					KName:      "sda1",
+					FSType:     "",
+					Type:       "part",
+					Size:       "62913494528",
+					Model:      "",
+					Vendor:     "",
+					Serial:     "",
+					Rotational: "0",
+					ReadOnly:   "0",
+					Removable:  "0",
+					State:      "running",
+					PartLabel:  "BIOS-BOOT",
+				},
+			},
+			expected: []v1alpha1.DiscoveredDevice{
+				{
+					DeviceID: "/dev/disk/by-id/sda1",
+					Path:     "/dev/sda1",
+					Model:    "",
+					Type:     "part",
+					Vendor:   "",
+					Serial:   "",
+					Size:     resource.MustParse("62913494528"),
+					Property: "NonRotational",
+					FSType:   "",
+					Status:   v1alpha1.DeviceStatus{State: "NotAvailable"},
+				},
+			},
+			fakeGlobfunc: func(name string) ([]string, error) {
+				return []string{"/dev/disk/by-id/sda1"}, nil
+			},
+			fakeEvalSymlinkfunc: func(path string) (string, error) {
+				return "/dev/disk/by-id/sda1", nil
+			},
+		},
+		{
+			label: "Case 4",
+			blockDevices: []internal.BlockDevice{
+				{
+					Name:       "sda1",
+					KName:      "sda1",
+					FSType:     "",
+					Type:       "part",
+					Size:       "62913494528",
+					Model:      "",
+					Vendor:     "",
+					Serial:     "",
+					Rotational: "0",
+					ReadOnly:   "0",
+					Removable:  "0",
+					State:      "running",
+					PartLabel:  "EFI-SYSTEM",
+				},
+			},
+			expected: []v1alpha1.DiscoveredDevice{
+				{
+					DeviceID: "/dev/disk/by-id/sda1",
+					Path:     "/dev/sda1",
+					Model:    "",
+					Type:     "part",
+					Vendor:   "",
+					Serial:   "",
+					Size:     resource.MustParse("62913494528"),
+					Property: "NonRotational",
+					FSType:   "",
 					Status:   v1alpha1.DeviceStatus{State: "NotAvailable"},
 				},
 			},

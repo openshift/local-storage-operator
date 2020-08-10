@@ -26,6 +26,8 @@ const (
 	probeInterval                 = 5 * time.Minute
 	resultCRName                  = "discovery-result-%s"
 	resultCRLabel                 = "discovery-result-node"
+	biosBoot                      = "BIOS-BOOT"
+	efiSystem                     = "EFI-SYSTEM"
 )
 
 // DeviceDiscovery instance
@@ -221,6 +223,11 @@ func ignoreDevices(dev internal.BlockDevice) bool {
 func getDeviceStatus(dev internal.BlockDevice) v1alpha1.DeviceStatus {
 	status := v1alpha1.DeviceStatus{}
 	if dev.FSType != "" {
+		status.State = v1alpha1.NotAvailable
+		return status
+	}
+
+	if dev.PartLabel == biosBoot || dev.PartLabel == efiSystem {
 		status.State = v1alpha1.NotAvailable
 		return status
 	}
