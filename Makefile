@@ -15,6 +15,7 @@ IMAGE = $(REGISTRY)local-volume-provisioner:$(VERSION)
 MUTABLE_IMAGE = $(REGISTRY)local-volume-provisioner:$(VERSION)
 DISKMAKER_IMAGE = $(REGISTRY)local-diskmaker:$(VERSION)
 OPERATOR_IMAGE= $(REGISTRY)local-storage-operator:$(VERSION)
+MUST_GATHER_IMAGE = $(REGISTRY)local-must-gather:$(VERSION)
 REV=$(shell git describe --long --tags --match='v*' --dirty 2>/dev/null || git rev-list -n1 HEAD)
 
 all build: build-diskmaker build-operator
@@ -26,13 +27,19 @@ build-diskmaker:
 build-operator:
 	env GOOS=$(TARGET_GOOS) GOARCH=$(TARGET_GOARCH) go build -i -mod=vendor -a -i -ldflags '-X main.version=$(REV) -extldflags "-static"' -o $(TARGET_DIR)/local-storage-operator $(CURPATH)/cmd/manager
 
-images: diskmaker-container operator-container
+images: diskmaker-container operator-container must-gather
 
 push: images push-images
 
 push-images:
 	docker push ${DISKMAKER_IMAGE}
 	docker push ${OPERATOR_IMAGE}
+	docker push ${MUST_GATHER_IMAGE}
+
+must-gather:
+	docker build --no-cache -t $(MUST_GATHER_IMAGE) -f $(CURPATH)/Dockerfile.mustgather .
+
+.PHONY: must-gather
 
 diskmaker-container:
 	docker build --no-cache -t $(DISKMAKER_IMAGE) -f $(CURPATH)/Dockerfile.diskmaker .
