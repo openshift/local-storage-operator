@@ -39,10 +39,11 @@ func (r *DaemonReconciler) reconcileProvisionerConfigMap(
 		storageClassName := lvSet.Spec.StorageClassName
 		symlinkDir := path.Join(common.GetLocalDiskLocationPath(), storageClassName)
 		mountConfig := localStaticProvisioner.MountConfig{
-			FsType:     lvSet.Spec.FSType,
-			HostDir:    symlinkDir,
-			MountDir:   symlinkDir,
-			VolumeMode: string(lvSet.Spec.VolumeMode),
+			BlockCleanerCommand: []string{localStaticProvisioner.DefaultBlockCleanerCommand},
+			FsType:              lvSet.Spec.FSType,
+			HostDir:             symlinkDir,
+			MountDir:            symlinkDir,
+			VolumeMode:          string(lvSet.Spec.VolumeMode),
 		}
 		storageClassConfig[storageClassName] = mountConfig
 	}
