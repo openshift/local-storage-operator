@@ -11,6 +11,7 @@ import (
 	localv1alpha1 "github.com/openshift/local-storage-operator/pkg/apis/local/v1alpha1"
 	framework "github.com/operator-framework/operator-sdk/pkg/test"
 	v1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
 	dynclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -78,7 +79,7 @@ func LocalVolumeDiscoveryTest(ctx *framework.Context, cleanupFuncs *[]cleanupFn)
 			},
 		}
 
-		discoveredDevices, err := verifyLocalVolumeDiscoveryResult(localVolumeDiscoveryResult, selectedNode.Name, f.Client)
+		discoveredDevices, err := verifyLocalVolumeDiscoveryResult(t, localVolumeDiscoveryResult, selectedNode.Name, f.Client)
 		if err != nil {
 			t.Fatalf("error verifying localvolumediscoveryresult. %v", err)
 		}
@@ -182,7 +183,7 @@ func verifyLocalVolumeDiscovery(lvd *localv1alpha1.LocalVolumeDiscovery, client 
 func verifyContinousDiscovery(t *testing.T, client framework.FrameworkClient, lvdr *localv1alpha1.LocalVolumeDiscoveryResult,
 	oldDevices []v1alpha1.DiscoveredDevice, nodeName string) error {
 	waitErr := wait.Poll(retryInterval, timeout, func() (bool, error) {
-		updatedDiscoveredDevices, err := verifyLocalVolumeDiscoveryResult(lvdr, nodeName, client)
+		updatedDiscoveredDevices, err := verifyLocalVolumeDiscoveryResult(t, lvdr, nodeName, client)
 		if err != nil {
 			return false, fmt.Errorf("error fetching discovered devices from localvolumediscoveryresult. %v", err)
 		}
@@ -197,7 +198,7 @@ func verifyContinousDiscovery(t *testing.T, client framework.FrameworkClient, lv
 	return waitErr
 }
 
-func verifyLocalVolumeDiscoveryResult(lvdr *localv1alpha1.LocalVolumeDiscoveryResult, nodeName string,
+func verifyLocalVolumeDiscoveryResult(t *testing.T, lvdr *localv1alpha1.LocalVolumeDiscoveryResult, nodeName string,
 	client framework.FrameworkClient) ([]v1alpha1.DiscoveredDevice, error) {
 	discoveredDevices := []v1alpha1.DiscoveredDevice{}
 	waitErr := wait.PollImmediate(retryInterval, timeout, func() (bool, error) {
@@ -208,6 +209,10 @@ func verifyLocalVolumeDiscoveryResult(lvdr *localv1alpha1.LocalVolumeDiscoveryRe
 
 		err := client.Get(goctx.TODO(), objectKey, lvdr)
 		if err != nil {
+			if apierrors.IsNotFound(err) {
+				t.Logf("LocalVolumeDiscoveryResult %q not found.", lvdr.Name)
+				return false, nil
+			}
 			return false, err
 		}
 
