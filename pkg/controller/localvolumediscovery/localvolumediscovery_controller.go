@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/go-logr/logr"
 	operatorv1 "github.com/openshift/api/operator/v1"
 	localv1alpha1 "github.com/openshift/local-storage-operator/pkg/apis/local/v1alpha1"
 	"github.com/openshift/local-storage-operator/pkg/common"
@@ -13,8 +14,10 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	corev1helper "k8s.io/kubernetes/pkg/apis/core/v1/helper"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -44,7 +47,11 @@ func Add(mgr manager.Manager) error {
 
 // newReconciler returns a new reconcile.Reconciler
 func newReconciler(mgr manager.Manager) reconcile.Reconciler {
-	return &ReconcileLocalVolumeDiscovery{client: mgr.GetClient(), scheme: mgr.GetScheme()}
+	return &ReconcileLocalVolumeDiscovery{
+		client:    mgr.GetClient(),
+		scheme:    mgr.GetScheme(),
+		reqLogger: log,
+	}
 }
 
 // add adds a new Controller to mgr with r as the reconcile.Reconciler
@@ -77,8 +84,9 @@ var _ reconcile.Reconciler = &ReconcileLocalVolumeDiscovery{}
 type ReconcileLocalVolumeDiscovery struct {
 	// This client, initialized using mgr.Client() above, is a split client
 	// that reads objects from the cache and writes to the apiserver
-	client client.Client
-	scheme *runtime.Scheme
+	client    client.Client
+	scheme    *runtime.Scheme
+	reqLogger logr.Logger
 }
 
 // Reconcile reads that state of the cluster for a LocalVolumeDiscovery object and makes changes based on the state read
@@ -86,7 +94,7 @@ type ReconcileLocalVolumeDiscovery struct {
 // The Controller will requeue the Request to be processed again if the returned error is non-nil or
 // Result.Requeue is true, otherwise upon completion it will remove the work from the queue.
 func (r *ReconcileLocalVolumeDiscovery) Reconcile(request reconcile.Request) (reconcile.Result, error) {
-	reqLogger := log.WithValues("Request.Namespace", request.Namespace, "Request.Name", request.Name)
+	reqLogger := r.reqLogger.WithValues("Request.Namespace", request.Namespace, "Request.Name", request.Name)
 	reqLogger.Info("Reconciling LocalVolumeDiscovery")
 
 	// Fetch the LocalVolumeDiscovery instance
@@ -103,7 +111,10 @@ func (r *ReconcileLocalVolumeDiscovery) Reconcile(request reconcile.Request) (re
 		return reconcile.Result{}, err
 	}
 
-	diskMakerDSMutateFn := getDiskMakerDiscoveryDSMutateFn(request, instance.Spec.Tolerations, getOwnerRefs(instance), instance.Spec.NodeSelector)
+	diskMakerDSMutateFn := getDiskMakerDiscoveryDSMutateFn(request, instance.Spec.Tolerations,
+		getEnvVars(instance.Name, string(instance.UID)),
+		getOwnerRefs(instance),
+		instance.Spec.NodeSelector)
 	ds, opResult, err := nodedaemon.CreateOrUpdateDaemonset(r.client, diskMakerDSMutateFn)
 	if err != nil {
 		message := fmt.Sprintf("failed to create discovery daemonset. Error %+v", err)
@@ -148,11 +159,19 @@ func (r *ReconcileLocalVolumeDiscovery) Reconcile(request reconcile.Request) (re
 		return reconcile.Result{}, err
 	}
 
+	reqLogger.Info("deleting orphan discovery result instances")
+	err = r.deleteOrphanDiscoveryResults(instance)
+	if err != nil {
+		reqLogger.Error(err, "failed to delete orphan discovery results")
+		return reconcile.Result{}, err
+	}
+
 	return reconcile.Result{}, nil
 }
 
 func getDiskMakerDiscoveryDSMutateFn(request reconcile.Request,
 	tolerations []corev1.Toleration,
+	envVars []corev1.EnvVar,
 	ownerRefs []metav1.OwnerReference,
 	nodeSelector *corev1.NodeSelector) func(*appsv1.DaemonSet) error {
 
@@ -167,10 +186,10 @@ func getDiskMakerDiscoveryDSMutateFn(request reconcile.Request,
 			nodeSelector,
 			name,
 		)
-		discoveryVolumes, discoveryVolumeMounts := getDiscoveryVolumesAndMounts()
+		discoveryVolumes, discoveryVolumeMounts := getVolumesAndMounts()
 		ds.Spec.Template.Spec.Volumes = discoveryVolumes
 		ds.Spec.Template.Spec.Containers[0].VolumeMounts = discoveryVolumeMounts
-		ds.Spec.Template.Spec.Containers[0].Env = append(ds.Spec.Template.Spec.Containers[0].Env, getUIDEnvVar())
+		ds.Spec.Template.Spec.Containers[0].Env = append(ds.Spec.Template.Spec.Containers[0].Env, envVars...)
 		ds.Spec.Template.Spec.Containers[0].Image = common.GetDiskMakerImage()
 		ds.Spec.Template.Spec.Containers[0].Args = []string{"discover"}
 
@@ -179,8 +198,10 @@ func getDiskMakerDiscoveryDSMutateFn(request reconcile.Request,
 }
 
 // updateDiscoveryStatus updates the discovery state with conditions and phase
-func (r *ReconcileLocalVolumeDiscovery) updateDiscoveryStatus(instance *localv1alpha1.LocalVolumeDiscovery, conditionType, message string,
-	status operatorv1.ConditionStatus, phase localv1alpha1.DiscoveryPhase) error {
+func (r *ReconcileLocalVolumeDiscovery) updateDiscoveryStatus(instance *localv1alpha1.LocalVolumeDiscovery,
+	conditionType, message string,
+	status operatorv1.ConditionStatus,
+	phase localv1alpha1.DiscoveryPhase) error {
 	// avoid frequently updating the same status in the CR
 	if len(instance.Status.Conditions) < 1 || instance.Status.Conditions[0].Message != message {
 		condition := operatorv1.OperatorCondition{
@@ -196,6 +217,41 @@ func (r *ReconcileLocalVolumeDiscovery) updateDiscoveryStatus(instance *localv1a
 		err := r.updateStatus(instance)
 		if err != nil {
 			return err
+		}
+	}
+
+	return nil
+}
+
+func (r *ReconcileLocalVolumeDiscovery) deleteOrphanDiscoveryResults(instance *localv1alpha1.LocalVolumeDiscovery) error {
+	if instance.Spec.NodeSelector == nil || len(instance.Spec.NodeSelector.NodeSelectorTerms) == 0 {
+		r.reqLogger.Info("skip deleting orphan discovery results as no NodeSelectors are provided")
+		return nil
+	}
+
+	discoveryResultList := &localv1alpha1.LocalVolumeDiscoveryResultList{}
+	err := r.client.List(context.TODO(), discoveryResultList, client.InNamespace(instance.Namespace))
+	if err != nil {
+		return fmt.Errorf("failed to list LocalVolumeDiscoveryResult instances in namespace %q", instance.Namespace)
+	}
+
+	for _, discoveryResult := range discoveryResultList.Items {
+		nodeName := discoveryResult.Spec.NodeName
+		node := &corev1.Node{}
+		err = r.client.Get(context.TODO(), types.NamespacedName{Name: nodeName}, node)
+		if err != nil {
+			return fmt.Errorf("failed to get instance of node %q", nodeName)
+		}
+
+		matches := corev1helper.MatchNodeSelectorTerms(instance.Spec.NodeSelector.NodeSelectorTerms,
+			node.Labels, fields.Set{
+				"metadata.name": node.Name,
+			})
+		if !matches {
+			err := r.client.Delete(context.TODO(), discoveryResult.DeepCopyObject())
+			if err != nil {
+				return fmt.Errorf("failed to delete orphan discovery result %q in node %q", discoveryResult.Name, nodeName)
+			}
 		}
 	}
 
@@ -221,7 +277,7 @@ func (r *ReconcileLocalVolumeDiscovery) getDaemonSetStatus(namespace string) (in
 	return existingDS.Status.DesiredNumberScheduled, existingDS.Status.NumberReady, nil
 }
 
-func getDiscoveryVolumesAndMounts() ([]corev1.Volume, []corev1.VolumeMount) {
+func getVolumesAndMounts() ([]corev1.Volume, []corev1.VolumeMount) {
 	hostContainerPropagation := corev1.MountPropagationHostToContainer
 	volumeMounts := []corev1.VolumeMount{
 		{
@@ -283,13 +339,15 @@ func getOwnerRefs(cr *localv1alpha1.LocalVolumeDiscovery) []metav1.OwnerReferenc
 	}
 }
 
-func getUIDEnvVar() corev1.EnvVar {
-	return corev1.EnvVar{
-		Name: "UID",
-		ValueFrom: &corev1.EnvVarSource{
-			FieldRef: &corev1.ObjectFieldSelector{
-				FieldPath: "metadata.uid",
-			},
+func getEnvVars(objName, uid string) []corev1.EnvVar {
+	return []corev1.EnvVar{
+		{
+			Name:  "DISCOVERY_OBJECT_UID",
+			Value: uid,
+		},
+		{
+			Name:  "DISCOVERY_OBJECT_NAME",
+			Value: objName,
 		},
 	}
 }

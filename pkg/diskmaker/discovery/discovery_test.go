@@ -504,13 +504,13 @@ func getFakeDeviceDiscovery() *DeviceDiscovery {
 func setEnv() {
 	os.Setenv("MY_NODE_NAME", "node1")
 	os.Setenv("WATCH_NAMESPACE", "ns")
-	os.Setenv("UID", "uid")
-	os.Setenv("POD_NAME", "pod123")
+	os.Setenv("DISCOVERY_OBJECT_UID", "uid")
+	os.Setenv("DISCOVERY_OBJECT_NAME", "auto-discover-devices")
 }
 
 func unsetEnv() {
 	os.Unsetenv("MY_NODE_NAME")
 	os.Unsetenv("WATCH_NAMESPACE")
-	os.Unsetenv("UID")
-	os.Unsetenv("POD_NAME")
+	os.Unsetenv("DISCOVERY_OBJECT_UID")
+	os.Unsetenv("DISCOVERY_OBJECT_NAME")
 }
