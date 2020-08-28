@@ -1,7 +1,6 @@
 package v1alpha1
 
 import (
-	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -38,7 +37,7 @@ type DiscoveredDevice struct {
 	// Serial number of the disk
 	Serial string `json:"serial"`
 	// Size of the discovered device
-	Size resource.Quantity `json:"size"`
+	Size int64 `json:"size"`
 	// Property represents whether the device type is rotational or not
 	Property DeviceMechanicalProperty `json:"property"`
 	// FSType represents the filesystem available on the device
