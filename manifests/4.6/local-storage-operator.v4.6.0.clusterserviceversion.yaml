@@ -34,7 +34,7 @@ metadata:
           },
           "spec": {
             "deviceInclusionSpec": {
-              "deviceMechanicalProperty": [
+              "deviceMechanicalProperties": [
                 "Rotational",
                 "NonRotational"
               ],
