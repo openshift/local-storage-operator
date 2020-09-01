@@ -50,6 +50,9 @@ const (
 
 	// DiscoveryMetricsServingCert is the name of secret created for discovery service to store TLS config
 	DiscoveryMetricsServingCert = "discovery-metric-serving-cert"
+	// LocalVolumeProtectionFinalizer is set to ensure the provisioner daemonset and owning object stick around long
+	// enough to handle the PV reclaim policy.
+	LocalVolumeProtectionFinalizer = "storage.openshift.com/local-volume-protection"
 )
 
 // GetDiskMakerImage returns the image to be used for diskmaker daemonset
