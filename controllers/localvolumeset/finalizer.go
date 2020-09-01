@@ -32,13 +32,8 @@ func (r *LocalVolumeSetReconciler) syncFinalizer(lvSet localv1alpha1.LocalVolume
 			r.ReqLogger.Info("no bound/released PVs found, removing finalizer")
 		} else {
 			pvNames := ""
-			for i, pv := range pendingPVs {
+			for _, pv := range pendingPVs {
 				pvNames += fmt.Sprintf(" %v", pv.Name)
-				// only print up to 10 PV names
-				if i >= 9 {
-					pvNames += "..."
-					break
-				}
 			}
 			r.ReqLogger.Info("bound/released PVs found, not removing finalizer", "pvNames", pvNames)
 		}
