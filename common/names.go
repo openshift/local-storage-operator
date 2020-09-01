@@ -34,6 +34,10 @@ const (
 	// DiscoveryNodeLabelKey is the label key on the discovery result CR used to identify the node it belongs to.
 	// the value is the node's name
 	DiscoveryNodeLabel = "discovery-result-node"
+
+	// LocalVolumeProtectionFinalizer is set to ensure the provisioner daemonset and owning object stick around long
+	// enough to handle the PV reclaim policy.
+	LocalVolumeProtectionFinalizer = "storage.openshift.com/local-volume-protection"
 )
 
 // GetLocalProvisionerImage return the image to be used for provisioner daemonset
