@@ -223,11 +223,13 @@ func ignoreDevices(dev internal.BlockDevice) bool {
 func getDeviceStatus(dev internal.BlockDevice) v1alpha1.DeviceStatus {
 	status := v1alpha1.DeviceStatus{}
 	if dev.FSType != "" {
+		klog.Infof("device %q with filesystem %q is not available", dev.Name, dev.FSType)
 		status.State = v1alpha1.NotAvailable
 		return status
 	}
 
 	if dev.PartLabel == biosBoot || dev.PartLabel == efiSystem {
+		klog.Infof("device %q with part label %q is not available", dev.Name, dev.PartLabel)
 		status.State = v1alpha1.NotAvailable
 		return status
 	}
@@ -238,10 +240,24 @@ func getDeviceStatus(dev internal.BlockDevice) v1alpha1.DeviceStatus {
 		return status
 	}
 	if !canOpen {
+		klog.Infof("device %q is not available as it can't be opened exclusively", dev.Name)
 		status.State = v1alpha1.NotAvailable
 		return status
 	}
 
+	hasBindMounts, mountPoint, err := dev.HasBindMounts()
+	if err != nil {
+		status.State = v1alpha1.Unknown
+		return status
+	}
+
+	if hasBindMounts {
+		klog.Infof("device %q with mount point %q is not available", dev.Name, mountPoint)
+		status.State = v1alpha1.NotAvailable
+		return status
+	}
+
+	klog.Infof("device %q is available", dev.Name)
 	status.State = v1alpha1.Available
 	return status
 }

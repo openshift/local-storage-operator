@@ -3,6 +3,7 @@ package internal
 import (
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -17,6 +18,7 @@ var (
 	ExecCommand          = exec.Command
 	FilePathGlob         = filepath.Glob
 	FilePathEvalSymLinks = filepath.EvalSymlinks
+	mountFile            = "/proc/1/mountinfo"
 )
 
 var ExecResult string
@@ -118,6 +120,30 @@ func (b BlockDevice) HasChildren() (bool, error) {
 		}
 	}
 	return false, nil
+}
+
+// HasBindMounts checks for bind mounts and returns mount point for a device by parsing `proc/1/mountinfo`.
+// HostPID should be set to true inside the POD spec to get details of host's mount points inside `proc/1/mountinfo`.
+func (b BlockDevice) HasBindMounts() (bool, string, error) {
+	data, err := ioutil.ReadFile(mountFile)
+	if err != nil {
+		return false, "", fmt.Errorf("failed to read file %s: %v", mountFile, err)
+	}
+
+	mountString := string(data)
+	for _, mountInfo := range strings.Split(mountString, "\n") {
+		if strings.Contains(mountInfo, b.Name) {
+			mountInfoList := strings.Split(mountInfo, " ")
+			if len(mountInfoList) >= 10 {
+				// device source is 4th field for bind mounts and 10th for regular mounts
+				if mountInfoList[3] == fmt.Sprintf("/%s", b.Name) || mountInfoList[9] == fmt.Sprintf("/dev/%s", b.Name) {
+					return true, mountInfoList[4], nil
+				}
+			}
+		}
+	}
+
+	return false, "", nil
 }
 
 // GetDevPath for block device (/dev/sdx)
@@ -329,7 +355,6 @@ func executeCmdWithCombinedOutput(cmd *exec.Cmd) (string, error) {
 	if err != nil {
 		return "", err
 	}
-
 	return strings.TrimSpace(string(output)), nil
 }
 
