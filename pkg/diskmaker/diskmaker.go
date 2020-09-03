@@ -8,10 +8,12 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/ghodss/yaml"
 	localv1 "github.com/openshift/local-storage-operator/pkg/apis/local/v1"
+	"golang.org/x/sys/unix"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/klog"
@@ -173,32 +175,61 @@ func (d *DiskMaker) symLinkDisks(diskConfig *DiskConfig) {
 			}
 			baseDeviceName := filepath.Base(deviceNameLocation.diskNamePath)
 			symLinkPath := path.Join(symLinkDirPath, baseDeviceName)
-			if fileExists(symLinkPath) {
-				klog.V(4).Infof("symlink %s already exists", symLinkPath)
-				continue
+			symLinkError := d.symLinkDeviceToPool(deviceNameLocation, symLinkPath)
+			if symLinkError != nil {
+				klog.Errorf("error symlinking %s to %s: %v", deviceNameLocation.diskNamePath, symLinkPath, symLinkError)
 			}
-			var symLinkErr error
-			if deviceNameLocation.diskID != "" {
-				klog.V(3).Infof("symlinking to %s to %s", deviceNameLocation.diskID, symLinkPath)
-				symLinkErr = os.Symlink(deviceNameLocation.diskID, symLinkPath)
-			} else {
-				klog.V(3).Infof("symlinking to %s to %s", deviceNameLocation.diskNamePath, symLinkPath)
-				symLinkErr = os.Symlink(deviceNameLocation.diskNamePath, symLinkPath)
-			}
-
-			if symLinkErr != nil {
-				msg := fmt.Sprintf("error creating symlink %s: %v", symLinkPath, err)
-				e := newEvent(ErrorFindingMatchingDisk, msg, deviceNameLocation.diskNamePath)
-				d.eventSync.report(e, d.localVolume)
-				klog.Errorf(msg)
-			}
-
-			successMsg := fmt.Sprintf("found matching disk %s", baseDeviceName)
-			e := newSuccessEvent(FoundMatchingDisk, successMsg, deviceNameLocation.diskNamePath)
-			d.eventSync.report(e, d.localVolume)
 		}
 	}
 
+}
+
+func (d *DiskMaker) symLinkDeviceToPool(deviceNameLocation DiskLocation, symLinkPath string) error {
+	baseDeviceName := filepath.Base(deviceNameLocation.diskNamePath)
+	if fileExists(symLinkPath) {
+		klog.V(4).Infof("symlink %s already exists", symLinkPath)
+		return nil
+	}
+	// get PV creation lock which checks for existing symlinks to this device
+	pvLock, existingSymlinks, err := getPVCreationLock(deviceNameLocation.diskNamePath, d.symlinkLocation)
+	if err != nil {
+		return fmt.Errorf("error acquiring exclusive lock on %s", deviceNameLocation.diskNamePath)
+	}
+
+	unlockFunc := func() {
+		err := pvLock.unlock()
+		if err != nil {
+			klog.Errorf("failed to unlock device: %+v", err)
+		}
+	}
+	defer unlockFunc()
+
+	if len(existingSymlinks) > 0 {
+		e := newEvent(DeviceSymlinkExists, "this device is already matched by another LocalVolume or LocalVolumeSet", symLinkPath)
+		d.eventSync.report(e, d.localVolume)
+		return fmt.Errorf("device %s already has been mapped to local-storage pool", deviceNameLocation.diskNamePath)
+	}
+
+	var symLinkErr error
+	if deviceNameLocation.diskID != "" {
+		klog.V(3).Infof("symlinking to %s to %s", deviceNameLocation.diskID, symLinkPath)
+		symLinkErr = os.Symlink(deviceNameLocation.diskID, symLinkPath)
+	} else {
+		klog.V(3).Infof("symlinking to %s to %s", deviceNameLocation.diskNamePath, symLinkPath)
+		symLinkErr = os.Symlink(deviceNameLocation.diskNamePath, symLinkPath)
+	}
+
+	if symLinkErr != nil {
+		msg := fmt.Sprintf("error creating symlink %s: %v", symLinkPath, symLinkErr)
+		e := newEvent(ErrorFindingMatchingDisk, msg, deviceNameLocation.diskNamePath)
+		d.eventSync.report(e, d.localVolume)
+		return symLinkErr
+	}
+
+	successMsg := fmt.Sprintf("found matching disk %s", baseDeviceName)
+	e := newSuccessEvent(FoundMatchingDisk, successMsg, deviceNameLocation.diskNamePath)
+	d.eventSync.report(e, d.localVolume)
+	return nil
 }
 
 func (d *DiskMaker) findMatchingDisks(diskConfig *DiskConfig, deviceSet sets.String, allDiskIds []string) (map[string][]DiskLocation, error) {
@@ -309,4 +340,96 @@ func fileExists(filename string) bool {
 		return false
 	}
 	return true
+}
+
+// getPVCreationLock checks whether a PV can be created based on this device
+// and Locks the device so that no PVs can be created on it while the lock is held.
+// the PV lock will fail if:
+// - another process holds an exclusive file lock on the device (using the syscall flock)
+// - a symlink to this device exists in symlinkDirs
+// returns:
+// ExclusiveFileLock, must be unlocked regardless of success
+// bool determines if flock was placed on device.
+// existingLinkPaths is a list of existing symlinks. It is not exhaustive
+// error
+func getPVCreationLock(device string, symlinkDirs string) (exclusiveFileLock, []string, error) {
+	lock := exclusiveFileLock{path: device}
+	locked, err := lock.lock()
+	if err != nil || !locked {
+		return lock, []string{}, err
+	}
+	existingLinkPaths, err := getMatchingSymlinksInDirs(device, symlinkDirs)
+	if err != nil || len(existingLinkPaths) > 0 {
+		return lock, existingLinkPaths, err
+	}
+	return lock, existingLinkPaths, nil
+}
+
+// getMatchingSymlinksInDirs returns all the files in dir that are the same file as path after evaluating symlinks
+// it works using `find -L dir1 dir2 dirn -samefile path`
+func getMatchingSymlinksInDirs(path string, dirs string) ([]string, error) {
+	cmd := exec.Command("find", "-L", dirs, "-samefile", path)
+	output, err := executeCmdWithCombinedOutput(cmd)
+	if err != nil {
+		return []string{}, fmt.Errorf("failed to get symlinks in directories: %q for device path %q. %v", dirs, path, err)
+	}
+	links := make([]string, 0)
+	output = strings.Trim(output, " \n")
+	if len(output) < 1 {
+		return links, nil
+	}
+	split := strings.Split(output, "\n")
+	for _, entry := range split {
+		link := strings.Trim(entry, " ")
+		if len(link) != 0 {
+			links = append(links, link)
+		}
+	}
+	return links, nil
+}
+
+type exclusiveFileLock struct {
+	path   string
+	locked bool
+	fd     int
+}
+
+// lock locks the file so other process cannot open the file
+func (e *exclusiveFileLock) lock() (bool, error) {
+	// fd, errno := unix.Open(e.Path, unix.O_RDONLY, 0)
+	fd, errno := unix.Open(e.path, unix.O_RDONLY|unix.O_EXCL, 0)
+	e.fd = fd
+	if errno == unix.EBUSY {
+		e.locked = false
+		// device is in use
+		return false, nil
+	} else if errno != nil {
+		return false, errno
+	}
+	e.locked = true
+	return e.locked, nil
+
+}
+
+// unlock releases the lock. It is idempotent
+func (e *exclusiveFileLock) unlock() error {
+	if e.locked {
+		err := unix.Close(e.fd)
+		if err == nil {
+			e.locked = false
+			return nil
+		}
+		return fmt.Errorf("failed to unlock fd %q: %+v", e.fd, err)
+	}
+	return nil
+
+}
+
+func executeCmdWithCombinedOutput(cmd *exec.Cmd) (string, error) {
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return "", err
+	}
+
+	return strings.TrimSpace(string(output)), nil
 }
