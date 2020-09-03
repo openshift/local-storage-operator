@@ -30,6 +30,7 @@ func printVersion() {
 }
 
 func startDiskMaker(cmd *cobra.Command, args []string) error {
+	printVersion()
 	diskMaker, err := diskmaker.NewDiskMaker(configLocation, symlinkLocation)
 	if err != nil {
 		log.Error(err, "Failed to create DiskMaker")
