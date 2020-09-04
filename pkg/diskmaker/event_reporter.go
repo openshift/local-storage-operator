@@ -15,7 +15,8 @@ const (
 	ErrorFindingMatchingDisk = "ErrorFindingMatchingDisk"
 	ErrorCreatingSymLink     = "ErrorCreatingSymLink"
 
-	FoundMatchingDisk = "FoundMatchingDisk"
+	FoundMatchingDisk   = "FoundMatchingDisk"
+	DeviceSymlinkExists = "DeviceSymlinkExists"
 )
 
 type event struct {
