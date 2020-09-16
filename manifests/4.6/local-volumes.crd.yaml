@@ -60,7 +60,7 @@ spec:
                       - Filesystem
                     type: string
                   fsType:
-                    description: File system type
+                    description: File system type to create on empty volumes, such as "ext4" or "xfs". Used only when volumeMode is "Filesystem". Leave blank when volumeMode is "Block".
                     type: string
                   devicePaths:
                     description: 'A list of devices which would be chosen for local storage.
