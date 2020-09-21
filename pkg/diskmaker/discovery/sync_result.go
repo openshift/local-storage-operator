@@ -48,24 +48,15 @@ func newDiscoveryResultInstance(nodeName, namespace, parentObjName, parentObjUID
 func (discovery *DeviceDiscovery) ensureDiscoveryResultCR() error {
 	nodeName := os.Getenv("MY_NODE_NAME")
 	namespace := os.Getenv("WATCH_NAMESPACE")
-	parentObjUID := os.Getenv("UID")
-	parentObjName := os.Getenv("POD_NAME")
+	parentObjUID := os.Getenv("DISCOVERY_OBJECT_UID")
+	parentObjName := os.Getenv("DISCOVERY_OBJECT_NAME")
 	if nodeName == "" || namespace == "" || parentObjUID == "" || parentObjName == "" {
 		return errors.New("failed to create LocalVolumeDiscoveryResult resource. missing required env variables")
 	}
 	newCR := newDiscoveryResultInstance(nodeName, namespace, parentObjName, parentObjUID)
-	existingCR, err := discovery.apiClient.GetDiscoveryResult(newCR.Name, newCR.Namespace)
-	switch {
-	case err == nil:
-		existingCR.ObjectMeta.OwnerReferences = newCR.ObjectMeta.OwnerReferences
-		newCR.ObjectMeta = existingCR.ObjectMeta
-		err = discovery.apiClient.UpdateDiscoveryResult(newCR)
-		if err != nil {
-			return errors.Wrapf(err, "failed to update LocalVolumeDiscoveryResult resource")
-		}
-		klog.Info("successfully updated LocalVolumeDiscoveryResult resource")
-		return nil
-	case kerrors.IsNotFound(err):
+	_, err := discovery.apiClient.GetDiscoveryResult(newCR.Name, newCR.Namespace)
+
+	if kerrors.IsNotFound(err) {
 		err = discovery.apiClient.CreateDiscoveryResult(newCR)
 		if err != nil {
 			return errors.Wrapf(err, "failed to create LocalVolumeDiscoveryResult resource")
