@@ -17,6 +17,18 @@ const (
 	DiscoveryFailed DiscoveryPhase = "DiscoveryFailed"
 )
 
+// DiscoveredDeviceType is the types that will be discovered by the LSO.
+type DiscoveredDeviceType string
+
+const (
+	// DiskType represents a device-type of block disk
+	DiskType DiscoveredDeviceType = "disk"
+	// PartType represents a device-type of partion
+	PartType DiscoveredDeviceType = "part"
+	// LVMType is an LVM type
+	LVMType DiscoveredDeviceType = "lvm"
+)
+
 // LocalVolumeDiscoverySpec defines the desired state of LocalVolumeDiscovery
 type LocalVolumeDiscoverySpec struct {
 	// Nodes on which the automatic detection policies must run.

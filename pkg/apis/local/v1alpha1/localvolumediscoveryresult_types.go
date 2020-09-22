@@ -31,7 +31,7 @@ type DiscoveredDevice struct {
 	// Model of the discovered device
 	Model string `json:"model"`
 	// Type of the discovered device
-	Type DeviceType `json:"type"`
+	Type DiscoveredDeviceType `json:"type"`
 	// Vendor of the discovered device
 	Vendor string `json:"vendor"`
 	// Serial number of the disk

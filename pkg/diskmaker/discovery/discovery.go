@@ -15,6 +15,7 @@ import (
 	"github.com/openshift/local-storage-operator/pkg/diskmaker/controllers/lvset"
 	"github.com/openshift/local-storage-operator/pkg/internal"
 	"github.com/pkg/errors"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/klog"
 )
@@ -28,6 +29,8 @@ const (
 	biosBoot                      = "BIOS-BOOT"
 	efiSystem                     = "EFI-SYSTEM"
 )
+
+var supportedDeviceTypes = sets.NewString("disk", "part", "lvm")
 
 // DeviceDiscovery instance
 type DeviceDiscovery struct {
@@ -211,7 +214,7 @@ func ignoreDevices(dev internal.BlockDevice) bool {
 		return true
 	}
 
-	if !(dev.Type == "disk" || dev.Type == "part") {
+	if !supportedDeviceTypes.Has(dev.Type) {
 		klog.Infof("ignoring device %q with invalid type %q", dev.Name, dev.Type)
 		return true
 	}
@@ -257,12 +260,14 @@ func parseDeviceProperty(property string) v1alpha1.DeviceMechanicalProperty {
 	return ""
 }
 
-func parseDeviceType(deviceType string) v1alpha1.DeviceType {
+func parseDeviceType(deviceType string) v1alpha1.DiscoveredDeviceType {
 	switch {
 	case deviceType == "disk":
-		return v1alpha1.RawDisk
+		return v1alpha1.DiskType
 	case deviceType == "part":
-		return v1alpha1.Partition
+		return v1alpha1.PartType
+	case deviceType == "lvm":
+		return v1alpha1.LVMType
 	}
 
 	return ""
