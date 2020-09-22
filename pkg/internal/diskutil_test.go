@@ -2,6 +2,7 @@ package internal
 
 import (
 	"fmt"
+	"io/ioutil"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -182,6 +183,64 @@ func TestHasChildren(t *testing.T) {
 		actual, err := tc.blockDevice.HasChildren()
 		assert.NoError(t, err)
 		assert.Equalf(t, tc.expected, actual, "[%s]: failed to check if devie %q has child partitions", tc.label, tc.blockDevice.Name)
+	}
+}
+
+func TestHasBindMounts(t *testing.T) {
+	tempDir, err := ioutil.TempDir("", "discovery")
+	if err != nil {
+		t.Fatalf("error creating temp directory : %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	testcases := []struct {
+		label              string
+		blockDevice        BlockDevice
+		mountInfo          string
+		expected           bool
+		expectedMountPoint string
+	}{
+		{
+			label:              "Case 1", // device with bind mounts
+			blockDevice:        BlockDevice{Name: "sdc"},
+			mountInfo:          "5595 121 0:6 /sdc /var/lib/kubelet/plugins/kubernetes.io~local-volume/volumeDevices/local-pv-343bdd9/6d9d33ae-408e-4bac-81f7-c0bc347a9667 rw shared:23 - devtmpfs devtmpfs rw,seclabel,size=32180404k,nr_inodes=8045101,mode=755",
+			expected:           true,
+			expectedMountPoint: "/var/lib/kubelet/plugins/kubernetes.io~local-volume/volumeDevices/local-pv-343bdd9/6d9d33ae-408e-4bac-81f7-c0bc347a9667",
+		},
+		{
+			label:              "Case 2", // device with regular mounts
+			blockDevice:        BlockDevice{Name: "sdc"},
+			mountInfo:          "121 98 259:1 / /boot rw,relatime shared:65 - ext4 /dev/sdc rw,seclabel",
+			expected:           true,
+			expectedMountPoint: "/boot",
+		},
+		{
+			label:              "Case 3", // device does not have mount points
+			blockDevice:        BlockDevice{Name: "sdd"},
+			mountInfo:          "5595 121 0:6 /sdc /var/lib/kubelet/plugins/kubernetes.io~local-volume/volumeDevices/local-pv-343bdd9/6d9d33ae-408e-4bac-81f7-c0bc347a9667 rw shared:23 - devtmpfs devtmpfs rw,seclabel,size=32180404k,nr_inodes=8045101,mode=755",
+			expected:           false,
+			expectedMountPoint: "",
+		},
+		{
+			label:              "Case 4", // device does not have mount points
+			blockDevice:        BlockDevice{Name: "sdc"},
+			mountInfo:          "",
+			expected:           false,
+			expectedMountPoint: "",
+		},
+	}
+
+	for _, tc := range testcases {
+		filename := filepath.Join(tempDir, "mountfile")
+		err = ioutil.WriteFile(filename, []byte(tc.mountInfo), 0755)
+		if err != nil {
+			t.Fatalf("error writing mount info to file : %v", err)
+		}
+		mountFile = filename
+		actual, mountPoint, err := tc.blockDevice.HasBindMounts()
+		assert.NoError(t, err)
+		assert.Equalf(t, tc.expected, actual, "[%s]: failed to check bind mounts", tc.label)
+		assert.Equalf(t, tc.expectedMountPoint, mountPoint, "[%s]: failed to get correct mount point", tc.label)
 	}
 }
 

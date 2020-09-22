@@ -192,6 +192,7 @@ func getDiskMakerDiscoveryDSMutateFn(request reconcile.Request,
 		ds.Spec.Template.Spec.Containers[0].Env = append(ds.Spec.Template.Spec.Containers[0].Env, envVars...)
 		ds.Spec.Template.Spec.Containers[0].Image = common.GetDiskMakerImage()
 		ds.Spec.Template.Spec.Containers[0].Args = []string{"discover"}
+		ds.Spec.Template.Spec.HostPID = true
 
 		return nil
 	}
