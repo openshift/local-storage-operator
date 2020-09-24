@@ -2,6 +2,7 @@ package nodedaemon
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/openshift/local-storage-operator/pkg/common"
 	appsv1 "k8s.io/api/apps/v1"
@@ -73,6 +74,13 @@ func getDiskMakerDSMutateFn(
 			nodeSelector,
 			name,
 		)
+
+		// bind mount the host's "/run/udev" for `lsblk -o FSTYPE` value to be accurate
+		ds.Spec.Template.Spec.Volumes = append(ds.Spec.Template.Spec.Volumes, common.UDevHostDirVolume)
+		if len(ds.Spec.Template.Spec.Containers) < 1 {
+			return fmt.Errorf("can't add volumeMount to container, the daemonset has not specified any containers: %+v", ds)
+		}
+		ds.Spec.Template.Spec.Containers[0].VolumeMounts = append(ds.Spec.Template.Spec.Containers[0].VolumeMounts, common.UDevMount)
 		// add provisioner configmap hash
 		initMapIfNil(&ds.ObjectMeta.Annotations)
 		ds.ObjectMeta.Annotations[dataHashAnnotationKey] = dataHash
@@ -114,8 +122,7 @@ func getLocalProvisionerDSMutateFn(
 	}
 }
 
-//
-
+// getProvisionerVolumesAndMounts defines the common set of volumes and mounts for localvolumeset daemonsets
 func getProvisionerVolumesAndMounts() ([]corev1.Volume, []corev1.VolumeMount) {
 	volumes := []corev1.Volume{
 		common.SymlinkHostDirVolume,
