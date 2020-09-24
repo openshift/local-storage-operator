@@ -9,9 +9,10 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/openshift/local-storage-operator/pkg/common"
+
 	"github.com/go-logr/logr"
 	localv1alpha1 "github.com/openshift/local-storage-operator/pkg/apis/local/v1alpha1"
-	"github.com/openshift/local-storage-operator/pkg/controller/nodedaemon"
 	"github.com/openshift/local-storage-operator/pkg/diskmaker"
 	"github.com/openshift/local-storage-operator/pkg/internal"
 	corev1 "k8s.io/api/core/v1"
@@ -71,7 +72,7 @@ func (r *ReconcileLocalVolumeSet) Reconcile(request reconcile.Request) (reconcil
 
 	// get associated provisioner config
 	cm := &corev1.ConfigMap{}
-	err = r.client.Get(context.TODO(), types.NamespacedName{Name: nodedaemon.ProvisionerConfigMapName, Namespace: request.Namespace}, cm)
+	err = r.client.Get(context.TODO(), types.NamespacedName{Name: common.ProvisionerConfigMapName, Namespace: request.Namespace}, cm)
 	if err != nil {
 		reqLogger.Error(err, "could not get provisioner configmap")
 		return reconcile.Result{}, err

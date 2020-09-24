@@ -114,58 +114,27 @@ func getLocalProvisionerDSMutateFn(
 	}
 }
 
+//
+
 func getProvisionerVolumesAndMounts() ([]corev1.Volume, []corev1.VolumeMount) {
-	hostContainerPropagation := corev1.MountPropagationHostToContainer
-	volumeMounts := []corev1.VolumeMount{
-		{
-			Name:             "local-disks",
-			MountPath:        common.GetLocalDiskLocationPath(),
-			MountPropagation: &hostContainerPropagation,
-		},
-		{
-			Name:             "device-dir",
-			MountPath:        "/dev",
-			MountPropagation: &hostContainerPropagation,
-		},
-		{
-			Name:      "provisioner-config",
-			ReadOnly:  true,
-			MountPath: "/etc/provisioner/config",
-		},
-	}
-	directoryHostPath := corev1.HostPathDirectory
 	volumes := []corev1.Volume{
-		{
-			Name: "local-disks",
-			VolumeSource: corev1.VolumeSource{
-				HostPath: &corev1.HostPathVolumeSource{
-					Path: common.GetLocalDiskLocationPath(),
-				},
-			},
-		},
-		{
-			Name: "device-dir",
-			VolumeSource: corev1.VolumeSource{
-				HostPath: &corev1.HostPathVolumeSource{
-					Path: "/dev",
-					Type: &directoryHostPath,
-				},
-			},
-		},
-		{
-			Name: "provisioner-config",
-			VolumeSource: corev1.VolumeSource{
-				ConfigMap: &corev1.ConfigMapVolumeSource{
-					LocalObjectReference: corev1.LocalObjectReference{
-						Name: ProvisionerConfigMapName,
-					},
-				},
-			},
-		},
+		common.SymlinkHostDirVolume,
+		common.DevHostDirVolume,
+		common.ProvisionerConfigHostDirVolume,
 	}
+	volumeMounts := []corev1.VolumeMount{
+		common.SymlinkMount,
+		common.DevMount,
+		common.ProvisionerConfigMount,
+	}
+
 	return volumes, volumeMounts
 }
 
+// MutateAggregatedSpec returns a mutate function that applies the other arguments to the referenced daemonset
+// its purpose is to be used in more specific mutate functions
+// that can that be applied to an empty corev1.DaemonSet{} before a Create()
+// or applied to an existing one before an Update()
 func MutateAggregatedSpec(
 	ds *appsv1.DaemonSet,
 	request reconcile.Request,
