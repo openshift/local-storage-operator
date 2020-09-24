@@ -26,8 +26,6 @@ const (
 	probeInterval                 = 5 * time.Minute
 	resultCRName                  = "discovery-result-%s"
 	resultCRLabel                 = "discovery-result-node"
-	biosBoot                      = "BIOS-BOOT"
-	efiSystem                     = "EFI-SYSTEM"
 )
 
 var supportedDeviceTypes = sets.NewString("disk", "part", "lvm")
@@ -231,7 +229,12 @@ func getDeviceStatus(dev internal.BlockDevice) v1alpha1.DeviceStatus {
 		return status
 	}
 
-	if dev.PartLabel == biosBoot || dev.PartLabel == efiSystem {
+	noBiosInPartLabel, err := lvset.FilterMap["noBiosInPartLabel"](dev, nil)
+	if err != nil {
+		status.State = v1alpha1.Unknown
+		return status
+	}
+	if !noBiosInPartLabel {
 		klog.Infof("device %q with part label %q is not available", dev.Name, dev.PartLabel)
 		status.State = v1alpha1.NotAvailable
 		return status

@@ -15,6 +15,7 @@ const (
 	notReadOnly           = "notReadOnly"
 	notRemovable          = "notRemovable"
 	notSuspended          = "notSuspended"
+	noBiosInPartLabel     = "noBiosInPartLabel"
 	noFilesystemSignature = "noFilesystemSignature"
 	// file access , can't mock test
 	noChildren = "noChildren"
@@ -47,6 +48,11 @@ var FilterMap = map[string]func(internal.BlockDevice, *localv1alpha1.DeviceInclu
 	notSuspended: func(dev internal.BlockDevice, spec *localv1alpha1.DeviceInclusionSpec) (bool, error) {
 		matched := dev.State != internal.StateSuspended
 		return matched, nil
+	},
+
+	noBiosInPartLabel: func(dev internal.BlockDevice, spec *localv1alpha1.DeviceInclusionSpec) (bool, error) {
+		biosInPartLabel := strings.Contains(strings.ToLower(dev.PartLabel), strings.ToLower("bios"))
+		return !biosInPartLabel, nil
 	},
 
 	noFilesystemSignature: func(dev internal.BlockDevice, spec *localv1alpha1.DeviceInclusionSpec) (bool, error) {
