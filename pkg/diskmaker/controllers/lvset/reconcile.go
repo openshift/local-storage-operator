@@ -100,7 +100,7 @@ func (r *ReconcileLocalVolumeSet) Reconcile(request reconcile.Request) (reconcil
 	}
 
 	// find disks that match lvset filters and matchers
-	validDevices := r.getValidDevices(reqLogger, lvset, blockDevices)
+	validDevices, delayedDevices := r.getValidDevices(reqLogger, lvset, blockDevices)
 
 	// process valid devices
 	var noMatch []string
@@ -136,19 +136,33 @@ func (r *ReconcileLocalVolumeSet) Reconcile(request reconcile.Request) (reconcil
 		reqLogger.Info("found stale symLink Entries", "storageClass.Name", storageClass, "paths.List", noMatch, "directory", symLinkDir)
 	}
 
-	return reconcile.Result{Requeue: true, RequeueAfter: time.Minute}, nil
+	// shorten the requeueTime if there are delayed devices
+	requeueTime := time.Minute
+	if len(delayedDevices) > 1 {
+		requeueTime = deviceMinAge / 2
+	}
+
+	return reconcile.Result{Requeue: true, RequeueAfter: requeueTime}, nil
 }
 
-// runs filters and matchers on the blockDeviceList and returns valid devices.
+// runs filters and matchers on the blockDeviceList and returns valid devices
+// and devices that are not considered old enough to be valid yet
+// i.e. if the device is younger than deviceMinAge
+// if the waitingDevices list is nonempty, the operator should requeueue
 func (r *ReconcileLocalVolumeSet) getValidDevices(
 	reqLogger logr.Logger,
 	lvset *localv1alpha1.LocalVolumeSet,
 	blockDevices []internal.BlockDevice,
-) []internal.BlockDevice {
+) ([]internal.BlockDevice, []internal.BlockDevice) {
 	validDevices := make([]internal.BlockDevice, 0)
+	delayedDevices := make([]internal.BlockDevice, 0)
 	// get valid devices
 DeviceLoop:
 	for _, blockDevice := range blockDevices {
+
+		// check if the device is older than deviceMinAge
+		// set firstObserved if not previously observed.
+		isOldEnough := r.deviceAgeMap.isOlderThan(blockDevice.KName, deviceMinAge)
 
 		devLogger := reqLogger.WithValues("Device.Name", blockDevice.Name)
 		for name, filter := range FilterMap {
@@ -165,6 +179,13 @@ DeviceLoop:
 				continue DeviceLoop
 			}
 		}
+
+		// skip devices younger than deviceMinAge
+		if !isOldEnough {
+			delayedDevices = append(delayedDevices, blockDevice)
+			continue DeviceLoop
+		}
+
 		for name, matcher := range matcherMap {
 			matcherLogger := devLogger.WithValues("matcher.Name", name)
 			valid, err := matcher(blockDevice, lvset.Spec.DeviceInclusionSpec)
@@ -182,7 +203,7 @@ DeviceLoop:
 		validDevices = append(validDevices, blockDevice)
 
 	}
-	return validDevices
+	return validDevices, delayedDevices
 }
 
 func getAlreadyProvisioned(symLinkDir string, validDevices []internal.BlockDevice) (int, []string, error) {

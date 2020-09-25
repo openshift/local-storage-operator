@@ -27,6 +27,7 @@ func Add(mgr manager.Manager) error {
 		client:        mgr.GetClient(),
 		scheme:        mgr.GetScheme(),
 		eventReporter: newEventReporter(mgr.GetEventRecorderFor(ComponentName)),
+		deviceAgeMap:  newAgeMap(),
 	}
 	// Create a new controller
 	c, err := controller.New(ComponentName, mgr, controller.Options{Reconciler: r})
@@ -60,6 +61,8 @@ type ReconcileLocalVolumeSet struct {
 	client        client.Client
 	scheme        *runtime.Scheme
 	eventReporter *eventReporter
+	// map from KNAME of device to time when the device was first observed since the process started
+	deviceAgeMap *ageMap
 }
 
 var _ reconcile.Reconciler = &ReconcileLocalVolumeSet{}
