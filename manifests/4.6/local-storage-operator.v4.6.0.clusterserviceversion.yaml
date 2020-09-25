@@ -429,3 +429,20 @@ spec:
             path: conditions
             x-descriptors:
               - 'urn:alm:descriptor:io.kubernetes.conditions'
+      - displayName: Local Volume Discovery Result
+        group: local.storage.openshift.io
+        kind: LocalVolumeDiscoveryResult
+        name: localvolumediscoveryresults.local.storage.openshift.io
+        description: Disc inventory of available disks from selected nodes
+        version: v1alpha1
+        specDescriptors:
+          - description: Node on which the devices are discovered
+            displayName: NodeName
+            path: nodeName
+        statusDescriptors:
+          - description: DiscoveredTimeStamp is the last timestamp when the list of discovered devices was updated
+            displayName: DiscoveredTimeStamp
+            path: discoveredTimeStamp
+          - description: DiscoveredDevices contains the list of devices discovered on the node
+            displayName: DiscoveredDevices
+            path: discoveredDevices
