@@ -22,6 +22,7 @@ func TestEventReporer(t *testing.T) {
 		newDiskEvent(diskmaker.ErrorFindingMatchingDisk, "no matching device", "/dev/sdc", corev1.EventTypeWarning),
 		newDiskEvent(diskmaker.ErrorCreatingSymLink, "couldn't create symlink", "/dev/sde", corev1.EventTypeWarning),
 		newDiskEvent(diskmaker.FoundMatchingDisk, "Found matching disk", "/dev/sdf", corev1.EventTypeNormal),
+		newDiskEvent(DiscoveredNewDevice, "Found possible matching disk, waiting to try claiming", "/dev/sdf", corev1.EventTypeNormal),
 		newDiskEvent("asdf", "Found matching disk", "/dev/sdf", corev1.EventTypeNormal),
 	}
 	fakeRecorder := record.NewFakeRecorder(len(uniqueEvents) * 8)

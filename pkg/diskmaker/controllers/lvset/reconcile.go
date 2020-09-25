@@ -183,6 +183,17 @@ DeviceLoop:
 		// skip devices younger than deviceMinAge
 		if !isOldEnough {
 			delayedDevices = append(delayedDevices, blockDevice)
+			// record DiscoveredDevice event
+			if lvset != nil {
+				r.eventReporter.Report(
+					lvset,
+					newDiskEvent(
+						DiscoveredNewDevice,
+						fmt.Sprintf("found possible matching disk, waiting %v to claim", deviceMinAge),
+						blockDevice.KName, corev1.EventTypeNormal,
+					),
+				)
+			}
 			continue DeviceLoop
 		}
 
