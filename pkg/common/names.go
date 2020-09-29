@@ -21,6 +21,9 @@ const (
 	ProvisionerImageEnv = "PROVISIONER_IMAGE"
 	// LocalDiskLocationEnv is passed to the operator to override the LOCAL_DISK_LOCATION host directory
 	LocalDiskLocationEnv = "LOCAL_DISK_LOCATION"
+
+	// ProvisionerConfigMapName is the name of the local-static-provisioner configmap
+	ProvisionerConfigMapName = "local-volumeset-provisioner"
 )
 
 // GetLocalProvisionerImage return the image to be used for provisioner daemonset

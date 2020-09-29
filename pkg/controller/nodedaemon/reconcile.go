@@ -15,8 +15,6 @@ const (
 	ProvisionerName = "localvolumeset-local-provisioner"
 	// DiskMakerName is the name of the diskmaker-manager daemonset
 	DiskMakerName = "diskmaker-manager"
-	// ProvisionerConfigMapName is the name of the local-static-provisioner configmap
-	ProvisionerConfigMapName = "local-volumeset-provisioner"
 
 	dataHashAnnotationKey = "local.storage.openshift.io/configMapDataHash"
 )

@@ -56,7 +56,7 @@ func AddDaemonReconciler(mgr manager.Manager) error {
 	}
 
 	// watch provisioner configmap
-	err = c.Watch(&source.Kind{Type: &corev1.ConfigMap{}}, enqueueOnlyNamespace, common.EnqueueOnlyLabeledSubcomponents(ProvisionerConfigMapName))
+	err = c.Watch(&source.Kind{Type: &corev1.ConfigMap{}}, enqueueOnlyNamespace, common.EnqueueOnlyLabeledSubcomponents(common.ProvisionerConfigMapName))
 	if err != nil {
 		return err
 	}

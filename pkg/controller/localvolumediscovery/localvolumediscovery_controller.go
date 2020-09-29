@@ -34,8 +34,6 @@ var (
 )
 
 const (
-	udevPath           = "/run/udev"
-	udevVolName        = "run-udev"
 	DiskMakerDiscovery = "diskmaker-discovery"
 )
 
@@ -279,51 +277,16 @@ func (r *ReconcileLocalVolumeDiscovery) getDaemonSetStatus(namespace string) (in
 }
 
 func getVolumesAndMounts() ([]corev1.Volume, []corev1.VolumeMount) {
-	hostContainerPropagation := corev1.MountPropagationHostToContainer
-	volumeMounts := []corev1.VolumeMount{
-		{
-			Name:             "local-disks",
-			MountPath:        common.GetLocalDiskLocationPath(),
-			MountPropagation: &hostContainerPropagation,
-		},
-		{
-			Name:             "device-dir",
-			MountPath:        "/dev",
-			MountPropagation: &hostContainerPropagation,
-		},
-		{
-			Name:             udevVolName,
-			MountPath:        udevPath,
-			MountPropagation: &hostContainerPropagation,
-		},
-	}
-	directoryHostPath := corev1.HostPathDirectory
 	volumes := []corev1.Volume{
-		{
-			Name: "local-disks",
-			VolumeSource: corev1.VolumeSource{
-				HostPath: &corev1.HostPathVolumeSource{
-					Path: common.GetLocalDiskLocationPath(),
-				},
-			},
-		},
-		{
-			Name: "device-dir",
-			VolumeSource: corev1.VolumeSource{
-				HostPath: &corev1.HostPathVolumeSource{
-					Path: "/dev",
-					Type: &directoryHostPath,
-				},
-			},
-		},
-		{
-			Name: udevVolName,
-			VolumeSource: corev1.VolumeSource{
-				HostPath: &corev1.HostPathVolumeSource{Path: udevPath},
-			},
-		},
+		common.SymlinkHostDirVolume,
+		common.DevHostDirVolume,
+		common.UDevHostDirVolume,
 	}
-
+	volumeMounts := []corev1.VolumeMount{
+		common.SymlinkMount,
+		common.DevMount,
+		common.UDevMount,
+	}
 	return volumes, volumeMounts
 }
 

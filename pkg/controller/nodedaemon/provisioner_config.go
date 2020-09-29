@@ -27,9 +27,9 @@ func (r *DaemonReconciler) reconcileProvisionerConfigMap(
 ) (*corev1.ConfigMap, controllerutil.OperationResult, error) {
 	// object meta
 	objectMeta := metav1.ObjectMeta{
-		Name:      ProvisionerConfigMapName,
+		Name:      common.ProvisionerConfigMapName,
 		Namespace: request.Namespace,
-		Labels:    map[string]string{"app": ProvisionerConfigMapName},
+		Labels:    map[string]string{"app": common.ProvisionerConfigMapName},
 	}
 	configMap := &corev1.ConfigMap{ObjectMeta: objectMeta}
 
