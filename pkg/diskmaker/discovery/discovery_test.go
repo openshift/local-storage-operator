@@ -388,7 +388,7 @@ func TestGetDiscoveredDevices(t *testing.T) {
 				{
 					Name:       "sda1",
 					KName:      "sda1",
-					FSType:     "",
+					FSType:     "vfat",
 					Type:       "part",
 					Size:       "62913494528",
 					Model:      "",
@@ -411,7 +411,7 @@ func TestGetDiscoveredDevices(t *testing.T) {
 					Serial:   "",
 					Size:     int64(62913494528),
 					Property: "NonRotational",
-					FSType:   "",
+					FSType:   "vfat",
 					Status:   v1alpha1.DeviceStatus{State: "NotAvailable"},
 				},
 			},

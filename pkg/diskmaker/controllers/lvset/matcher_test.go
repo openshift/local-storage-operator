@@ -140,6 +140,55 @@ func TestNotSuspended(t *testing.T) {
 	}
 	assertAll(t, results)
 }
+func TestnoBiosInPartLabel(t *testing.T) {
+	matcherMap := FilterMap
+	matcher := noBiosInPartLabel
+	results := []knownMatcherResult{
+		// true
+		{
+			matcherMap: matcherMap, matcher: matcher,
+			dev:         internal.BlockDevice{PartLabel: "asdf"},
+			expectMatch: true,
+		},
+		{
+			matcherMap: matcherMap, matcher: matcher,
+			dev:         internal.BlockDevice{PartLabel: ""},
+			expectMatch: true,
+		},
+		// false
+		{
+			matcherMap: matcherMap, matcher: matcher,
+			dev:         internal.BlockDevice{PartLabel: "BIOS-BOOT"},
+			expectMatch: false,
+		},
+		{
+			matcherMap: matcherMap, matcher: matcher,
+			dev:         internal.BlockDevice{PartLabel: "bios-boot"},
+			expectMatch: false,
+		},
+		{
+			matcherMap: matcherMap, matcher: matcher,
+			dev:         internal.BlockDevice{PartLabel: "bios boot partion"},
+			expectMatch: false,
+		},
+		{
+			matcherMap: matcherMap, matcher: matcher,
+			dev:         internal.BlockDevice{PartLabel: "this is a BIOS BOOT partion"},
+			expectMatch: false,
+		},
+		{
+			matcherMap: matcherMap, matcher: matcher,
+			dev:         internal.BlockDevice{PartLabel: "bios"},
+			expectMatch: false,
+		},
+		{
+			matcherMap: matcherMap, matcher: matcher,
+			dev:         internal.BlockDevice{PartLabel: "BIOS"},
+			expectMatch: false,
+		},
+	}
+	assertAll(t, results)
+}
 
 func TestNoFilesystemSignature(t *testing.T) {
 	matcherMap := FilterMap
