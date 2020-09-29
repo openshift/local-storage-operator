@@ -13,27 +13,46 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+var lsblkOut string
+var blkidOut string
+
+// helperCommand returns a fake exec.Cmd for unit tests
+func helperCommand(command string, args ...string) *exec.Cmd {
+	cs := []string{"-test.run=TestHelperProcess", "--", command}
+	cs = append(cs, args...)
+	cmd := exec.Command(os.Args[0], cs...)
+	cmd.Env = []string{"GO_WANT_HELPER_PROCESS=1", fmt.Sprintf("COMMAND=%s", command),
+		fmt.Sprintf("LSBLKOUT=%s", lsblkOut), fmt.Sprintf("BLKIDOUT=%s", blkidOut)}
+	return cmd
+}
+
 func TestHelperProcess(t *testing.T) {
 	if os.Getenv("GO_WANT_HELPER_PROCESS") != "1" {
 		return
 	}
-	fmt.Fprintf(os.Stdout, os.Getenv("STDOUT"))
-	os.Exit(0)
+
+	defer os.Exit(0)
+	switch os.Getenv("COMMAND") {
+	case "lsblk":
+		fmt.Fprintf(os.Stdout, os.Getenv("LSBLKOUT"))
+	case "blkid":
+		fmt.Fprintf(os.Stdout, os.Getenv("BLKIDOUT"))
+	}
 }
 
 func TestDiscoverDevices(t *testing.T) {
 	testcases := []struct {
-		label             string
-		deviceDiscovery   *DeviceDiscovery
-		fakeExecCmdOutput string
-		fakeGlobfunc      func(string) ([]string, error)
-		errMessage        error
+		deviceDiscovery    *DeviceDiscovery
+		fakelsblkCmdOutput string
+		fakeblkidCmdOutput string
+		fakeGlobfunc       func(string) ([]string, error)
+		errMessage         error
 	}{
 		{
-			label:           "Case 1",
-			deviceDiscovery: getFakeDeviceDiscovery(),
-			fakeExecCmdOutput: `NAME="sda" KNAME="sda" ROTA="1" TYPE="disk" SIZE="62914560000" MODEL="VBOX HARDDISK" VENDOR="ATA" RO="0" RM="0" STATE="running" FSTYPE="" SERIAL=""` + "\n" +
-				`NAME="sda1" KNAME="sda1" ROTA="1" TYPE="part" SIZE="62913494528" MODEL="" VENDOR="" RO="0" RM="0" STATE="" FSTYPE="" SERIAL=""`,
+			deviceDiscovery:    getFakeDeviceDiscovery(),
+			fakeblkidCmdOutput: "",
+			fakelsblkCmdOutput: `NAME="sda" KNAME="sda" ROTA="1" TYPE="disk" SIZE="62914560000" MODEL="VBOX HARDDISK" VENDOR="ATA" RO="0" RM="0" STATE="running" SERIAL=""` + "\n" +
+				`NAME="sda1" KNAME="sda1" ROTA="1" TYPE="part" SIZE="62913494528" MODEL="" VENDOR="" RO="0" RM="0" STATE="" SERIAL=""`,
 			fakeGlobfunc: func(name string) ([]string, error) {
 				return []string{"removable", "subsytem", "sda"}, nil
 			},
@@ -42,8 +61,9 @@ func TestDiscoverDevices(t *testing.T) {
 	}
 
 	for _, tc := range testcases {
-		internal.ExecResult = tc.fakeExecCmdOutput
-		internal.ExecCommand = internal.FakeExecCommand
+		lsblkOut = tc.fakelsblkCmdOutput
+		blkidOut = tc.fakeblkidCmdOutput
+		internal.ExecCommand = helperCommand
 		internal.FilePathGlob = tc.fakeGlobfunc
 		defer func() {
 			internal.FilePathGlob = filepath.Glob
@@ -56,23 +76,21 @@ func TestDiscoverDevices(t *testing.T) {
 }
 func TestDiscoverDevicesFail(t *testing.T) {
 	testcases := []struct {
-		label             string
-		deviceDiscovery   *DeviceDiscovery
-		mockClient        *diskmaker.MockAPIUpdater
-		fakeExecCmdOutput string
-		fakeGlobfunc      func(string) ([]string, error)
-		errMessage        error
+		deviceDiscovery    *DeviceDiscovery
+		mockClient         *diskmaker.MockAPIUpdater
+		fakeLsblkCmdOutput string
+		fakeGlobfunc       func(string) ([]string, error)
+		errMessage         error
 	}{
 		{
-			label:           "Case 1",
 			deviceDiscovery: getFakeDeviceDiscovery(),
 			mockClient: &diskmaker.MockAPIUpdater{
 				MockUpdateDiscoveryResultStatus: func(lvdr *v1alpha1.LocalVolumeDiscoveryResult) error {
 					return fmt.Errorf("failed to update status")
 				},
 			},
-			fakeExecCmdOutput: `NAME="sda" KNAME="sda" ROTA="1" TYPE="disk" SIZE="62914560000" MODEL="VBOX HARDDISK" VENDOR="ATA" RO="1" RM="0" STATE="running" FSTYPE="" SERIAL=""` + "\n" +
-				`NAME="sda1" KNAME="sda1" ROTA="1" TYPE="part" SIZE="62913494528" MODEL="" VENDOR="" RO="0" RM="0" STATE="" FSTYPE="" SERIAL=""`,
+			fakeLsblkCmdOutput: `NAME="sda" KNAME="sda" ROTA="1" TYPE="disk" SIZE="62914560000" MODEL="VBOX HARDDISK" VENDOR="ATA" RO="1" RM="0" STATE="running" FSTYPE="" SERIAL=""` + "\n" +
+				`NAME="sda1" KNAME="sda1" ROTA="1" TYPE="part" SIZE="62913494528" MODEL="" VENDOR="" RO="0" RM="0" STATE="" SERIAL=""`,
 			fakeGlobfunc: func(name string) ([]string, error) {
 				return []string{"removable", "subsytem"}, nil
 			},
@@ -81,8 +99,8 @@ func TestDiscoverDevicesFail(t *testing.T) {
 	}
 
 	for _, tc := range testcases {
-		internal.ExecResult = tc.fakeExecCmdOutput
-		internal.ExecCommand = internal.FakeExecCommand
+		lsblkOut = tc.fakeLsblkCmdOutput
+		internal.ExecCommand = helperCommand
 		internal.FilePathGlob = tc.fakeGlobfunc
 		defer func() {
 			internal.FilePathGlob = filepath.Glob
@@ -103,7 +121,7 @@ func TestIgnoreDevices(t *testing.T) {
 		errMessage   error
 	}{
 		{
-			label: "Case 1", // don't ignore disk type
+			label: "Case 1: don't ignore disk type",
 			blockDevice: internal.BlockDevice{
 				Name:     "sdb",
 				KName:    "sdb",
@@ -118,7 +136,7 @@ func TestIgnoreDevices(t *testing.T) {
 			errMessage: fmt.Errorf("ignored wrong device"),
 		},
 		{
-			label: "Case 2", // don't ignore lvm type
+			label: "Case 2: don't ignore lvm type",
 			blockDevice: internal.BlockDevice{
 				Name:     "sdb",
 				KName:    "sdb",
@@ -133,7 +151,7 @@ func TestIgnoreDevices(t *testing.T) {
 			errMessage: fmt.Errorf("ignored wrong device"),
 		},
 		{
-			label: "Case 3", // ignore read only devices
+			label: "Case 3: ignore read only devices",
 			blockDevice: internal.BlockDevice{
 				Name:     "sdb",
 				KName:    "sdb",
@@ -148,7 +166,7 @@ func TestIgnoreDevices(t *testing.T) {
 			errMessage: fmt.Errorf("failed to ignore read only device"),
 		},
 		{
-			label: "Case 4", // ignore devices in suspended state
+			label: "Case 4: ignore devices in suspended state",
 			blockDevice: internal.BlockDevice{
 				Name:     "sdb",
 				KName:    "sdb",
@@ -163,7 +181,7 @@ func TestIgnoreDevices(t *testing.T) {
 			errMessage: fmt.Errorf("ignored wrong suspended device"),
 		},
 		{
-			label: "Case 5", // ignore root device with children
+			label: "Case 5: ignore root device with children",
 			blockDevice: internal.BlockDevice{
 				Name:     "sdb",
 				KName:    "sdb",
@@ -194,15 +212,17 @@ func TestValidBlockDevices(t *testing.T) {
 	testcases := []struct {
 		label                        string
 		blockDevices                 []internal.BlockDevice
-		fakeExecCmdOutput            string
+		fakeLsblkCmdOutput           string
+		fakeblkidCmdOutput           string
 		fakeGlobfunc                 func(string) ([]string, error)
 		expectedDiscoveredDeviceSize int
 		errMessage                   error
 	}{
 		{
-			label: "Case 1",
-			fakeExecCmdOutput: `NAME="sda" KNAME="sda" ROTA="1" TYPE="disk" SIZE="62914560000" MODEL="VBOX HARDDISK" VENDOR="ATA" RO="1" RM="0" STATE="running" FSTYPE="" SERIAL=""` + "\n" +
-				`NAME="sda1" KNAME="sda1" ROTA="1" TYPE="part" SIZE="62913494528" MODEL="" VENDOR="" RO="0" RM="0" STATE="" FSTYPE="" SERIAL=""`,
+			label:              "Case 1: ignore readonly device sda",
+			fakeblkidCmdOutput: "",
+			fakeLsblkCmdOutput: `NAME="sda" KNAME="sda" ROTA="1" TYPE="disk" SIZE="62914560000" MODEL="VBOX HARDDISK" VENDOR="ATA" RO="1" RM="0" STATE="running" SERIAL=""` + "\n" +
+				`NAME="sda1" KNAME="sda1" ROTA="1" TYPE="part" SIZE="62913494528" MODEL="" VENDOR="" RO="0" RM="0" STATE=""  SERIAL=""`,
 			fakeGlobfunc: func(name string) ([]string, error) {
 				return []string{"removable", "subsytem"}, nil
 			},
@@ -210,9 +230,10 @@ func TestValidBlockDevices(t *testing.T) {
 			errMessage:                   fmt.Errorf("failed to ignore readonly device sda"),
 		},
 		{
-			label: "Case 2",
-			fakeExecCmdOutput: `NAME="sda" KNAME="sda" ROTA="1" TYPE="disk" SIZE="62914560000" MODEL="VBOX HARDDISK" VENDOR="ATA" RO="0" RM="0" STATE="running" FSTYPE="" SERIAL=""` + "\n" +
-				`NAME="sda1" KNAME="sda1" ROTA="1" TYPE="part" SIZE="62913494528" MODEL="" VENDOR="" RO="0" RM="0" STATE="" FSTYPE="" SERIAL=""`,
+			label:              "Case 2: ignore root device sda",
+			fakeblkidCmdOutput: "",
+			fakeLsblkCmdOutput: `NAME="sda" KNAME="sda" ROTA="1" TYPE="disk" SIZE="62914560000" MODEL="VBOX HARDDISK" VENDOR="ATA" RO="0" RM="0" STATE="running" SERIAL=""` + "\n" +
+				`NAME="sda1" KNAME="sda1" ROTA="1" TYPE="part" SIZE="62913494528" MODEL="" VENDOR="" RO="0" RM="0" STATE="" SERIAL=""`,
 			fakeGlobfunc: func(name string) ([]string, error) {
 				return []string{"removable", "subsytem", "sda"}, nil
 			},
@@ -220,9 +241,10 @@ func TestValidBlockDevices(t *testing.T) {
 			errMessage:                   fmt.Errorf("failed to ignore root device sda with partition"),
 		},
 		{
-			label: "Case 3",
-			fakeExecCmdOutput: `NAME="sda" KNAME="sda" ROTA="1" TYPE="loop" SIZE="62914560000" MODEL="VBOX HARDDISK" VENDOR="ATA" RO="0" RM="0" STATE="running" FSTYPE="" SERIAL=""` + "\n" +
-				`NAME="sda1" KNAME="sda1" ROTA="1" TYPE="part" SIZE="62913494528" MODEL="" VENDOR="" RO="0" RM="0" STATE="" FSTYPE="" SERIAL=""`,
+			label:              "Case 3: ignore loop device",
+			fakeblkidCmdOutput: "",
+			fakeLsblkCmdOutput: `NAME="sda" KNAME="sda" ROTA="1" TYPE="loop" SIZE="62914560000" MODEL="VBOX HARDDISK" VENDOR="ATA" RO="0" RM="0" STATE="running" SERIAL=""` + "\n" +
+				`NAME="sda1" KNAME="sda1" ROTA="1" TYPE="part" SIZE="62913494528" MODEL="" VENDOR="" RO="0" RM="0" STATE="" SERIAL=""`,
 			fakeGlobfunc: func(name string) ([]string, error) {
 				return []string{"removable", "subsytem"}, nil
 			},
@@ -230,9 +252,10 @@ func TestValidBlockDevices(t *testing.T) {
 			errMessage:                   fmt.Errorf("failed to ignore device sda with type loop"),
 		},
 		{
-			label: "Case 4",
-			fakeExecCmdOutput: `NAME="sda" KNAME="sda" ROTA="1" TYPE="disk" SIZE="62914560000" MODEL="VBOX HARDDISK" VENDOR="ATA" RO="0" RM="0" STATE="running" FSTYPE="" SERIAL=""` + "\n" +
-				`NAME="sda1" KNAME="sda1" ROTA="1" TYPE="part" SIZE="62913494528" MODEL="" VENDOR="" RO="0" RM="0" STATE="suspended" FSTYPE="" SERIAL=""`,
+			label:              "Case 4: ignore device is suspended state",
+			fakeblkidCmdOutput: "",
+			fakeLsblkCmdOutput: `NAME="sda" KNAME="sda" ROTA="1" TYPE="disk" SIZE="62914560000" MODEL="VBOX HARDDISK" VENDOR="ATA" RO="0" RM="0" STATE="running"  SERIAL=""` + "\n" +
+				`NAME="sda1" KNAME="sda1" ROTA="1" TYPE="part" SIZE="62913494528" MODEL="" VENDOR="" RO="0" RM="0" STATE="suspended" SERIAL=""`,
 			fakeGlobfunc: func(name string) ([]string, error) {
 				return []string{"removable", "subsytem"}, nil
 			},
@@ -242,8 +265,9 @@ func TestValidBlockDevices(t *testing.T) {
 	}
 
 	for _, tc := range testcases {
-		internal.ExecResult = tc.fakeExecCmdOutput
-		internal.ExecCommand = internal.FakeExecCommand
+		lsblkOut = tc.fakeLsblkCmdOutput
+		blkidOut = tc.fakeblkidCmdOutput
+		internal.ExecCommand = helperCommand
 		internal.FilePathGlob = tc.fakeGlobfunc
 		defer func() {
 			internal.FilePathGlob = filepath.Glob
@@ -264,7 +288,7 @@ func TestGetDiscoveredDevices(t *testing.T) {
 		fakeEvalSymlinkfunc func(string) (string, error)
 	}{
 		{
-			label: "Case 1",
+			label: "Case 1: discovering device with fstype as NotAvailable",
 			blockDevices: []internal.BlockDevice{
 				{
 					Name:       "sdb",
@@ -304,7 +328,7 @@ func TestGetDiscoveredDevices(t *testing.T) {
 		},
 
 		{
-			label: "Case 2",
+			label: "Case 2: discovering device with fstype as NotAvailable",
 			blockDevices: []internal.BlockDevice{
 				{
 					Name:       "sda1",
@@ -343,7 +367,7 @@ func TestGetDiscoveredDevices(t *testing.T) {
 			},
 		},
 		{
-			label: "Case 3",
+			label: "Case 3: discovering device with BIOS-BOOT part-label as NotAvailable",
 			blockDevices: []internal.BlockDevice{
 				{
 					Name:       "sda1",
@@ -383,7 +407,7 @@ func TestGetDiscoveredDevices(t *testing.T) {
 			},
 		},
 		{
-			label: "Case 4",
+			label: "Case 4: discovering device with vfat fstype as NotAvailable",
 			blockDevices: []internal.BlockDevice{
 				{
 					Name:       "sda1",
@@ -455,22 +479,22 @@ func TestParseDeviceType(t *testing.T) {
 		expected v1alpha1.DiscoveredDeviceType
 	}{
 		{
-			label:    "Case 1",
+			label:    "Case 1: disk type",
 			input:    "disk",
 			expected: v1alpha1.DiskType,
 		},
 		{
-			label:    "Case 1",
+			label:    "Case 2: part type",
 			input:    "part",
 			expected: v1alpha1.PartType,
 		},
 		{
-			label:    "Case 3",
+			label:    "Case 3: lvm type",
 			input:    "lvm",
 			expected: v1alpha1.LVMType,
 		},
 		{
-			label:    "Case 4",
+			label:    "Case 4: loop device type",
 			input:    "loop",
 			expected: "",
 		},
@@ -489,17 +513,17 @@ func TestParseDeviceProperty(t *testing.T) {
 		expected v1alpha1.DeviceMechanicalProperty
 	}{
 		{
-			label:    "Case 1",
+			label:    "Case 1: rotational device",
 			input:    "1",
 			expected: v1alpha1.Rotational,
 		},
 		{
-			label:    "Case 1",
+			label:    "Case 2: non-rotational device",
 			input:    "0",
 			expected: v1alpha1.NonRotational,
 		},
 		{
-			label:    "Case 3",
+			label:    "Case 3: invalid rotational property",
 			input:    "2",
 			expected: "",
 		},

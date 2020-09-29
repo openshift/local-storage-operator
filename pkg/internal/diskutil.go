@@ -21,8 +21,6 @@ var (
 	mountFile            = "/proc/1/mountinfo"
 )
 
-var ExecResult string
-
 const (
 	// StateSuspended is a possible value of BlockDevice.State
 	StateSuspended = "suspended"
@@ -208,7 +206,12 @@ func ListBlockDevices() ([]BlockDevice, []string, error) {
 	// var output bytes.Buffer
 	var blockDevices []BlockDevice
 
-	columns := "NAME,ROTA,TYPE,SIZE,MODEL,VENDOR,RO,RM,STATE,FSTYPE,KNAME,SERIAL,PARTLABEL"
+	deviceFSMap, err := GetDeviceFSMap()
+	if err != nil {
+		return []BlockDevice{}, []string{}, errors.Wrap(err, "failed to list block devices")
+	}
+
+	columns := "NAME,ROTA,TYPE,SIZE,MODEL,VENDOR,RO,RM,STATE,KNAME,SERIAL,PARTLABEL"
 	args := []string{"--pairs", "-b", "-o", columns}
 	cmd := ExecCommand("lsblk", args...)
 	output, err := executeCmdWithCombinedOutput(cmd)
@@ -247,6 +250,12 @@ func ListBlockDevices() ([]BlockDevice, []string, error) {
 			badRows = append(badRows, row)
 			break
 		}
+
+		// Update device filesystem using `blkid`
+		if fs, ok := deviceFSMap[fmt.Sprintf("/dev/%s", name)]; ok {
+			outputMap["fsType"] = fs
+		}
+
 		outputMapList = append(outputMapList, outputMap)
 	}
 
@@ -265,6 +274,41 @@ func ListBlockDevices() ([]BlockDevice, []string, error) {
 	}
 
 	return blockDevices, badRows, nil
+}
+
+// GetDeviceFSMap returns mapping between disks and the filesystem using blkid
+// It parses the output of `blkid -s TYPE`. Sample ouput format before parsing
+// `/dev/sdc: TYPE="ext4"
+// /dev/sdd: TYPE="ext2"`
+func GetDeviceFSMap() (map[string]string, error) {
+	m := map[string]string{}
+	args := []string{"-s", "TYPE"}
+	cmd := ExecCommand("blkid", args...)
+	output, err := executeCmdWithCombinedOutput(cmd)
+	if err != nil {
+		return map[string]string{}, err
+	}
+	lines := strings.Split(output, "\n")
+	for _, l := range lines {
+		if len(l) <= 0 {
+			// Ignore empty line.
+			continue
+		}
+
+		values := strings.Split(l, ":")
+		if len(values) != 2 {
+			continue
+		}
+
+		fs := strings.Split(values[1], "=")
+		if len(fs) != 2 {
+			continue
+		}
+
+		m[values[0]] = strings.Trim(strings.TrimSpace(fs[1]), "\"")
+	}
+
+	return m, nil
 }
 
 // GetPVCreationLock checks whether a PV can be created based on this device
@@ -356,13 +400,4 @@ func executeCmdWithCombinedOutput(cmd *exec.Cmd) (string, error) {
 		return "", err
 	}
 	return strings.TrimSpace(string(output)), nil
-}
-
-// FakeExecCommand returns a fake exec.Cmd for unit tests
-func FakeExecCommand(command string, args ...string) *exec.Cmd {
-	cs := []string{"-test.run=TestHelperProcess", "--", command}
-	cs = append(cs, args...)
-	cmd := exec.Command(os.Args[0], cs...)
-	cmd.Env = []string{"GO_WANT_HELPER_PROCESS=1", fmt.Sprintf("STDOUT=%s", ExecResult)}
-	return cmd
 }

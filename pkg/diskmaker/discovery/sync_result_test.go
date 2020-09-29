@@ -88,7 +88,7 @@ func TestNewDiscoveryResultInstance(t *testing.T) {
 		expected         v1alpha1.LocalVolumeDiscoveryResult
 	}{
 		{
-			label:            "case 1",
+			label:            "Case 1: node name less than 63 characters",
 			nodeName:         "node1",
 			namespace:        "local-storage",
 			parentObjectName: "diskmaker-discvoery-123",
@@ -111,7 +111,7 @@ func TestNewDiscoveryResultInstance(t *testing.T) {
 			},
 		},
 		{
-			label:            "case 2",
+			label:            "Case 2: node name greater than 63 characters",
 			nodeName:         "192.168.1.27.ec2.internal.node-name-greater-than-63-characters",
 			namespace:        "default",
 			parentObjectName: "diskmaker-discvoery-456",
@@ -153,18 +153,18 @@ func TestTruncateNodeName(t *testing.T) {
 		expected string
 	}{
 		{
-			label:    "Case 1",
-			input:    "k8s-worker-1234567890.this.is.a.very.very.long.node.name.example.com", // 68 chars
+			label:    "Case 1: node name is equal to 68 chars",
+			input:    "k8s-worker-1234567890.this.is.a.very.very.long.node.name.example.com",
 			expected: "discovery-result-801a3ba95fe6ce6a3bd879552ca2a8b0",
 		},
 		{
-			label:    "Case 2",
-			input:    "k8s01", // 5 chars
+			label:    "Case 2: node name is equal to 5 chars",
+			input:    "k8s01",
 			expected: "discovery-result-k8s01",
 		},
 		{
-			label:    "Case 3",
-			input:    "k8s-worker-500.this.is.a.not.so.long.name", // 47 chars
+			label:    "Case 3: node name is equal to 47 chars",
+			input:    "k8s-worker-500.this.is.a.not.so.long.name",
 			expected: "discovery-result-k8s-worker-500.this.is.a.not.so.long.name",
 		},
 	}
