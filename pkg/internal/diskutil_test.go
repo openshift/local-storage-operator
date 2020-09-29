@@ -11,35 +11,58 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+var lsblkOut string
+var blkidOut string
+
 const (
-	lsblkOutput1 = `NAME="sda" KNAME="sda" ROTA="1" TYPE="disk" SIZE="62914560000" MODEL="VBOX HARDDISK" VENDOR="ATA" RO="0" RM="0" STATE="running" FSTYPE="" SERIAL="" PARTLABEL=""
-NAME="sda1" KNAME="sda1" ROTA="1" TYPE="part" SIZE="62913494528" MODEL="" VENDOR="" RO="0" RM="0" STATE="" FSTYPE="" SERIAL="" PARTLABEL="BIOS-BOOT"
+	lsblkOutput1 = `NAME="sda" KNAME="sda" ROTA="1" TYPE="disk" SIZE="62914560000" MODEL="VBOX HARDDISK" VENDOR="ATA" RO="0" RM="0" STATE="running" SERIAL="" PARTLABEL=""
+NAME="sda1" KNAME="sda1" ROTA="1" TYPE="part" SIZE="62913494528" MODEL="" VENDOR="" RO="0" RM="0" STATE="" SERIAL="" PARTLABEL="BIOS-BOOT"
 `
-	lsblkOutput2 = `NAME="sdc" KNAME="sdc" ROTA="1" TYPE="disk" SIZE="62914560000" MODEL="VBOX HARDDISK" VENDOR="ATA" RO="0" RM="1" STATE="running" FSTYPE="ext4" SERIAL=""
-NAME="sdc3" KNAME="sdc3" ROTA="1" TYPE="part" SIZE="62913494528" MODEL="" VENDOR="" RO="0" RM="1" STATE="" FSTYPE="ext4" SERIAL=""
+	lsblkOutput2 = `NAME="sdc" KNAME="sdc" ROTA="1" TYPE="disk" SIZE="62914560000" MODEL="VBOX HARDDISK" VENDOR="ATA" RO="0" RM="1" STATE="running" SERIAL=""
+NAME="sdc3" KNAME="sdc3" ROTA="1" TYPE="part" SIZE="62913494528" MODEL="" VENDOR="" RO="0" RM="1" STATE="" SERIAL=""
+`
+	blkIDOutput1 = `/dev/sdc: TYPE="ext4"
+/dev/sdc3: TYPE="ext2"
 `
 )
+
+// helperCommand returns a fake exec.Cmd for unit tests
+func helperCommand(command string, args ...string) *exec.Cmd {
+	cs := []string{"-test.run=TestHelperProcess", "--", command}
+	cs = append(cs, args...)
+	cmd := exec.Command(os.Args[0], cs...)
+	cmd.Env = []string{"GO_WANT_HELPER_PROCESS=1", fmt.Sprintf("COMMAND=%s", command),
+		fmt.Sprintf("LSBLKOUT=%s", lsblkOut), fmt.Sprintf("BLKIDOUT=%s", blkidOut)}
+	return cmd
+}
 
 func TestHelperProcess(t *testing.T) {
 	if os.Getenv("GO_WANT_HELPER_PROCESS") != "1" {
 		return
 	}
+
 	defer os.Exit(0)
-	fmt.Fprintf(os.Stdout, os.Getenv("STDOUT"))
+	switch os.Getenv("COMMAND") {
+	case "lsblk":
+		fmt.Fprintf(os.Stdout, os.Getenv("LSBLKOUT"))
+	case "blkid":
+		fmt.Fprintf(os.Stdout, os.Getenv("BLKIDOUT"))
+	}
 }
 
 func TestListBlockDevices(t *testing.T) {
-
 	testcases := []struct {
 		label             string
-		execOutput        string
+		lsblkOutput       string
+		blkIDOutput       string
 		totalBlockDevices int
 		totalBadRows      int
 		expected          []BlockDevice
 	}{
 		{
-			label:             "Case 1",
-			execOutput:        lsblkOutput1,
+			label:             "Case 1: block devices with no filesystems",
+			lsblkOutput:       lsblkOutput1,
+			blkIDOutput:       "",
 			totalBlockDevices: 2,
 			totalBadRows:      0,
 			expected: []BlockDevice{
@@ -75,8 +98,9 @@ func TestListBlockDevices(t *testing.T) {
 			},
 		},
 		{
-			label:             "Case 2",
-			execOutput:        lsblkOutput2,
+			label:             "Case 2: block devices with filesystems",
+			lsblkOutput:       lsblkOutput2,
+			blkIDOutput:       blkIDOutput1,
 			totalBlockDevices: 2,
 			totalBadRows:      0,
 			expected: []BlockDevice{
@@ -97,7 +121,7 @@ func TestListBlockDevices(t *testing.T) {
 				{
 
 					Name:       "sdc3",
-					FSType:     "ext4",
+					FSType:     "ext2",
 					Type:       "part",
 					Size:       "62913494528",
 					Model:      "",
@@ -112,8 +136,8 @@ func TestListBlockDevices(t *testing.T) {
 			},
 		},
 		{
-			label:             "Case 3",
-			execOutput:        "",
+			label:             "Case 3: empty lsblk output",
+			lsblkOutput:       "",
 			totalBlockDevices: 0,
 			totalBadRows:      0,
 			expected:          []BlockDevice{},
@@ -121,8 +145,9 @@ func TestListBlockDevices(t *testing.T) {
 	}
 
 	for _, tc := range testcases {
-		ExecResult = tc.execOutput
-		ExecCommand = FakeExecCommand
+		lsblkOut = tc.lsblkOutput
+		blkidOut = tc.blkIDOutput
+		ExecCommand = helperCommand
 		defer func() { ExecCommand = exec.Command }()
 		blockDevices, badRows, err := ListBlockDevices()
 		assert.NoError(t, err)
@@ -144,6 +169,38 @@ func TestListBlockDevices(t *testing.T) {
 
 }
 
+func TestGetDeviceFSMap(t *testing.T) {
+	testcases := []struct {
+		label       string
+		blkIDOutput string
+		expected    map[string]string
+	}{
+		{
+			label:       "Case 1: Empty blkid response",
+			blkIDOutput: "",
+			expected:    map[string]string{},
+		},
+		{
+			label:       "Case 2: Valid blkid response",
+			blkIDOutput: blkIDOutput1,
+			expected: map[string]string{
+				"/dev/sdc":  "ext4",
+				"/dev/sdc3": "ext2",
+			},
+		},
+	}
+
+	for _, tc := range testcases {
+		blkidOut = tc.blkIDOutput
+		ExecCommand = helperCommand
+		defer func() { ExecCommand = exec.Command }()
+
+		actual, err := GetDeviceFSMap()
+		assert.NoError(t, err)
+		assert.Equalf(t, tc.expected, actual, "[%s]: failed to get device filesystem map", tc.label)
+	}
+}
+
 func TestHasChildren(t *testing.T) {
 	testcases := []struct {
 		label        string
@@ -152,7 +209,7 @@ func TestHasChildren(t *testing.T) {
 		expected     bool
 	}{
 		{
-			label:       "Case 1",
+			label:       "Case 1: device with partitions",
 			blockDevice: BlockDevice{Name: "sdb", KName: "sdb"},
 			fakeGlobfunc: func(name string) ([]string, error) {
 				return []string{"removable", "subsytem", "sdb1"}, nil
@@ -160,7 +217,7 @@ func TestHasChildren(t *testing.T) {
 			expected: true,
 		},
 		{
-			label:       "Case 2",
+			label:       "Case 2: device with partitions",
 			blockDevice: BlockDevice{Name: "sdb", KName: "sdb"},
 			fakeGlobfunc: func(name string) ([]string, error) {
 				return []string{"removable", "subsytem", "sdb2"}, nil
@@ -168,7 +225,7 @@ func TestHasChildren(t *testing.T) {
 			expected: true,
 		},
 		{
-			label:       "Case 3",
+			label:       "Case 3: device with no partitions",
 			blockDevice: BlockDevice{Name: "sdb", KName: "sdb"},
 			fakeGlobfunc: func(name string) ([]string, error) {
 				return []string{"removable", "subsytem"}, nil
@@ -201,28 +258,28 @@ func TestHasBindMounts(t *testing.T) {
 		expectedMountPoint string
 	}{
 		{
-			label:              "Case 1", // device with bind mounts
+			label:              "Case 1: device with bind mounts",
 			blockDevice:        BlockDevice{Name: "sdc"},
 			mountInfo:          "5595 121 0:6 /sdc /var/lib/kubelet/plugins/kubernetes.io~local-volume/volumeDevices/local-pv-343bdd9/6d9d33ae-408e-4bac-81f7-c0bc347a9667 rw shared:23 - devtmpfs devtmpfs rw,seclabel,size=32180404k,nr_inodes=8045101,mode=755",
 			expected:           true,
 			expectedMountPoint: "/var/lib/kubelet/plugins/kubernetes.io~local-volume/volumeDevices/local-pv-343bdd9/6d9d33ae-408e-4bac-81f7-c0bc347a9667",
 		},
 		{
-			label:              "Case 2", // device with regular mounts
+			label:              "Case 2: device with regular mounts",
 			blockDevice:        BlockDevice{Name: "sdc"},
 			mountInfo:          "121 98 259:1 / /boot rw,relatime shared:65 - ext4 /dev/sdc rw,seclabel",
 			expected:           true,
 			expectedMountPoint: "/boot",
 		},
 		{
-			label:              "Case 3", // device does not have mount points
+			label:              "Case 3: device with no mount points",
 			blockDevice:        BlockDevice{Name: "sdd"},
 			mountInfo:          "5595 121 0:6 /sdc /var/lib/kubelet/plugins/kubernetes.io~local-volume/volumeDevices/local-pv-343bdd9/6d9d33ae-408e-4bac-81f7-c0bc347a9667 rw shared:23 - devtmpfs devtmpfs rw,seclabel,size=32180404k,nr_inodes=8045101,mode=755",
 			expected:           false,
 			expectedMountPoint: "",
 		},
 		{
-			label:              "Case 4", // device does not have mount points
+			label:              "Case 4: device with no mount point",
 			blockDevice:        BlockDevice{Name: "sdc"},
 			mountInfo:          "",
 			expected:           false,
@@ -252,7 +309,7 @@ func TestHasChildrenFail(t *testing.T) {
 		expected     bool
 	}{
 		{
-			label:       "Case 1",
+			label:       "Case 1: filepath.Glob command failure",
 			blockDevice: BlockDevice{Name: "sdb"},
 			fakeGlobfunc: func(name string) ([]string, error) {
 				return []string{}, fmt.Errorf("failed to list matching files")
@@ -279,7 +336,7 @@ func TestGetPathByID(t *testing.T) {
 		expected            string
 	}{
 		{
-			label:       "Case 1",
+			label:       "Case 1: pathByID is already available",
 			blockDevice: BlockDevice{Name: "sdb", KName: "sdb", PathByID: "/dev/disk/by-id/sdb"},
 			fakeGlobfunc: func(name string) ([]string, error) {
 				return []string{"/dev/disk/by-id/dm-home", "/dev/disk/by-id/dm-uuid-LVM-6p00g8KptCD", "/dev/disk/by-id/sdb"}, nil
@@ -291,7 +348,7 @@ func TestGetPathByID(t *testing.T) {
 		},
 
 		{
-			label:       "Case 2",
+			label:       "Case 2: pathByID is not available",
 			blockDevice: BlockDevice{Name: "sdb", KName: "sdb", PathByID: ""},
 			fakeGlobfunc: func(name string) ([]string, error) {
 				return []string{"/dev/disk/by-id/sdb"}, nil
@@ -327,7 +384,7 @@ func TestGetPathByIDFail(t *testing.T) {
 		expected            string
 	}{
 		{
-			label:       "Case 1",
+			label:       "Case 1: filepath.Glob command failure",
 			blockDevice: BlockDevice{Name: "sdb"},
 			fakeGlobfunc: func(name string) ([]string, error) {
 				return []string{}, fmt.Errorf("failed to list matching files")
@@ -339,7 +396,7 @@ func TestGetPathByIDFail(t *testing.T) {
 		},
 
 		{
-			label:       "Case 2",
+			label:       "Case 2: filepath.EvalSymlinks command failure",
 			blockDevice: BlockDevice{Name: "sdb", PathByID: ""},
 			fakeGlobfunc: func(name string) ([]string, error) {
 				return []string{"/dev/disk/by-id/sdb"}, nil
@@ -373,19 +430,19 @@ func TestParseBitBool(t *testing.T) {
 		expected bool
 	}{
 		{
-			label:    "Case 1",
+			label:    "Case 1: prasing 0",
 			input:    "0",
 			expected: false,
 		},
 
 		{
-			label:    "Case 2",
+			label:    "Case 2: parsing empty value",
 			input:    "",
 			expected: false,
 		},
 
 		{
-			label:    "Case 1",
+			label:    "Case 1: parsing 1",
 			input:    "1",
 			expected: true,
 		},
@@ -405,7 +462,7 @@ func TestParseBitBoolFail(t *testing.T) {
 		expected bool
 	}{
 		{
-			label:    "Case 1",
+			label:    "Case 1: parsing invalid input",
 			input:    "invalid input",
 			expected: false,
 		},
@@ -425,12 +482,12 @@ func TestReadOnly(t *testing.T) {
 		expected    bool
 	}{
 		{
-			label:       "Case 1",
+			label:       "Case 1: not a readonly device",
 			blockDevice: BlockDevice{ReadOnly: "0"},
 			expected:    false,
 		},
 		{
-			label:       "Case 2",
+			label:       "Case 2: readonly device",
 			blockDevice: BlockDevice{ReadOnly: "1"},
 			expected:    true,
 		},
@@ -451,7 +508,7 @@ func TestReadOnlyFail(t *testing.T) {
 		expected    bool
 	}{
 		{
-			label:       "Case 1",
+			label:       "Case 1: invalid input",
 			blockDevice: BlockDevice{ReadOnly: "invalid input"},
 			expected:    false,
 		},
@@ -472,12 +529,12 @@ func TestGetRemovable(t *testing.T) {
 		expected    bool
 	}{
 		{
-			label:       "Case 1",
+			label:       "Case 1: non-removable device",
 			blockDevice: BlockDevice{Removable: "0"},
 			expected:    false,
 		},
 		{
-			label:       "Case 2",
+			label:       "Case 2: removable device",
 			blockDevice: BlockDevice{Removable: "1"},
 			expected:    true,
 		},
@@ -497,7 +554,7 @@ func TestGetRemovableFail(t *testing.T) {
 		expected    bool
 	}{
 		{
-			label:       "Case 1",
+			label:       "Case 1: invalid input",
 			blockDevice: BlockDevice{Removable: "invalid input"},
 			expected:    false,
 		},
@@ -518,12 +575,12 @@ func TestGetRotational(t *testing.T) {
 		expected    bool
 	}{
 		{
-			label:       "Case 1",
+			label:       "Case 1: non-rotational device",
 			blockDevice: BlockDevice{Rotational: "0"},
 			expected:    false,
 		},
 		{
-			label:       "Case 2",
+			label:       "Case 2: rotationl device",
 			blockDevice: BlockDevice{Rotational: "1"},
 			expected:    true,
 		},
@@ -543,7 +600,7 @@ func TestGetRotationalFail(t *testing.T) {
 		expected    bool
 	}{
 		{
-			label:       "Case 1",
+			label:       "Case 1: invalid input",
 			blockDevice: BlockDevice{Rotational: "invalid input"},
 			expected:    false,
 		},
