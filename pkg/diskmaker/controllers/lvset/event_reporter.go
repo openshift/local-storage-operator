@@ -15,6 +15,8 @@ import (
 const (
 	// ErrorListingExistingSymlinks is an event reason string
 	ErrorListingExistingSymlinks = "ErrorListingExistingSymlinks"
+	// DiscoveredNewDevice is an event reason string
+	DiscoveredNewDevice = "DiscoveredNewDevice"
 )
 
 func newDiskEvent(eventReason, message, disk, eventType string) diskmaker.DiskEvent {
