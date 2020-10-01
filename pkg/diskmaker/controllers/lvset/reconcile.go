@@ -161,9 +161,8 @@ func (r *ReconcileLocalVolumeSet) getValidDevices(
 DeviceLoop:
 	for _, blockDevice := range blockDevices {
 
-		// check if the device is older than deviceMinAge
-		// set firstObserved if not previously observed.
-		isOldEnough := r.deviceAgeMap.isOlderThan(blockDevice.KName, deviceMinAge)
+		// store device in deviceAgeMap
+		r.deviceAgeMap.storeDeviceAge(blockDevice.KName)
 
 		devLogger := reqLogger.WithValues("Device.Name", blockDevice.Name)
 		for name, filter := range FilterMap {
@@ -180,6 +179,9 @@ DeviceLoop:
 				continue DeviceLoop
 			}
 		}
+
+		// check if the device is older than deviceMinAge
+		isOldEnough := r.deviceAgeMap.isOlderThan(blockDevice.KName)
 
 		// skip devices younger than deviceMinAge
 		if !isOldEnough {

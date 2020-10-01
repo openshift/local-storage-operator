@@ -14,6 +14,14 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+type fakeClock struct {
+	ftime time.Time
+}
+
+func (f *fakeClock) getCurrentTime() time.Time {
+	return f.ftime
+}
+
 func TestDeviceAge(t *testing.T) {
 	// empty the filters and matchers
 	oldFilterMap := FilterMap
@@ -31,13 +39,14 @@ func TestDeviceAge(t *testing.T) {
 	// fake eventrecorder
 	fakeRecorder := record.NewFakeRecorder(10)
 	fakeReporter := newEventReporter(fakeRecorder)
+	fakeClock := &fakeClock{}
 
 	// fake reconciler
 	r := ReconcileLocalVolumeSet{
 		client:        fake.NewFakeClient(),
 		scheme:        scheme.Scheme,
 		eventReporter: fakeReporter,
-		deviceAgeMap:  &ageMap{},
+		deviceAgeMap:  newAgeMap(fakeClock),
 	}
 
 	logger := log.WithName("test-logr")
@@ -66,7 +75,7 @@ func TestDeviceAge(t *testing.T) {
 	for run, atTime := range runs {
 		t.Logf("Run %d, time is set to %+v", run, atTime)
 		// freeze time
-		r.deviceAgeMap.freezeTimeAt(atTime)
+		fakeClock.ftime = atTime
 		t.Logf("Adding %v devices at this time ^", increment)
 		// initial block devices (Set 0)
 		targetLength := len(blockDevices) + increment
@@ -79,21 +88,4 @@ func TestDeviceAge(t *testing.T) {
 		assert.Lenf(t, delayedDevices, len(blockDevices)-expectedValid[run], "delayedDevices")
 
 	}
-}
-
-// sanity test that the time after the day the test was written
-// as far as we know, time flows forwards
-func TestGetTime(t *testing.T) {
-	t.Log("checking ageMap.getTime is within the same hour range as time.Now()")
-	ageMap := newAgeMap()
-
-	timeBefore := time.Now().Add(-time.Hour)
-	timeAfter := time.Now().Add(time.Hour)
-
-	getCurrentTime := *ageMap.currentTime
-
-	currentTime := getCurrentTime()
-
-	assert.True(t, currentTime.After(timeBefore))
-	assert.True(t, currentTime.Before(timeAfter))
 }
