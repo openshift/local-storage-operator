@@ -23,11 +23,12 @@ var log = logf.Log.WithName(ComponentName)
 
 // Add adds a new nodeside lvset controller to mgr
 func Add(mgr manager.Manager) error {
+	clock := &wallTime{}
 	r := &ReconcileLocalVolumeSet{
 		client:        mgr.GetClient(),
 		scheme:        mgr.GetScheme(),
 		eventReporter: newEventReporter(mgr.GetEventRecorderFor(ComponentName)),
-		deviceAgeMap:  newAgeMap(),
+		deviceAgeMap:  newAgeMap(clock),
 	}
 	// Create a new controller
 	c, err := controller.New(ComponentName, mgr, controller.Options{Reconciler: r})
