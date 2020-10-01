@@ -3,6 +3,10 @@ kind: ClusterServiceVersion
 metadata:
   name: local-storage-operator.v4.6.0
   namespace: placeholder
+  labels:
+    "operatorframework.io/arch.amd64": supported
+    "operatorframework.io/arch.ppc64le": supported
+    "operatorframework.io/arch.s390x": supported
   annotations:
     alm-examples: |-
       [
