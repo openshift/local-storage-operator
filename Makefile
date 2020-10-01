@@ -6,8 +6,8 @@ ifeq ($(VERSION),)
 	VERSION = latest
 endif
 
-TARGET_GOOS=linux
-TARGET_GOARCH=amd64
+TARGET_GOOS=$(shell go env GOOS)
+TARGET_GOARCH=$(shell go env GOARCH)
 
 CURPATH=$(PWD)
 TARGET_DIR=$(CURPATH)/_output/bin
