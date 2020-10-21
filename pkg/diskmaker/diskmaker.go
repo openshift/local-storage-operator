@@ -210,8 +210,6 @@ func (d *DiskMaker) symLinkDisks(diskConfig *DiskConfig) {
 			}
 			defer unlockFunc()
 			if len(existingSymlinks) > 0 { // already claimed, fail silently
-				e := NewEvent(DeviceSymlinkExists, "this device is already matched by another LocalVolume or LocalVolumeSet", symLinkPath)
-				d.eventSync.Report(e, d.localVolume)
 				unlockFunc()
 				continue
 			} else if err != nil || !pvLocked { // locking failed for some other reasion

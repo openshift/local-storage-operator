@@ -279,14 +279,6 @@ func symLinkDisk(obj runtime.Object, eventReporter *eventReporter, devLogger log
 	}
 	defer unlockFunc()
 	if len(existingSymlinks) > 0 { // already claimed
-		eventReporter.Report(
-			obj,
-			newDiskEvent(
-				diskmaker.DeviceSymlinkExists,
-				"this device is already matched by another LocalVolume or LocalVolumeSet",
-				dev.KName, corev1.EventTypeNormal,
-			),
-		)
 		return nil
 	} else if err != nil || !pvLocked { // locking failed for some other reasion
 		devLogger.Error(err, "not symlinking, could not get lock")
