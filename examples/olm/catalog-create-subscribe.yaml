@@ -10,28 +10,25 @@ metadata:
   namespace: openshift-local-storage
 spec:
   targetNamespaces:
-    - openshift-local-storage
+  - openshift-local-storage
 ---
-apiVersion: operators.coreos.com/v1
-kind: OperatorSource
+apiVersion: operators.coreos.com/v1alpha1
+kind: CatalogSource
 metadata:
-  name: redhat-local-storage-src
-  namespace: openshift-marketplace
+  name: localstorage-operator-manifests
+  namespace: openshift-local-storage
 spec:
-  type: appregistry
-  endpoint: https://quay.io/cnr
-  registryNamespace: hekumar
-  displayName: "Red Hat Storage operators"
-  publisher: "Red Hat Storage"
+  sourceType: grpc
+  # replace this with your index image
+  image: quay.io/gnufied/gnufied-index:1.0.0
 ---
 apiVersion: operators.coreos.com/v1alpha1
 kind: Subscription
 metadata:
-  name: local-storage-operator
+  name: local-storage-subscription
   namespace: openshift-local-storage
 spec:
-  channel: "4.4"
-  installPlanApproval: Automatic
+  channel: preview   # this is the default channel name defined in opm-bundle file
   name: local-storage-operator
-  source: redhat-local-storage-src
-  sourceNamespace: openshift-marketplace
+  source: localstorage-operator-manifests
+  sourceNamespace: openshift-local-storage
