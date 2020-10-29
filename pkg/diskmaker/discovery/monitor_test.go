@@ -15,28 +15,28 @@ func TestMatchUdevEvent(t *testing.T) {
 		expected  bool
 	}{
 		{
-			label:     "case 1",
+			label:     "Case 1: match add udev event",
 			text:      "KERNEL[1008.734088] add      /devices/pci0000:00/0000:00:07.0/virtio5/block/vdc (block)",
 			matches:   []string{"(?i)add", "(?i)remove"},
 			exclusion: []string{"(?i)dm-[0-9]+"},
 			expected:  true,
 		},
 		{
-			label:     "case 2",
+			label:     "Case 2: match remove udev event",
 			text:      "KERNEL[1008.734088] remove     /devices/pci0000:00/0000:00:07.0/virtio5/block/vdc (block)",
 			matches:   []string{"(?i)add", "(?i)remove"},
 			exclusion: []string{"(?i)dm-[0-9]+"},
 			expected:  true,
 		},
 		{
-			label:     "case 3",
+			label:     "Case 3: validate exclusion of change udev event",
 			text:      "KERNEL[1008.734088] change      /devices/pci0000:00/0000:00:07.0/virtio5/block/vdc (block)",
 			matches:   []string{"(?i)add", "(?i)remove"},
 			exclusion: []string{"(?i)dm-[0-9]+"},
 			expected:  false,
 		},
 		{
-			label:     "case 4",
+			label:     "Case 4: validate exlusion of event on dm device",
 			text:      "KERNEL[1042.464238] add      /devices/virtual/block/dm-1 (block)",
 			matches:   []string{"(?i)add", "(?i)remove"},
 			exclusion: []string{"(?i)dm-[0-9]+"},
