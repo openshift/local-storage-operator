@@ -13,8 +13,10 @@ spec:
   scope: Namespaced
   subresources:
     status: {}
+  preserveUnknownFields: false
   validation:
     openAPIV3Schema:
+      type: object
       description: LocalVolumeDiscoveryResult is the Schema for the localvolumediscoveryresults
         API
       properties:
