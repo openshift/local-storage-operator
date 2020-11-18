@@ -16,7 +16,6 @@ spec:
   preserveUnknownFields: false
   validation:
     openAPIV3Schema:
-      type: object
       required:
           - spec
       description: LocalVolumeDiscovery is the Schema for the localvolumediscoveries
