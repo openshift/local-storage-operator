@@ -35,3 +35,12 @@ func appLabelIn(meta metav1.Object, components []string) bool {
 	return false
 
 }
+
+// InitMapIfNil allocates memory to a map if it is nil
+func InitMapIfNil(m *map[string]string) {
+	if len(*m) > 1 {
+		return
+	}
+	*m = make(map[string]string)
+	return
+}
