@@ -4,24 +4,26 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"hash/fnv"
 	"os"
 	"path"
 	"path/filepath"
 	"time"
 
-	"github.com/openshift/local-storage-operator/pkg/common"
-
 	"github.com/go-logr/logr"
 	localv1alpha1 "github.com/openshift/local-storage-operator/pkg/apis/local/v1alpha1"
+	"github.com/openshift/local-storage-operator/pkg/common"
 	"github.com/openshift/local-storage-operator/pkg/diskmaker"
 	"github.com/openshift/local-storage-operator/pkg/internal"
 	corev1 "k8s.io/api/core/v1"
+	storagev1 "k8s.io/api/storage/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/fields"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/sets"
 	corev1helper "k8s.io/kubernetes/pkg/apis/core/v1/helper"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+	provCommon "sigs.k8s.io/sig-storage-local-static-provisioner/pkg/common"
 	staticProvisioner "sigs.k8s.io/sig-storage-local-static-provisioner/pkg/common"
 )
 
@@ -47,18 +49,16 @@ func (r *ReconcileLocalVolumeSet) Reconcile(request reconcile.Request) (reconcil
 		return reconcile.Result{}, err
 	}
 
-	// get node name
-	nodeName := getNodeNameEnvVar()
-	// get node labels
-	node := &corev1.Node{}
-	err = r.client.Get(context.TODO(), types.NamespacedName{Name: nodeName}, node)
+	// get the node and determine if the localvolumeset selects this node
+	r.runtimeConfig.Node = &corev1.Node{}
+	err = r.client.Get(context.TODO(), types.NamespacedName{Name: r.nodeName}, r.runtimeConfig.Node)
 	if err != nil {
 		return reconcile.Result{}, err
 	}
 
 	// ignore LocalVolmeSets whose LabelSelector doesn't match this node
 	// NodeSelectorTerms.MatchExpressions are ORed
-	matches, err := nodeSelectorMatchesNodeLabels(node, lvset.Spec.NodeSelector)
+	matches, err := nodeSelectorMatchesNodeLabels(r.runtimeConfig.Node, lvset.Spec.NodeSelector)
 	if err != nil {
 		reqLogger.Error(err, "failed to match nodeSelector to node labels")
 		return reconcile.Result{}, err
@@ -68,7 +68,15 @@ func (r *ReconcileLocalVolumeSet) Reconcile(request reconcile.Request) (reconcil
 		return reconcile.Result{}, nil
 	}
 
-	storageClass := lvset.Spec.StorageClassName
+	storageClassName := lvset.Spec.StorageClassName
+
+	// get associated storageclass
+	storageClass := &storagev1.StorageClass{}
+	err = r.client.Get(context.TODO(), types.NamespacedName{Name: storageClassName}, storageClass)
+	if err != nil {
+		reqLogger.Error(err, "could not get storageclass")
+		return reconcile.Result{}, err
+	}
 
 	// get associated provisioner config
 	cm := &corev1.ConfigMap{}
@@ -82,10 +90,41 @@ func (r *ReconcileLocalVolumeSet) Reconcile(request reconcile.Request) (reconcil
 	provisionerConfig := staticProvisioner.ProvisionerConfiguration{}
 	staticProvisioner.ConfigMapDataToVolumeConfig(cm.Data, &provisionerConfig)
 
+	r.runtimeConfig.DiscoveryMap = provisionerConfig.StorageClassConfig
+	r.runtimeConfig.NodeLabelsForPV = provisionerConfig.NodeLabelsForPV
+	r.runtimeConfig.UseAlphaAPI = provisionerConfig.UseAlphaAPI
+	r.runtimeConfig.UseJobForCleaning = provisionerConfig.UseJobForCleaning
+	r.runtimeConfig.MinResyncPeriod = provisionerConfig.MinResyncPeriod
+	r.runtimeConfig.UseNodeNameOnly = provisionerConfig.UseNodeNameOnly
+	r.runtimeConfig.Namespace = request.Namespace
+	r.runtimeConfig.LabelsForPV = provisionerConfig.LabelsForPV
+	r.runtimeConfig.SetPVOwnerRef = provisionerConfig.SetPVOwnerRef
+	r.runtimeConfig.Name = getProvisionedByValue(*r.runtimeConfig.Node)
+
+	// initialize the deleter's pv cache on the first run
+	if !r.firstRunOver {
+		log.Info("initializing PV cache")
+		pvList := &corev1.PersistentVolumeList{}
+		err := r.client.List(context.TODO(), pvList)
+		if err != nil {
+			return reconcile.Result{}, fmt.Errorf("failed to initialize PV cache")
+		}
+		for _, pv := range pvList.Items {
+			// skip non-owned PVs
+			name, found := pv.Annotations[provCommon.AnnProvisionedBy]
+			if !found || name != r.runtimeConfig.Name {
+				continue
+			}
+			addOrUpdatePV(r.runtimeConfig, pv)
+		}
+
+		r.firstRunOver = true
+	}
+
 	// get symlinkdir
-	symLinkConfig, ok := provisionerConfig.StorageClassConfig[storageClass]
+	symLinkConfig, ok := provisionerConfig.StorageClassConfig[storageClassName]
 	if !ok {
-		return reconcile.Result{}, fmt.Errorf("could not find storageclass entry %q in provisioner config: %+v", storageClass, provisionerConfig)
+		return reconcile.Result{}, fmt.Errorf("could not find storageclass entry %q in provisioner config: %+v", storageClassName, provisionerConfig)
 	}
 	symLinkDir := symLinkConfig.HostDir
 
@@ -108,9 +147,17 @@ func (r *ReconcileLocalVolumeSet) Reconcile(request reconcile.Request) (reconcil
 	for _, blockDevice := range validDevices {
 		devLogger := reqLogger.WithValues("Device.Name", blockDevice.Name)
 
+		symlinkSourcePath, symlinkPath, _, err := getSymLinkSourceAndTarget(blockDevice, symLinkDir)
+		if err != nil {
+			devLogger.Error(err, "error while discovering symlink source and target")
+			continue
+		}
+
 		// validate MaxDeviceCount
 		var alreadyProvisionedCount int
-		alreadyProvisionedCount, noMatch, err = getAlreadyProvisioned(symLinkDir, validDevices)
+		var currentDeviceSymlinked bool
+		alreadyProvisionedCount, currentDeviceSymlinked, noMatch, err = getAlreadySymlinked(symLinkDir, blockDevice, validDevices)
+		_ = currentDeviceSymlinked
 		if err != nil && lvset.Spec.MaxDeviceCount != nil {
 			r.eventReporter.Report(lvset, newDiskEvent(ErrorListingExistingSymlinks, "error determining already provisioned disks", "", corev1.EventTypeWarning))
 			return reconcile.Result{}, fmt.Errorf("could not determine how many devices are already provisioned: %w", err)
@@ -119,23 +166,38 @@ func (r *ReconcileLocalVolumeSet) Reconcile(request reconcile.Request) (reconcil
 		if lvset.Spec.MaxDeviceCount != nil {
 			withinMax = int32(alreadyProvisionedCount) < *lvset.Spec.MaxDeviceCount
 		}
-		if !withinMax {
+		// skip this device if this device is not already symlinked and provisioning it would exceed the maxDeviceCount
+		if !(withinMax || currentDeviceSymlinked) {
 			break
 		}
 
-		devLogger.Info("symlinking")
-		r.eventReporter.Report(lvset, newDiskEvent(diskmaker.FoundMatchingDisk, "symlinking matching disk", blockDevice.KName, corev1.EventTypeNormal))
-		err = symLinkDisk(lvset, r.eventReporter, devLogger, blockDevice, symLinkDir)
+		// Retrieve list of mount points to iterate through discovered paths (aka files) below
+		mountPoints, err := r.runtimeConfig.Mounter.List()
 		if err != nil {
-			r.eventReporter.Report(lvset, newDiskEvent(diskmaker.ErrorCreatingSymLink, "symlinking failed", blockDevice.KName, corev1.EventTypeWarning))
-			return reconcile.Result{}, fmt.Errorf("could not symlink disk: %w", err)
+			return reconcile.Result{}, fmt.Errorf("error retrieving mountpoints: %w", err)
 		}
-		devLogger.Info("symlinking succeeded")
+		// Put mount points into set for faster checks below
+		type empty struct{}
+		mountPointMap := sets.NewString()
+		for _, mp := range mountPoints {
+			mountPointMap.Insert(mp.Path)
+		}
+
+		devLogger.Info("provisioning PV")
+		r.eventReporter.Report(lvset, newDiskEvent(diskmaker.FoundMatchingDisk, "provisioning matching disk", blockDevice.KName, corev1.EventTypeNormal))
+		err = r.provisionPV(lvset, devLogger, blockDevice, *storageClass, mountPointMap, symlinkSourcePath, symlinkPath)
+		if err != nil {
+			r.eventReporter.Report(lvset, newDiskEvent(diskmaker.ErrorProvisioningDisk, "provisioning failed", blockDevice.KName, corev1.EventTypeWarning))
+			return reconcile.Result{}, fmt.Errorf("could not provision disk: %w", err)
+		}
+		devLogger.Info("provisioning succeeded")
 
 	}
 	if len(noMatch) > 0 {
-		reqLogger.Info("found stale symLink Entries", "storageClass.Name", storageClass, "paths.List", noMatch, "directory", symLinkDir)
+		reqLogger.Info("found stale symLink Entries", "storageClass.Name", storageClassName, "paths.List", noMatch, "directory", symLinkDir)
 	}
+
+	r.deleter.DeletePVs()
 
 	// shorten the requeueTime if there are delayed devices
 	requeueTime := time.Minute
@@ -220,12 +282,18 @@ DeviceLoop:
 	return validDevices, delayedDevices
 }
 
-func getAlreadyProvisioned(symLinkDir string, validDevices []internal.BlockDevice) (int, []string, error) {
+// returns:
+// count of already symlinked from validDevices
+// if the currentDevice is alreadysymlinks
+// list of symlinks that don't match validDevices
+// err
+func getAlreadySymlinked(symLinkDir string, currentDevice internal.BlockDevice, validDevices []internal.BlockDevice) (int, bool, []string, error) {
 	count := 0
 	noMatch := make([]string, 0)
+	currentDeviceSymlinked := false
 	paths, err := filepath.Glob(filepath.Join(symLinkDir, "/*"))
 	if err != nil {
-		return 0, []string{}, err
+		return 0, currentDeviceSymlinked, []string{}, err
 	}
 
 PathLoop:
@@ -233,33 +301,39 @@ PathLoop:
 		for _, device := range validDevices {
 			isMatch, err := internal.PathEvalsToDiskLabel(path, device.KName)
 			if err != nil {
-				return 0, []string{}, err
+				return 0, currentDeviceSymlinked, []string{}, err
 			}
 			if isMatch {
 				count++
+				if currentDevice.KName == device.KName {
+					currentDeviceSymlinked = true
+				}
 				continue PathLoop
 			}
 		}
 		noMatch = append(noMatch, path)
 	}
-	return count, noMatch, nil
+	return count, currentDeviceSymlinked, noMatch, nil
 }
 
-func symLinkDisk(obj runtime.Object, eventReporter *eventReporter, devLogger logr.Logger, dev internal.BlockDevice, symLinkDir string) error {
+func (r *ReconcileLocalVolumeSet) provisionPV(
+	obj *localv1alpha1.LocalVolumeSet,
+	devLogger logr.Logger,
+	dev internal.BlockDevice,
+	storageClass storagev1.StorageClass,
+	mountPointMap sets.String,
+	symlinkSourcePath string,
+	symlinkPath string,
+) error {
+
 	// get /dev/KNAME path
 	devLabelPath, err := dev.GetDevPath()
 	if err != nil {
 		return err
 	}
 
-	// determine symlink source
-	symlinkSourcePath, err := dev.GetPathByID()
-	if errors.As(err, &internal.IDPathNotFoundError{}) {
-		// no disk-by-id
-		symlinkSourcePath = devLabelPath
-	} else if err != nil {
-		return err
-	}
+	symLinkDir := filepath.Dir(symlinkPath)
+
 	// ensure symLinkDirExists
 	err = os.MkdirAll(symLinkDir, 0755)
 	if err != nil {
@@ -279,19 +353,20 @@ func symLinkDisk(obj runtime.Object, eventReporter *eventReporter, devLogger log
 	}
 	defer unlockFunc()
 	if len(existingSymlinks) > 0 { // already claimed
+		for _, path := range existingSymlinks {
+			if path == symlinkPath { // symlinked in this folder, ensure the PV exists
+				return r.createPV(obj, devLogger, storageClass, mountPointMap, symlinkPath)
+			}
+		}
 		return nil
 	} else if err != nil || !pvLocked { // locking failed for some other reasion
-		devLogger.Error(err, "not symlinking, could not get lock")
+		devLogger.Error(err, "not provisioning, could not get lock")
 		return err
 	}
-	unlockFunc()
 
-	symLinkName := filepath.Base(symlinkSourcePath)
-	symLinkPath := path.Join(symLinkDir, symLinkName)
-
-	devLogger.Info("symlinking", "sourcePath", symlinkSourcePath, "targetPath", symLinkPath)
+	devLogger.Info("symlinking", "sourcePath", symlinkSourcePath, "targetPath", symlinkPath)
 	// create symlink
-	err = os.Symlink(symlinkSourcePath, symLinkPath)
+	err = os.Symlink(symlinkSourcePath, symlinkPath)
 	if os.IsExist(err) {
 		fileInfo, statErr := os.Stat(symlinkSourcePath)
 		if statErr != nil {
@@ -304,15 +379,23 @@ func symLinkDisk(obj runtime.Object, eventReporter *eventReporter, devLogger log
 				return fmt.Errorf("existing symlink not valid: %v,%w", err, evalErr)
 				// existing file evals to disk
 			} else if valid {
-				// if file exists and is accurate symlink, skip and return success
-				return nil
+				// if file exists and is accurate symlink, create pv
+				return r.createPV(obj, devLogger, storageClass, mountPointMap, symlinkPath)
 			}
 		}
 	} else if err != nil {
 		return err
 	}
+	return r.createPV(obj, devLogger, storageClass, mountPointMap, symlinkPath)
+}
 
-	return nil
+func generatePVName(file, node, class string) string {
+	h := fnv.New32a()
+	h.Write([]byte(file))
+	h.Write([]byte(node))
+	h.Write([]byte(class))
+	// This is the FNV-1a 32-bit hash
+	return fmt.Sprintf("local-pv-%x", h.Sum32())
 }
 
 func nodeSelectorMatchesNodeLabels(node *corev1.Node, nodeSelector *corev1.NodeSelector) (bool, error) {
@@ -326,6 +409,31 @@ func nodeSelectorMatchesNodeLabels(node *corev1.Node, nodeSelector *corev1.NodeS
 		"metadata.name": node.Name,
 	})
 	return matches, nil
+}
+
+func getSymLinkSourceAndTarget(dev internal.BlockDevice, symlinkDir string) (string, string, bool, error) {
+	var source string
+	var target string
+	var idExists = true
+	var err error
+
+	// get /dev/KNAME path
+	devLabelPath, err := dev.GetDevPath()
+	if err != nil {
+		return source, target, false, err
+	}
+	// determine symlink source
+	source, err = dev.GetPathByID()
+	if errors.As(err, &internal.IDPathNotFoundError{}) {
+		// no disk-by-id
+		idExists = false
+		source = devLabelPath
+	} else if err != nil {
+		return source, target, false, err
+	}
+	target = path.Join(symlinkDir, filepath.Base(source))
+	return source, target, idExists, err
+
 }
 
 func getNodeNameEnvVar() string {

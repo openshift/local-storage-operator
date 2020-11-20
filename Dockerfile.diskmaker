@@ -3,14 +3,13 @@ WORKDIR /go/src/github.com/openshift/local-storage-operator
 COPY . .
 RUN make build-diskmaker
 
-FROM registry.svc.ci.openshift.org/openshift/release:golang-1.13
-COPY --from=builder /go/src/github.com/openshift/local-storage-operator/_output/bin/diskmaker /usr/bin/
-COPY manifests /manifests
+FROM registry.svc.ci.openshift.org/openshift/release:golang-1.13 
 
-COPY --from=builder /usr/sbin/mkfs.ext2 /usr/sbin/mkfs.ext2
+COPY manifests /manifests
+COPY --from=builder /go/src/github.com/openshift/local-storage-operator/_output/bin/diskmaker /usr/bin/
 COPY --from=builder /go/src/github.com/openshift/local-storage-operator/deploy/scripts /scripts
 
  ENTRYPOINT ["/usr/bin/diskmaker"]
 LABEL io.k8s.display-name="OpenShift local storage diskmaker" \
       io.k8s.description="This is a component of OpenShift and manages local disks." \
-        maintainer="Hemant Kumar <hekumar@redhat.com>"
+        maintainer="Hemant Kumar <hekumar@redhat.com>"registry.svc.ci.openshift.org/openshift/origin-v4.0:base
