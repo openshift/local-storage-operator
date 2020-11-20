@@ -1,7 +1,8 @@
-package diskmaker
+package lv
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -12,14 +13,16 @@ import (
 	"time"
 
 	"github.com/openshift/local-storage-operator/pkg/internal"
+	corev1 "k8s.io/api/core/v1"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	"github.com/ghodss/yaml"
-	"github.com/openshift/local-storage-operator/pkg/apis"
 	localv1 "github.com/openshift/local-storage-operator/pkg/apis/local/v1"
-	"github.com/prometheus/common/log"
+
+	//	"github.com/prometheus/common/log"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
-	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/klog"
 )
 
@@ -32,48 +35,22 @@ var (
 	diskByIDPath  = "/dev/disk/by-id/*"
 )
 
-type DiskMaker struct {
-	configLocation  string
-	symlinkLocation string
-	apiClient       ApiUpdater
-	localVolume     *localv1.LocalVolume
-	eventSync       *EventReporter
-}
-
 type DiskLocation struct {
 	// diskNamePath stores full device name path - "/dev/sda"
 	diskNamePath string
 	diskID       string
 }
 
-// NewDiskMaker returns a new instance of DiskMaker
-func NewDiskMaker(configLocation, symLinkLocation string) (*DiskMaker, error) {
-	scheme := scheme.Scheme
-	apis.AddToScheme(scheme)
-	apiUpdater, err := NewAPIUpdater(scheme)
-	if err != nil {
-		log.Error(err, "failed to create new APIUpdater")
-		return &DiskMaker{}, err
-	}
-
-	t := &DiskMaker{}
-	t.configLocation = configLocation
-	t.symlinkLocation = symLinkLocation
-	t.apiClient = apiUpdater
-	t.eventSync = NewEventReporter(t.apiClient)
-	return t, nil
-}
-
-func (d *DiskMaker) loadConfig() (*DiskConfig, error) {
+func (r *ReconcileLocalVolume) loadConfig() (*DiskConfig, error) {
 	var err error
-	content, err := ioutil.ReadFile(d.configLocation)
+	content, err := ioutil.ReadFile(r.configLocation)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read file %s: %v", d.configLocation, err)
+		return nil, fmt.Errorf("failed to read file %s: %v", r.configLocation, err)
 	}
 	var diskConfig DiskConfig
 	err = yaml.Unmarshal(content, &diskConfig)
 	if err != nil {
-		return nil, fmt.Errorf("error unmarshalling %s: %v", d.configLocation, err)
+		return nil, fmt.Errorf("error unmarshalling %s: %v", r.configLocation, err)
 	}
 
 	lv := &localv1.LocalVolume{
@@ -86,45 +63,18 @@ func (d *DiskMaker) loadConfig() (*DiskConfig, error) {
 			APIVersion: diskConfig.OwnerAPIVersion,
 		},
 	}
-	lv, err = d.apiClient.getLocalVolume(lv)
+	err = r.client.Get(context.TODO(), types.NamespacedName{Name: diskConfig.OwnerName, Namespace: diskConfig.OwnerNamespace}, lv)
 
 	localKey := fmt.Sprintf("%s/%s", diskConfig.OwnerNamespace, diskConfig.OwnerName)
 	if err != nil {
 		return nil, fmt.Errorf("error fetching local volume %s: %v", localKey, err)
 	}
-	d.localVolume = lv
+	r.localVolume = lv
 
 	return &diskConfig, nil
 }
 
-// Run and create disk config
-func (d *DiskMaker) Run(stop <-chan struct{}) {
-	ticker := time.NewTicker(checkDuration)
-	defer ticker.Stop()
-
-	err := os.MkdirAll(d.symlinkLocation, 0755)
-	if err != nil {
-		klog.Errorf("error creating local-storage directory %s: %v", d.symlinkLocation, err)
-		os.Exit(-1)
-	}
-
-	for {
-		select {
-		case <-ticker.C:
-			diskConfig, err := d.loadConfig()
-			if err != nil {
-				klog.Errorf("error loading configuration: %v", err)
-				break
-			}
-			d.symLinkDisks(diskConfig)
-		case <-stop:
-			klog.Infof("exiting, received message on stop channel")
-			os.Exit(0)
-		}
-	}
-}
-
-func (d *DiskMaker) createSymLink(deviceNameLocation DiskLocation, symLinkDirPath string) {
+func (r *ReconcileLocalVolume) createSymLink(deviceNameLocation DiskLocation, symLinkDirPath string) {
 
 	var symLinkSource, symLinkTarget string
 	var isSymLinkedByDeviceName bool
@@ -140,7 +90,7 @@ func (d *DiskMaker) createSymLink(deviceNameLocation DiskLocation, symLinkDirPat
 	// get PV creation lock which checks for existing symlinks to this device
 	pvLock, pvLocked, existingSymlinks, err := internal.GetPVCreationLock(
 		symLinkSource,
-		d.symlinkLocation,
+		r.symlinkLocation,
 	)
 
 	unlockFunc := func() {
@@ -162,8 +112,7 @@ func (d *DiskMaker) createSymLink(deviceNameLocation DiskLocation, symLinkDirPat
 	err = os.MkdirAll(symLinkDirPath, 0755)
 	if err != nil {
 		msg := fmt.Sprintf("error creating symlink dir %s: %v", symLinkDirPath, err)
-		e := NewEvent(ErrorFindingMatchingDisk, msg, symLinkTarget)
-		d.eventSync.Report(e, d.localVolume)
+		r.eventSync.Report(r.localVolume, newDiskEvent(ErrorFindingMatchingDisk, msg, symLinkTarget, corev1.EventTypeWarning))
 		klog.Errorf(msg)
 		return
 	}
@@ -176,65 +125,69 @@ func (d *DiskMaker) createSymLink(deviceNameLocation DiskLocation, symLinkDirPat
 	err = os.Symlink(symLinkSource, symLinkTarget)
 	if err != nil {
 		msg := fmt.Sprintf("error creating symlink %s: %v", symLinkTarget, err)
-		e := NewEvent(ErrorFindingMatchingDisk, msg, symLinkSource)
-		d.eventSync.Report(e, d.localVolume)
+		r.eventSync.Report(r.localVolume, newDiskEvent(ErrorFindingMatchingDisk, msg, symLinkSource, corev1.EventTypeWarning))
 		klog.Errorf(msg)
 		return
 	}
 
 	if isSymLinkedByDeviceName {
 		msg := fmt.Sprintf("created symlink on device name %s with no disk/by-id. device name might not persist on reboot", symLinkSource)
-		e := NewEvent(SymLinkedOnDeviceName, msg, symLinkSource)
-		d.eventSync.Report(e, d.localVolume)
+		r.eventSync.Report(r.localVolume, newDiskEvent(SymLinkedOnDeviceName, msg, symLinkSource, corev1.EventTypeWarning))
 		klog.Warningf(msg)
 		return
 	}
 
 	successMsg := fmt.Sprintf("found matching disk %s with id %s", deviceNameLocation.diskNamePath, deviceNameLocation.diskID)
-	e := NewSuccessEvent(FoundMatchingDisk, successMsg, deviceNameLocation.diskNamePath)
-	d.eventSync.Report(e, d.localVolume)
+	r.eventSync.Report(r.localVolume, newDiskEvent(FoundMatchingDisk, successMsg, deviceNameLocation.diskNamePath, corev1.EventTypeNormal))
 }
 
-func (d *DiskMaker) symLinkDisks(diskConfig *DiskConfig) {
+func (r *ReconcileLocalVolume) Reconcile(request reconcile.Request) (reconcile.Result, error) {
+	reqLogger := log.WithValues("request.namespace", request.Namespace, "Request.Name", request.Name)
+	reqLogger.Info("Reconciling LocalVolume")
+
+	err := os.MkdirAll(r.symlinkLocation, 0755)
+	if err != nil {
+		klog.Errorf("error creating local-storage directory %s: %v", r.symlinkLocation, err)
+		os.Exit(-1)
+	}
+	diskConfig, err := r.loadConfig()
+	if err != nil {
+		klog.Errorf("error loading configuration: %v", err)
+		return reconcile.Result{}, err
+	}
 	// run command lsblk --all --noheadings --pairs --output "KNAME,PKNAME,TYPE,MOUNTPOINT"
 	// the reason we are using KNAME instead of NAME is because for lvm disks(and may be others)
 	// the NAME and device file in /dev directory do not match.
 	cmd := exec.Command("lsblk", "--all", "--noheadings", "--pairs", "--output", "KNAME,PKNAME,TYPE,MOUNTPOINT")
 	var out bytes.Buffer
-	var err error
 	cmd.Stdout = &out
 	err = cmd.Run()
 	if err != nil {
 		msg := fmt.Sprintf("error running lsblk: %v", err)
-		e := NewEvent(ErrorRunningBlockList, msg, "")
-		d.eventSync.Report(e, d.localVolume)
+		r.eventSync.Report(r.localVolume, newDiskEvent(ErrorRunningBlockList, msg, "", corev1.EventTypeWarning))
 		klog.Errorf(msg)
-		return
+		return reconcile.Result{}, err
 	}
-	deviceSet := d.findNewDisks(out.String())
-
+	deviceSet := r.findNewDisks(out.String())
 	if len(deviceSet) == 0 {
 		klog.V(3).Infof("unable to find any new disks")
-		return
+		return reconcile.Result{}, nil
 	}
 
-	// read all available disks from /dev/disk/by-id/*
 	allDiskIds, err := filepath.Glob(diskByIDPath)
 	if err != nil {
 		msg := fmt.Sprintf("error listing disks in /dev/disk/by-id: %v", err)
-		e := NewEvent(ErrorListingDeviceID, msg, "")
-		d.eventSync.Report(e, d.localVolume)
+		r.eventSync.Report(r.localVolume, newDiskEvent(ErrorListingDeviceID, msg, "", corev1.EventTypeWarning))
 		klog.Errorf(msg)
-		return
+		return reconcile.Result{}, nil
 	}
 
-	deviceMap, err := d.findMatchingDisks(diskConfig, deviceSet, allDiskIds)
+	deviceMap, err := r.findMatchingDisks(diskConfig, deviceSet, allDiskIds)
 	if err != nil {
 		msg := fmt.Sprintf("error finding matching disks: %v", err)
-		e := NewEvent(ErrorFindingMatchingDisk, msg, "")
-		d.eventSync.Report(e, d.localVolume)
+		r.eventSync.Report(r.localVolume, newDiskEvent(ErrorFindingMatchingDisk, msg, "", corev1.EventTypeWarning))
 		klog.Errorf(msg)
-		return
+		return reconcile.Result{}, nil
 	}
 
 	if len(deviceMap) == 0 {
@@ -255,22 +208,22 @@ func (d *DiskMaker) symLinkDisks(diskConfig *DiskConfig) {
 			}
 			msg = strings.Join(diff.List(), ", ") + " was defined in devicePaths, but expected a path in /dev/"
 		}
-		e := NewEvent(ErrorFindingMatchingDisk, msg, "")
-		d.eventSync.Report(e, d.localVolume)
+		r.eventSync.Report(r.localVolume, newDiskEvent(ErrorFindingMatchingDisk, msg, "", corev1.EventTypeWarning))
 		klog.Errorf(msg)
-		return
+		return reconcile.Result{}, nil
 	}
 
 	for storageClass, deviceArray := range deviceMap {
 		for _, deviceNameLocation := range deviceArray {
-			symLinkDirPath := path.Join(d.symlinkLocation, storageClass)
-			d.createSymLink(deviceNameLocation, symLinkDirPath)
+			symLinkDirPath := path.Join(r.symlinkLocation, storageClass)
+			r.createSymLink(deviceNameLocation, symLinkDirPath)
 		}
 	}
 
+	return reconcile.Result{Requeue: true, RequeueAfter: checkDuration}, nil
 }
 
-func (d *DiskMaker) findMatchingDisks(diskConfig *DiskConfig, deviceSet sets.String, allDiskIds []string) (map[string][]DiskLocation, error) {
+func (r *ReconcileLocalVolume) findMatchingDisks(diskConfig *DiskConfig, deviceSet sets.String, allDiskIds []string) (map[string][]DiskLocation, error) {
 	// blockDeviceMap is a map of storageclass and device locations
 	blockDeviceMap := make(map[string][]DiskLocation)
 
@@ -288,7 +241,7 @@ func (d *DiskMaker) findMatchingDisks(diskConfig *DiskConfig, deviceSet sets.Str
 		for _, diskName := range deviceNames {
 			baseDeviceName := filepath.Base(diskName)
 			if hasExactDisk(deviceSet, baseDeviceName) {
-				matchedDeviceID, err := d.findStableDeviceID(baseDeviceName, allDiskIds)
+				matchedDeviceID, err := r.findStableDeviceID(baseDeviceName, allDiskIds)
 				// This means no /dev/disk/by-id entry was created for requested device.
 				if err != nil {
 					klog.V(4).Infof("unable to find disk ID %s for local pool %v", diskName, err)
@@ -317,8 +270,8 @@ func (d *DiskMaker) findMatchingDisks(diskConfig *DiskConfig, deviceSet sets.Str
 				default:
 					msg = fmt.Sprintf("unable to find matching disk %v", diskName)
 				}
-				e := NewEvent(ErrorFindingMatchingDisk, msg, diskName)
-				d.eventSync.Report(e, d.localVolume)
+				//	e := NewEvent(ErrorFindingMatchingDisk, msg, diskName)
+				r.eventSync.Report(r.localVolume, newDiskEvent(ErrorFindingMatchingDisk, msg, diskName, corev1.EventTypeWarning))
 				klog.Errorf(msg)
 			}
 		}
@@ -326,11 +279,11 @@ func (d *DiskMaker) findMatchingDisks(diskConfig *DiskConfig, deviceSet sets.Str
 		deviceIds := disks.DeviceIDs().List()
 		// handle DeviceIDs
 		for _, deviceID := range deviceIds {
-			matchedDeviceID, matchedDiskName, err := d.findDeviceByID(deviceID)
+			matchedDeviceID, matchedDiskName, err := r.findDeviceByID(deviceID)
 			if err != nil {
 				msg := fmt.Sprintf("unable to add disk-id %s to local disk pool: %v", deviceID, err)
-				e := NewEvent(ErrorFindingMatchingDisk, msg, deviceID)
-				d.eventSync.Report(e, d.localVolume)
+				//	e := NewEvent(ErrorFindingMatchingDisk, msg, deviceID)
+				r.eventSync.Report(r.localVolume, newDiskEvent(ErrorFindingMatchingDisk, msg, deviceID, corev1.EventTypeWarning))
 				klog.Errorf(msg)
 				continue
 			}
@@ -345,7 +298,7 @@ func (d *DiskMaker) findMatchingDisks(diskConfig *DiskConfig, deviceSet sets.Str
 }
 
 // findDeviceByID finds device ID and return device name(such as sda, sdb) and complete deviceID path
-func (d *DiskMaker) findDeviceByID(deviceID string) (string, string, error) {
+func (r *ReconcileLocalVolume) findDeviceByID(deviceID string) (string, string, error) {
 	diskDevPath, err := filepath.EvalSymlinks(deviceID)
 	if err != nil {
 		return "", "", fmt.Errorf("unable to find device at path %s: %v", deviceID, err)
@@ -353,7 +306,7 @@ func (d *DiskMaker) findDeviceByID(deviceID string) (string, string, error) {
 	return deviceID, diskDevPath, nil
 }
 
-func (d *DiskMaker) findStableDeviceID(diskName string, allDisks []string) (string, error) {
+func (r *ReconcileLocalVolume) findStableDeviceID(diskName string, allDisks []string) (string, error) {
 	for _, diskIDPath := range allDisks {
 		diskDevPath, err := filepath.EvalSymlinks(diskIDPath)
 		if err != nil {
@@ -367,7 +320,7 @@ func (d *DiskMaker) findStableDeviceID(diskName string, allDisks []string) (stri
 	return "", fmt.Errorf("unable to find ID of disk %s", diskName)
 }
 
-func (d *DiskMaker) findNewDisks(content string) sets.String {
+func (r *ReconcileLocalVolume) findNewDisks(content string) sets.String {
 	deviceSet := sets.NewString()
 	fullDiskTable := newDiskTable()
 	fullDiskTable.parse(content)
