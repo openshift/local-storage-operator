@@ -1,6 +1,7 @@
 package diskmaker
 
 import (
+	"github.com/openshift/local-storage-operator/pkg/diskmaker/controllers/lv"
 	"github.com/openshift/local-storage-operator/pkg/diskmaker/controllers/lvset"
 
 	"sigs.k8s.io/controller-runtime/pkg/manager"
@@ -9,6 +10,7 @@ import (
 func init() {
 	// AddToManagerFuncs is a list of functions to create controllers and add them to a manager.
 	AddToManagerFuncs = append(AddToManagerFuncs, lvset.Add)
+	AddToManagerFuncs = append(AddToManagerFuncs, lv.Add)
 }
 
 // AddToManagerFuncs is a list of functions to add all Controllers to the Manager

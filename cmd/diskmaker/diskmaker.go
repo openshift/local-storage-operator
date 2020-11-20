@@ -5,11 +5,7 @@ import (
 
 	"flag"
 
-	"github.com/openshift/local-storage-operator/pkg/diskmaker"
-	"github.com/prometheus/common/log"
-	"github.com/spf13/cobra"
 	"k8s.io/klog"
-	"sigs.k8s.io/controller-runtime/pkg/manager/signals"
 )
 
 var (
@@ -27,15 +23,4 @@ func printVersion() {
 	klog.Infof("Go Version: %s", runtime.Version())
 	klog.Infof("Go OS/Arch: %s/%s", runtime.GOOS, runtime.GOARCH)
 	klog.Infof("local-storage-diskmaker Version: %v", version)
-}
-
-func startDiskMaker(cmd *cobra.Command, args []string) error {
-	printVersion()
-	diskMaker, err := diskmaker.NewDiskMaker(configLocation, symlinkLocation)
-	if err != nil {
-		log.Error(err, "Failed to create DiskMaker")
-		return err
-	}
-	diskMaker.Run(signals.SetupSignalHandler())
-	return nil
 }

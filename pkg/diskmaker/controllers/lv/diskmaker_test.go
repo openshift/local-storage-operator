@@ -1,20 +1,27 @@
-package diskmaker
+package lv
 
 import (
-	"github.com/openshift/local-storage-operator/pkg/internal"
 	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
+	"github.com/openshift/local-storage-operator/pkg/internal"
+
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/tools/record"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	localv1 "github.com/openshift/local-storage-operator/pkg/apis/local/v1"
+	"github.com/stretchr/testify/assert"
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
 )
 
 func TestFindMatchingDisk(t *testing.T) {
-	d := getFakeDiskMaker("/tmp/foo", "/mnt/local-storage")
+	d := getFakeDiskMaker(t, nil, "/tmp/foo", "/mnt/local-storage")
 	blockDevices := []internal.BlockDevice{
 		{
 			Name:  "sdb1",
@@ -60,6 +67,16 @@ func TestLoadConfig(t *testing.T) {
 		OwnerUID:        "foobar",
 		OwnerAPIVersion: localv1.SchemeGroupVersion.String(),
 	}
+	lv := &localv1.LocalVolume{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: "local.storage.openshift.io",
+			Kind:       "LocalVolume",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "foobar",
+			Namespace: "default",
+		},
+	}
 	yaml, err := diskConfig.ToYAML()
 	if err != nil {
 		t.Fatalf("error marshalling yaml : %v", err)
@@ -70,7 +87,7 @@ func TestLoadConfig(t *testing.T) {
 		t.Fatalf("error writing yaml to disk : %v", err)
 	}
 
-	d := getFakeDiskMaker(filename, "/mnt/local-storage")
+	d := getFakeDiskMaker(t, lv, filename, "/mnt/local-storage")
 	diskConfigFromDisk, err := d.loadConfig()
 	if err != nil {
 		t.Fatalf("error loading diskconfig from disk : %v", err)
@@ -95,7 +112,17 @@ func TestCreateSymLinkByDeviceID(t *testing.T) {
 	defer os.Remove(fakeDisk.Name())
 	defer os.Remove(fakeDiskByID.Name())
 
-	d := getFakeDiskMaker("", tmpSymLinkTargetDir)
+	lv := &localv1.LocalVolume{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: "local.storage.openshift.io",
+			Kind:       "LocalVolume",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "foobar",
+			Namespace: "default",
+		},
+	}
+	d := getFakeDiskMaker(t, lv, "", tmpSymLinkTargetDir)
 	diskLocation := DiskLocation{fakeDisk.Name(), fakeDiskByID.Name()}
 
 	d.createSymLink(diskLocation, tmpSymLinkTargetDir)
@@ -110,7 +137,18 @@ func TestCreateSymLinkByDeviceName(t *testing.T) {
 	defer os.Remove(fakeDisk.Name())
 	defer os.RemoveAll(tmpSymLinkTargetDir)
 
-	d := getFakeDiskMaker("", tmpSymLinkTargetDir)
+	lv := &localv1.LocalVolume{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: "local.storage.openshift.io",
+			Kind:       "LocalVolume",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "foobar",
+			Namespace: "default",
+		},
+	}
+
+	d := getFakeDiskMaker(t, lv, "", tmpSymLinkTargetDir)
 	diskLocation := DiskLocation{fakeDisk.Name(), ""}
 	d.createSymLink(diskLocation, tmpSymLinkTargetDir)
 
@@ -118,11 +156,25 @@ func TestCreateSymLinkByDeviceName(t *testing.T) {
 	assert.Truef(t, hasFile(t, tmpSymLinkTargetDir, "diskName"), "failed to find symlink with disk name in %s directory", tmpSymLinkTargetDir)
 }
 
-func getFakeDiskMaker(configLocation, symlinkLocation string) *DiskMaker {
-	d := &DiskMaker{configLocation: configLocation, symlinkLocation: symlinkLocation}
-	d.apiClient = &MockAPIUpdater{}
-	d.eventSync = NewEventReporter(d.apiClient)
-	return d
+func getFakeDiskMaker(t *testing.T, objs runtime.Object, configLocation, symlinkLocation string) *ReconcileLocalVolume {
+	r := &ReconcileLocalVolume{configLocation: configLocation, symlinkLocation: symlinkLocation}
+	scheme, err := localv1.SchemeBuilder.Build()
+	assert.NoErrorf(t, err, "creating scheme")
+	err = corev1.AddToScheme(scheme)
+	assert.NoErrorf(t, err, "adding corev1 to scheme")
+
+	err = appsv1.AddToScheme(scheme)
+	assert.NoErrorf(t, err, "adding appsv1 to scheme")
+	if objs != nil {
+		r.client = fake.NewFakeClientWithScheme(scheme, objs)
+	} else {
+		r.client = fake.NewFakeClientWithScheme(scheme)
+	}
+
+	r.scheme = scheme
+	//apis.AddToScheme(r.scheme)
+	r.eventSync = newEventReporter(record.NewFakeRecorder(10))
+	return r
 }
 
 func getDeiveIDs() []string {

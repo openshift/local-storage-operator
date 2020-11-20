@@ -57,11 +57,11 @@ func (r *DaemonReconciler) Reconcile(request reconcile.Request) (reconcile.Resul
 		return reconcile.Result{}, err
 	}
 
-	lvSets, tolerations, ownerRefs, nodeSelector, err := r.aggregateDeamonInfo(request)
+	lvSets, lvs, tolerations, ownerRefs, nodeSelector, err := r.aggregateDeamonInfo(request)
 	if err != nil {
 		return reconcile.Result{}, err
 	}
-	if len(lvSets.Items) < 1 {
+	if len(lvSets.Items) < 1 && len(lvs.Items) < 1 {
 		return reconcile.Result{}, nil
 	}
 
@@ -72,7 +72,6 @@ func (r *DaemonReconciler) Reconcile(request reconcile.Request) (reconcile.Resul
 		r.reqLogger.Info("provisioner configmap changed")
 	}
 
-	// hash the configMap data to include in daemonsets and ensure they update when data changes
 	configMapDataHash := dataHash(configMap.Data)
 
 	diskMakerDSMutateFn := getDiskMakerDSMutateFn(request, tolerations, ownerRefs, nodeSelector, configMapDataHash)

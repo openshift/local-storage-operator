@@ -11,7 +11,7 @@ import (
 	localv1 "github.com/openshift/local-storage-operator/pkg/apis/local/v1"
 	"github.com/openshift/local-storage-operator/pkg/common"
 	commontypes "github.com/openshift/local-storage-operator/pkg/common"
-	"github.com/openshift/local-storage-operator/pkg/diskmaker"
+	lvDiskmaker "github.com/openshift/local-storage-operator/pkg/diskmaker/controllers/lv"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	v1 "k8s.io/api/core/v1"
@@ -218,23 +218,23 @@ func TestSyncLocalVolumeProvider(t *testing.T) {
 
 	provisionedDaemonSets := apiClient.daemonSets
 	var localProvisionerDaemonSet *appsv1.DaemonSet
-	var diskMakerDaemonset *appsv1.DaemonSet
+	//	var diskMakerDaemonset *appsv1.DaemonSet
 	for _, ds := range provisionedDaemonSets {
 		if ds.daemonSet.Name == "local-disks-local-provisioner" && ds.forceRollout {
 			localProvisionerDaemonSet = ds.daemonSet
 		}
 
-		if ds.daemonSet.Name == "local-disks-local-diskmaker" && ds.forceRollout {
-			diskMakerDaemonset = ds.daemonSet
-		}
+		// if ds.daemonSet.Name == "local-disks-local-diskmaker" && ds.forceRollout {
+		// 	diskMakerDaemonset = ds.daemonSet
+		// }
 	}
 
-	diskMakerContainerImage := diskMakerDaemonset.Spec.Template.Spec.Containers[0].Image
+	//	diskMakerContainerImage := diskMakerDaemonset.Spec.Template.Spec.Containers[0].Image
 	provisionerContainerImage := localProvisionerDaemonSet.Spec.Template.Spec.Containers[0].Image
 
-	if diskMakerContainerImage != diskMakerImage {
-		t.Fatalf("expected image %v got %v", diskMakerImage, diskMakerContainerImage)
-	}
+	// if diskMakerContainerImage != diskMakerImage {
+	// 	t.Fatalf("expected image %v got %v", diskMakerImage, diskMakerContainerImage)
+	// }
 
 	if provisionerContainerImage != provisionerImage {
 		t.Fatalf("expected provisioner image %v got %v", provisionerImage, provisionerContainerImage)
@@ -346,7 +346,7 @@ func verifyDiskMakerConfigmap(configMap *v1.ConfigMap, lv *localv1.LocalVolume) 
 		return fmt.Errorf("error getting diskmaker data")
 	}
 
-	diskMakerConfig := &diskmaker.DiskConfig{}
+	diskMakerConfig := &lvDiskmaker.DiskConfig{}
 	err := yaml.Unmarshal([]byte(makerData), diskMakerConfig)
 	if err != nil {
 		return fmt.Errorf("error unmarshalling the configmap %v", err)

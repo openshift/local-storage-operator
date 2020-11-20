@@ -12,6 +12,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
+	v1 "github.com/openshift/local-storage-operator/pkg/apis/local/v1"
 	localv1alpha1 "github.com/openshift/local-storage-operator/pkg/apis/local/v1alpha1"
 	"github.com/openshift/local-storage-operator/pkg/common"
 	appsv1 "k8s.io/api/apps/v1"
@@ -57,6 +58,16 @@ func AddDaemonReconciler(mgr manager.Manager) error {
 
 	// watch provisioner configmap
 	err = c.Watch(&source.Kind{Type: &corev1.ConfigMap{}}, enqueueOnlyNamespace, common.EnqueueOnlyLabeledSubcomponents(common.ProvisionerConfigMapName))
+	if err != nil {
+		return err
+	}
+
+	err = c.Watch(&source.Kind{Type: &v1.LocalVolume{}}, enqueueOnlyNamespace)
+	if err != nil {
+		return err
+	}
+
+	err = c.Watch(&source.Kind{Type: &appsv1.DaemonSet{}}, &handler.EnqueueRequestForOwner{OwnerType: &v1.LocalVolume{}, IsController: true})
 	if err != nil {
 		return err
 	}
