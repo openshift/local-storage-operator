@@ -43,69 +43,26 @@ func newFakeLocalVolumeSetReconciler(t *testing.T, objs ...runtime.Object) *Loca
 
 func TestDaemonSetCondition(t *testing.T) {
 	type knownResult struct {
-		diskMakerFound              bool
-		provisionerFound            bool
-		diskMakerUnavailableCount   int32
-		provisionerUnavailableCount int32
-		condition                   bool
+		diskMakerFound            bool
+		diskMakerUnavailableCount int32
+		condition                 bool
 	}
 
 	testTable := []knownResult{
 		{
-			diskMakerFound:              false,
-			provisionerFound:            false,
-			diskMakerUnavailableCount:   0,
-			provisionerUnavailableCount: 0,
-			condition:                   false,
+			diskMakerFound:            true,
+			diskMakerUnavailableCount: 0,
+			condition:                 true,
 		},
 		{
-			diskMakerFound:              true,
-			provisionerFound:            false,
-			diskMakerUnavailableCount:   0,
-			provisionerUnavailableCount: 0,
-			condition:                   false,
+			diskMakerFound:            false,
+			diskMakerUnavailableCount: 5,
+			condition:                 false,
 		},
 		{
-			diskMakerFound:              false,
-			provisionerFound:            true,
-			diskMakerUnavailableCount:   0,
-			provisionerUnavailableCount: 0,
-			condition:                   false,
-		},
-		{
-			diskMakerFound:              true,
-			provisionerFound:            true,
-			diskMakerUnavailableCount:   0,
-			provisionerUnavailableCount: 0,
-			condition:                   true,
-		},
-		{
-			diskMakerFound:              true,
-			provisionerFound:            true,
-			diskMakerUnavailableCount:   1,
-			provisionerUnavailableCount: 0,
-			condition:                   false,
-		},
-		{
-			diskMakerFound:              true,
-			provisionerFound:            true,
-			diskMakerUnavailableCount:   0,
-			provisionerUnavailableCount: 1,
-			condition:                   false,
-		},
-		{
-			diskMakerFound:              true,
-			provisionerFound:            true,
-			diskMakerUnavailableCount:   1,
-			provisionerUnavailableCount: 1,
-			condition:                   false,
-		},
-		{
-			diskMakerFound:              true,
-			provisionerFound:            true,
-			diskMakerUnavailableCount:   3,
-			provisionerUnavailableCount: 3,
-			condition:                   false,
+			diskMakerFound:            false,
+			diskMakerUnavailableCount: 1,
+			condition:                 false,
 		},
 	}
 
@@ -120,24 +77,10 @@ func TestDaemonSetCondition(t *testing.T) {
 			},
 		}
 
-		provisioner := &appsv1.DaemonSet{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      nodedaemon.ProvisionerName,
-				Namespace: testNamespace,
-			},
-			Status: appsv1.DaemonSetStatus{
-				NumberUnavailable: kr.provisionerUnavailableCount,
-			},
-		}
-
 		var objs []runtime.Object
 		if kr.diskMakerFound {
 			objs = append(objs, diskmaker)
 		}
-		if kr.provisionerFound {
-			objs = append(objs, provisioner)
-		}
-
 		var lvsets []*localv1alpha1.LocalVolumeSet
 
 		for i := 0; i <= 5; i++ {
