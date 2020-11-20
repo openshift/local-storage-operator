@@ -5,10 +5,6 @@ import (
 	"testing"
 	"time"
 
-	"k8s.io/client-go/tools/record"
-	"sigs.k8s.io/controller-runtime/pkg/client/fake"
-
-	"github.com/openshift/client-go/security/clientset/versioned/scheme"
 	localv1alpha1 "github.com/openshift/local-storage-operator/pkg/apis/local/v1alpha1"
 	"github.com/openshift/local-storage-operator/pkg/internal"
 	"github.com/stretchr/testify/assert"
@@ -36,18 +32,7 @@ func TestDeviceAge(t *testing.T) {
 		matcherMap = oldMatcherMap
 	}()
 
-	// fake eventrecorder
-	fakeRecorder := record.NewFakeRecorder(10)
-	fakeReporter := newEventReporter(fakeRecorder)
-	fakeClock := &fakeClock{}
-
-	// fake reconciler
-	r := ReconcileLocalVolumeSet{
-		client:        fake.NewFakeClient(),
-		scheme:        scheme.Scheme,
-		eventReporter: fakeReporter,
-		deviceAgeMap:  newAgeMap(fakeClock),
-	}
+	r, tc := newFakeLocalVolumeSetReconciler(t)
 
 	logger := log.WithName("test-logr")
 
@@ -75,7 +60,7 @@ func TestDeviceAge(t *testing.T) {
 	for run, atTime := range runs {
 		t.Logf("Run %d, time is set to %+v", run, atTime)
 		// freeze time
-		fakeClock.ftime = atTime
+		tc.fakeClock.ftime = atTime
 		t.Logf("Adding %v devices at this time ^", increment)
 		// initial block devices (Set 0)
 		targetLength := len(blockDevices) + increment
