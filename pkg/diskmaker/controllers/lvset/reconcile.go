@@ -156,7 +156,7 @@ func (r *ReconcileLocalVolumeSet) Reconcile(request reconcile.Request) (reconcil
 		// validate MaxDeviceCount
 		var alreadyProvisionedCount int
 		var currentDeviceSymlinked bool
-		alreadyProvisionedCount, currentDeviceSymlinked, noMatch, err = getAlreadySymlinked(symLinkDir, blockDevice, validDevices)
+		alreadyProvisionedCount, currentDeviceSymlinked, noMatch, err = getAlreadySymlinked(symLinkDir, blockDevice, blockDevices)
 		_ = currentDeviceSymlinked
 		if err != nil && lvset.Spec.MaxDeviceCount != nil {
 			r.eventReporter.Report(lvset, newDiskEvent(ErrorListingExistingSymlinks, "error determining already provisioned disks", "", corev1.EventTypeWarning))
