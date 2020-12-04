@@ -1,6 +1,11 @@
 package common
 
-import "os"
+import (
+	"fmt"
+	"os"
+
+	localv1 "github.com/openshift/local-storage-operator/pkg/apis/local/v1"
+)
 
 const (
 	defaultDiskMakerImageVersion = "quay.io/openshift/origin-local-storage-diskmaker"
@@ -48,4 +53,9 @@ func GetLocalDiskLocationPath() string {
 		return localDiskLocationEnvImage
 	}
 	return defaultlocalDiskLocation
+}
+
+// LocalVolumeKey returns key for the localvolume
+func LocalVolumeKey(lv *localv1.LocalVolume) string {
+	return fmt.Sprintf("%s/%s", lv.Namespace, lv.Name)
 }

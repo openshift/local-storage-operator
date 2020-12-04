@@ -18,9 +18,7 @@ import (
 
 func (r *LocalVolumeSetReconciler) updateDaemonSetsCondition(request reconcile.Request) error {
 	var diskMakerMessage string
-	var localProvisionerMessage string
 	diskMakerFound := true
-	localProvisionerFound := true
 	conditionType := DaemonSetsAvailableAndConfigured
 	conditionStatus := operatorv1.ConditionTrue
 	diskMakerDS := &appsv1.DaemonSet{}
@@ -35,29 +33,12 @@ func (r *LocalVolumeSetReconciler) updateDaemonSetsCondition(request reconcile.R
 		diskMakerMessage = "Not found."
 		conditionStatus = operatorv1.ConditionFalse
 	} else if diskMakerDS.Status.NumberUnavailable > 0 {
-		diskMakerMessage = fmt.Sprintf("%d Unavailable.", diskMakerDS.Status.NumberUnavailable)
+		diskMakerMessage = fmt.Sprintf("%d/%d Unavailable.", diskMakerDS.Status.NumberUnavailable, diskMakerDS.Status.CurrentNumberScheduled)
 		conditionStatus = operatorv1.ConditionFalse
 	} else {
 		diskMakerMessage = "Available"
 	}
-
-	localProvisionerDS := &appsv1.DaemonSet{}
-	key = types.NamespacedName{Name: nodedaemon.ProvisionerName, Namespace: request.Namespace}
-	err = r.client.Get(context.TODO(), key, localProvisionerDS)
-	if kerrors.IsNotFound(err) {
-		localProvisionerFound = false
-	} else if err != nil {
-		return fmt.Errorf("failed to get %q: %w", key, err)
-	}
-	if !localProvisionerFound {
-		localProvisionerMessage = "Not found."
-		conditionStatus = operatorv1.ConditionFalse
-	} else if localProvisionerDS.Status.NumberUnavailable > 0 {
-		localProvisionerMessage = fmt.Sprintf("%d Unavailable.", localProvisionerDS.Status.NumberUnavailable)
-		conditionStatus = operatorv1.ConditionFalse
-	} else {
-		localProvisionerMessage = "Available"
-	}
+	conditionMessage := fmt.Sprintf("DiskMaker: %s", diskMakerMessage)
 
 	lvSet := &localv1alpha1.LocalVolumeSet{}
 	err = r.client.Get(context.TODO(), request.NamespacedName, lvSet)
@@ -68,8 +49,6 @@ func (r *LocalVolumeSetReconciler) updateDaemonSetsCondition(request reconcile.R
 		}
 		return fmt.Errorf("failed to get localvolumeset: %w", err)
 	}
-
-	conditionMessage := fmt.Sprintf("DiskMaker: %s, LocalProvisioner: %s", diskMakerMessage, localProvisionerMessage)
 
 	changed := SetCondition(&lvSet.Status.Conditions, conditionType, conditionMessage, conditionStatus)
 	if changed {
