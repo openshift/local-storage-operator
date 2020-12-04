@@ -147,7 +147,7 @@ func (r *ReconcileLocalVolumeSet) Reconcile(request reconcile.Request) (reconcil
 	for _, blockDevice := range validDevices {
 		devLogger := reqLogger.WithValues("Device.Name", blockDevice.Name)
 
-		symlinkSourcePath, symlinkPath, _, err := getSymLinkSourceAndTarget(blockDevice, symLinkDir)
+		symlinkSourcePath, symlinkPath, idExists, err := getSymLinkSourceAndTarget(blockDevice, symLinkDir)
 		if err != nil {
 			devLogger.Error(err, "error while discovering symlink source and target")
 			continue
@@ -185,7 +185,7 @@ func (r *ReconcileLocalVolumeSet) Reconcile(request reconcile.Request) (reconcil
 
 		devLogger.Info("provisioning PV")
 		r.eventReporter.Report(lvset, newDiskEvent(diskmaker.FoundMatchingDisk, "provisioning matching disk", blockDevice.KName, corev1.EventTypeNormal))
-		err = r.provisionPV(lvset, devLogger, blockDevice, *storageClass, mountPointMap, symlinkSourcePath, symlinkPath)
+		err = r.provisionPV(lvset, devLogger, blockDevice, *storageClass, mountPointMap, symlinkSourcePath, symlinkPath, idExists)
 		if err != nil {
 			r.eventReporter.Report(lvset, newDiskEvent(diskmaker.ErrorProvisioningDisk, "provisioning failed", blockDevice.KName, corev1.EventTypeWarning))
 			return reconcile.Result{}, fmt.Errorf("could not provision disk: %w", err)
@@ -324,6 +324,7 @@ func (r *ReconcileLocalVolumeSet) provisionPV(
 	mountPointMap sets.String,
 	symlinkSourcePath string,
 	symlinkPath string,
+	idExists bool,
 ) error {
 
 	// get /dev/KNAME path
@@ -355,7 +356,7 @@ func (r *ReconcileLocalVolumeSet) provisionPV(
 	if len(existingSymlinks) > 0 { // already claimed
 		for _, path := range existingSymlinks {
 			if path == symlinkPath { // symlinked in this folder, ensure the PV exists
-				return r.createPV(obj, devLogger, storageClass, mountPointMap, symlinkPath)
+				return r.createPV(obj, devLogger, storageClass, mountPointMap, symlinkPath, dev.KName, idExists)
 			}
 		}
 		return nil
@@ -380,13 +381,13 @@ func (r *ReconcileLocalVolumeSet) provisionPV(
 				// existing file evals to disk
 			} else if valid {
 				// if file exists and is accurate symlink, create pv
-				return r.createPV(obj, devLogger, storageClass, mountPointMap, symlinkPath)
+				return r.createPV(obj, devLogger, storageClass, mountPointMap, symlinkPath, dev.KName, idExists)
 			}
 		}
 	} else if err != nil {
 		return err
 	}
-	return r.createPV(obj, devLogger, storageClass, mountPointMap, symlinkPath)
+	return r.createPV(obj, devLogger, storageClass, mountPointMap, symlinkPath, dev.KName, idExists)
 }
 
 func generatePVName(file, node, class string) string {

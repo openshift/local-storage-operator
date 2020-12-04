@@ -17,6 +17,10 @@ const (
 	PVOwnerNameLabel = "storage.openshift.com/owner-name"
 	// PVOwnerNamespaceLabel stores the namespace of the CR that created this PV
 	PVOwnerNamespaceLabel = "storage.openshift.com/owner-namespace"
+	// PVDeviceNameLabel is the KNAME of the device
+	PVDeviceNameLabel = "storage.openshift.com/device-name"
+	// PVDeviceIDLabel is the id of the device
+	PVDeviceIDLabel = "storage.openshift.com/device-id"
 )
 
 // GetPVOwnerSelector returns selector for selecting pvs owned by given volume

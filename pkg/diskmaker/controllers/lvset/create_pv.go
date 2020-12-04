@@ -3,6 +3,7 @@ package lvset
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 
 	"github.com/go-logr/logr"
 	localv1alpha1 "github.com/openshift/local-storage-operator/pkg/apis/local/v1alpha1"
@@ -22,6 +23,8 @@ func (r *ReconcileLocalVolumeSet) createPV(
 	storageClass storagev1.StorageClass,
 	mountPointMap sets.String,
 	symLinkPath string,
+	deviceName string,
+	idExists bool,
 ) error {
 	useJob := false
 	nodeLabels := r.runtimeConfig.Node.GetLabels()
@@ -106,7 +109,12 @@ func (r *ReconcileLocalVolumeSet) createPV(
 		common.PVOwnerKindLabel:      obj.Kind,
 		common.PVOwnerNamespaceLabel: obj.GetNamespace(),
 		common.PVOwnerNameLabel:      obj.GetName(),
+		common.PVDeviceNameLabel:     deviceName,
 	}
+	if idExists {
+		labels[common.PVDeviceIDLabel] = filepath.Base(symLinkPath)
+	}
+
 	var reclaimPolicy corev1.PersistentVolumeReclaimPolicy
 	if storageClass.ReclaimPolicy == nil {
 		devLogger.Error(fmt.Errorf("no ReclaimPolicy set in storageclass"), "defaulting to delete")

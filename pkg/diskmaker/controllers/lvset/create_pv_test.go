@@ -225,6 +225,8 @@ func TestCreatePV(t *testing.T) {
 			tc.sc,
 			tc.mountPoints,
 			tc.symlinkpath,
+			tc.deviceName,
+			true,
 		)
 		if tc.shouldErr {
 			assert.NotNil(t, err)
@@ -265,6 +267,8 @@ func TestCreatePV(t *testing.T) {
 			tc.sc,
 			tc.mountPoints,
 			tc.symlinkpath,
+			tc.deviceName,
+			true,
 		)
 		assert.Nil(t, err)
 
