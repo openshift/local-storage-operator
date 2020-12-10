@@ -191,11 +191,7 @@ func (d *DiskMaker) symLinkDeviceToPool(deviceNameLocation DiskLocation, symLink
 		return nil
 	}
 	// get PV creation lock which checks for existing symlinks to this device
-	pvLock, existingSymlinks, err := getPVCreationLock(deviceNameLocation.diskNamePath, d.symlinkLocation)
-	if err != nil {
-		return fmt.Errorf("error acquiring exclusive lock on %s", deviceNameLocation.diskNamePath)
-	}
-
+	pvLock, deviceLocked, existingSymlinks, err := getPVCreationLock(deviceNameLocation.diskNamePath, d.symlinkLocation)
 	unlockFunc := func() {
 		err := pvLock.unlock()
 		if err != nil {
@@ -203,6 +199,10 @@ func (d *DiskMaker) symLinkDeviceToPool(deviceNameLocation DiskLocation, symLink
 		}
 	}
 	defer unlockFunc()
+	if err != nil || !deviceLocked {
+		klog.Errorf("failed to acquire lock on device %s", deviceNameLocation.diskNamePath)
+		return fmt.Errorf("error acquiring exclusive lock on %s", deviceNameLocation.diskNamePath)
+	}
 
 	if len(existingSymlinks) > 0 {
 		e := newEvent(DeviceSymlinkExists, "this device is already matched by another LocalVolume or LocalVolumeSet", symLinkPath)
@@ -351,17 +351,17 @@ func fileExists(filename string) bool {
 // ExclusiveFileLock, must be unlocked regardless of success
 // existingLinkPaths is a list of existing symlinks. It is not exhaustive
 // error
-func getPVCreationLock(device string, symlinkDirs string) (exclusiveFileLock, []string, error) {
+func getPVCreationLock(device string, symlinkDirs string) (exclusiveFileLock, bool, []string, error) {
 	lock := exclusiveFileLock{path: device}
 	locked, err := lock.lock()
 	if err != nil || !locked {
-		return lock, []string{}, err
+		return lock, false, []string{}, err
 	}
 	existingLinkPaths, err := getMatchingSymlinksInDirs(device, symlinkDirs)
 	if err != nil || len(existingLinkPaths) > 0 {
-		return lock, existingLinkPaths, err
+		return lock, false, existingLinkPaths, err
 	}
-	return lock, existingLinkPaths, nil
+	return lock, true, existingLinkPaths, nil
 }
 
 // getMatchingSymlinksInDirs returns all the files in dir that are the same file as path after evaluating symlinks
