@@ -64,7 +64,8 @@ spec:
                         type: string
                       devicePaths:
                         description: 'A list of devices which would be chosen for local storage.
-                        For example - ["/dev/sda", "/dev/sdb", "/dev/disk/by-id/ata-crucial"]'
+                        For example - ["/dev/sda", "/dev/sdb", "/dev/disk/by-id/ata-crucial"].
+                        It is strongly recommended to use the unique /dev/disk/by-id/... name if available, as these identifiers persist across node restarts.'
                         items:
                           type: string
                         type: array
