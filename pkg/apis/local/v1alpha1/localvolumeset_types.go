@@ -25,7 +25,7 @@ type DeviceType string
 const (
 	// RawDisk represents a device-type of block disk
 	RawDisk DeviceType = "disk"
-	// Partition represents a device-type of partion
+	// Partition represents a device-type of partition
 	Partition DeviceType = "part"
 	// Loop type device
 	Loop DeviceType = "loop"
@@ -42,7 +42,7 @@ type DeviceInclusionSpec struct {
 	// by default, it selects both
 	// +optional
 	DeviceMechanicalProperties []DeviceMechanicalProperty `json:"deviceMechanicalProperties,omitempty"`
-	// MinSize is the minimum size of the device which needs to be included
+	// MinSize is the minimum size of the device which needs to be included. Defaults to `1Gi` if empty
 	// +optional
 	MinSize *resource.Quantity `json:"minSize,omitempty"`
 	// MaxSize is the maximum size of the device which needs to be included

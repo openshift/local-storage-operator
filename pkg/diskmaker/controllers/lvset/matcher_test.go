@@ -140,9 +140,9 @@ func TestNotSuspended(t *testing.T) {
 	}
 	assertAll(t, results)
 }
-func TestnoBiosInPartLabel(t *testing.T) {
+func TestnoBiosBootInPartLabel(t *testing.T) {
 	matcherMap := FilterMap
-	matcher := noBiosInPartLabel
+	matcher := noBiosBootInPartLabel
 	results := []knownMatcherResult{
 		// true
 		{
@@ -168,12 +168,12 @@ func TestnoBiosInPartLabel(t *testing.T) {
 		},
 		{
 			matcherMap: matcherMap, matcher: matcher,
-			dev:         internal.BlockDevice{PartLabel: "bios boot partion"},
+			dev:         internal.BlockDevice{PartLabel: "bios boot partition"},
 			expectMatch: false,
 		},
 		{
 			matcherMap: matcherMap, matcher: matcher,
-			dev:         internal.BlockDevice{PartLabel: "this is a BIOS BOOT partion"},
+			dev:         internal.BlockDevice{PartLabel: "this is a BIOS BOOT partition"},
 			expectMatch: false,
 		},
 		{
@@ -184,6 +184,16 @@ func TestnoBiosInPartLabel(t *testing.T) {
 		{
 			matcherMap: matcherMap, matcher: matcher,
 			dev:         internal.BlockDevice{PartLabel: "BIOS"},
+			expectMatch: false,
+		},
+		{
+			matcherMap: matcherMap, matcher: matcher,
+			dev:         internal.BlockDevice{PartLabel: "boot"},
+			expectMatch: false,
+		},
+		{
+			matcherMap: matcherMap, matcher: matcher,
+			dev:         internal.BlockDevice{PartLabel: "BOOT"},
 			expectMatch: false,
 		},
 	}
@@ -271,12 +281,6 @@ func TestInSizeRange(t *testing.T) {
 			spec:        &localv1alpha1.DeviceInclusionSpec{},
 			expectMatch: true, expectErr: false,
 		},
-		{
-			matcherMap: matcherMap, matcher: matcher,
-			dev:         internal.BlockDevice{Size: fmt.Sprintf("%v", 10000*Ki)},
-			spec:        &localv1alpha1.DeviceInclusionSpec{},
-			expectMatch: true, expectErr: false,
-		},
 		// violate min
 		// barely
 		{
@@ -311,6 +315,25 @@ func TestInSizeRange(t *testing.T) {
 			dev:         internal.BlockDevice{Size: "foo"},
 			spec:        &localv1alpha1.DeviceInclusionSpec{MinSize: &tenGi, MaxSize: &fiftyGi},
 			expectMatch: false, expectErr: true,
+		},
+		// default minSize
+		{
+			matcherMap: matcherMap, matcher: matcher,
+			dev:         internal.BlockDevice{Size: fmt.Sprintf("%v", .9*Gi)},
+			spec:        &localv1alpha1.DeviceInclusionSpec{},
+			expectMatch: false, expectErr: false,
+		},
+		{
+			matcherMap: matcherMap, matcher: matcher,
+			dev:         internal.BlockDevice{Size: fmt.Sprintf("%v", 1.1*Gi)},
+			spec:        &localv1alpha1.DeviceInclusionSpec{},
+			expectMatch: true, expectErr: false,
+		},
+		{
+			matcherMap: matcherMap, matcher: matcher,
+			dev:         internal.BlockDevice{Size: fmt.Sprintf("%v", .9*Gi)},
+			spec:        &localv1alpha1.DeviceInclusionSpec{MaxSize: &fiftyGi},
+			expectMatch: false, expectErr: false,
 		},
 	}
 	assertAll(t, results)
