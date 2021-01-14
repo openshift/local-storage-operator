@@ -23,7 +23,7 @@ type DiscoveredDeviceType string
 const (
 	// DiskType represents a device-type of block disk
 	DiskType DiscoveredDeviceType = "disk"
-	// PartType represents a device-type of partion
+	// PartType represents a device-type of partition
 	PartType DiscoveredDeviceType = "part"
 	// LVMType is an LVM type
 	LVMType DiscoveredDeviceType = "lvm"

@@ -15,7 +15,7 @@ const (
 	notReadOnly           = "notReadOnly"
 	notRemovable          = "notRemovable"
 	notSuspended          = "notSuspended"
-	noBiosInPartLabel     = "noBiosInPartLabel"
+	noBiosBootInPartLabel = "noBiosBootInPartLabel"
 	noFilesystemSignature = "noFilesystemSignature"
 	// file access , can't mock test
 	noChildren = "noChildren"
@@ -29,6 +29,8 @@ const (
 	inVendorList             = "inVendorList"
 	inModelList              = "inModelList"
 )
+
+var defaultMinSize = resource.MustParse("1Gi")
 
 // maps of function identifier (for logs) to filter function.
 // These are passed the localv1alpha1.DeviceInclusionSpec to make testing easier,
@@ -50,9 +52,10 @@ var FilterMap = map[string]func(internal.BlockDevice, *localv1alpha1.DeviceInclu
 		return matched, nil
 	},
 
-	noBiosInPartLabel: func(dev internal.BlockDevice, spec *localv1alpha1.DeviceInclusionSpec) (bool, error) {
-		biosInPartLabel := strings.Contains(strings.ToLower(dev.PartLabel), strings.ToLower("bios"))
-		return !biosInPartLabel, nil
+	noBiosBootInPartLabel: func(dev internal.BlockDevice, spec *localv1alpha1.DeviceInclusionSpec) (bool, error) {
+		biosBootInPartLabel := strings.Contains(strings.ToLower(dev.PartLabel), strings.ToLower("bios")) ||
+			strings.Contains(strings.ToLower(dev.PartLabel), strings.ToLower("boot"))
+		return !biosBootInPartLabel, nil
 	},
 
 	noFilesystemSignature: func(dev internal.BlockDevice, spec *localv1alpha1.DeviceInclusionSpec) (bool, error) {
@@ -98,11 +101,12 @@ var matcherMap = map[string]func(internal.BlockDevice, *localv1alpha1.DeviceIncl
 			return false, fmt.Errorf("could not parse device size: %w", err)
 		}
 		greaterThanOrEqualToMin := true
-		if spec.MinSize != nil {
-			// quantity greater than min: -1
-			// quantity equal to min: 0
-			greaterThanOrEqualToMin = spec.MinSize.Cmp(quantity) <= 0
+		if spec.MinSize == nil {
+			spec.MinSize = &defaultMinSize
 		}
+		// quantity greater than min: -1
+		// quantity equal to min: 0
+		greaterThanOrEqualToMin = spec.MinSize.Cmp(quantity) <= 0
 
 		lessThanOrEqualToMax := true
 		if spec.MaxSize != nil {
