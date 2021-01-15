@@ -1,6 +1,6 @@
-FROM quay.io/openshift/origin-must-gather:4.5.0 as builder
+FROM registry.ci.openshift.org/ocp/4.7:must-gather AS builder
 
-FROM registry.access.redhat.com/ubi8-minimal:latest
+FROM registry.ci.openshift.org/ocp/4.7:cli
 
 RUN microdnf -y install rsync
 
