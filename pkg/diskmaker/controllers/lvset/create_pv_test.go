@@ -3,6 +3,7 @@ package lvset
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -238,7 +239,7 @@ func TestCreatePV(t *testing.T) {
 			return
 		}
 		pv := &corev1.PersistentVolume{}
-		err = r.client.Get(context.TODO(), types.NamespacedName{Name: generatePVName(tc.symlinkpath, tc.node.GetName(), tc.sc.GetName())}, pv)
+		err = r.client.Get(context.TODO(), types.NamespacedName{Name: generatePVName(filepath.Base(tc.symlinkpath), tc.node.GetName(), tc.sc.GetName())}, pv)
 
 		// capacity accurate
 		pvCapacity, found := pv.Spec.Capacity["storage"]
@@ -248,7 +249,7 @@ func TestCreatePV(t *testing.T) {
 		assert.Truef(t, pvCapacity.Equal(expectedCapacity), "actual: %s,expected: %s", pvCapacity, expectedCapacity)
 
 		// pvName accurate
-		assert.Equal(t, generatePVName(tc.symlinkpath, tc.node.Name, tc.sc.Name), pv.Name)
+		assert.Equal(t, generatePVName(filepath.Base(tc.symlinkpath), tc.node.Name, tc.sc.Name), pv.Name)
 
 		// symlinkPath accurate
 		assert.NotNil(t, pv.Spec.Local)
