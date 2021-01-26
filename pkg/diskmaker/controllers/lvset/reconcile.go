@@ -149,8 +149,12 @@ func (r *ReconcileLocalVolumeSet) Reconcile(request reconcile.Request) (reconcil
 
 		symlinkSourcePath, symlinkPath, idExists, err := getSymLinkSourceAndTarget(blockDevice, symLinkDir)
 		if err != nil {
-			devLogger.Error(err, "error while discovering symlink source and target")
-			continue
+			if errors.As(err, &internal.IDPathNotFoundError{}) {
+				devLogger.Info("Using real device path, this could have problems if device name changes")
+			} else {
+				devLogger.Error(err, "error while discovering symlink source and target")
+				continue
+			}
 		}
 
 		// validate MaxDeviceCount
