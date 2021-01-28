@@ -102,6 +102,7 @@ metadata:
       Configure and use local storage volumes in kubernetes and OpenShift.
       OpenShift 4.2 and above is only supported OpenShift versions.
     olm.skipRange: ">=4.3.0 <4.6.0"
+    operators.operatorframework.io/internal-objects: '["localvolumediscoveryresults.local.storage.openshift.io"]' 
   labels:
     operator-metering: "true"
     "operatorframework.io/arch.amd64": supported
