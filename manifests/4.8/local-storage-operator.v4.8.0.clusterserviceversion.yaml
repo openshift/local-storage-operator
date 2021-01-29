@@ -1,7 +1,7 @@
 apiVersion: operators.coreos.com/v1alpha1
 kind: ClusterServiceVersion
 metadata:
-  name: local-storage-operator.v4.5.0
+  name: local-storage-operator.v4.8.0
   namespace: placeholder
   annotations:
     alm-examples: |-
@@ -16,8 +16,7 @@ metadata:
             "storageClassDevices": [
               {
                 "devicePaths": [
-                    "/dev/vde",
-                    "/dev/vdf"
+                  "/dev/disk/by-id/ata-crucial",
                 ],
                 "fsType": "ext4",
                 "storageClassName": "foobar",
@@ -25,9 +24,74 @@ metadata:
               }
             ]
           }
+        },
+        {
+          "apiVersion": "local.storage.openshift.io/v1alpha1",
+          "kind": "LocalVolumeSet",
+          "metadata": {
+            "name": "example-localvolumeset"
+          },
+          "spec": {
+            "deviceInclusionSpec": {
+              "deviceMechanicalProperties": [
+                "Rotational",
+                "NonRotational"
+              ],
+              "deviceTypes": [
+                "RawDisk"
+              ],
+              "maxSize": "100G",
+              "minSize": "10G"
+            },
+            "maxDeviceCount": 10,
+            "nodeSelector": {
+              "nodeSelectorTerms": [
+                {
+                  "matchExpressions": [
+                    {
+                      "key": "kubernetes.io/hostname",
+                      "operator": "In",
+                      "values": [
+                        "worker-0",
+                        "worker-1"
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            "storageClassName": "example-storageclass",
+            "volumeMode": "Block"
+          }
+        },
+        {
+          "apiVersion": "local.storage.openshift.io/v1alpha1",
+          "kind": "LocalVolumeDiscovery",
+          "metadata": {
+            "name": "auto-discover-devices"
+          },
+          "spec": {
+            "nodeSelector": {
+              "nodeSelectorTerms": [
+                {
+                  "matchExpressions": [
+                    {
+                      "key": "kubernetes.io/hostname",
+                      "operator": "In",
+                      "values": [
+                        "worker-0",
+                        "worker-1"
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          }
         }
       ]
     categories: Storage
+    "operatorframework.io/suggested-namespace": openshift-local-storage
     capabilities: Full Lifecycle
     containerImage: quay.io/openshift/origin-local-storage-operator:latest
     support: Red Hat
@@ -36,9 +100,13 @@ metadata:
     description: >
       Configure and use local storage volumes in kubernetes and OpenShift.
       OpenShift 4.2 and above is only supported OpenShift versions.
-    olm.skipRange: ">=4.3.0 <4.5.0"
+    olm.skipRange: ">=4.3.0 <4.8.0"
+    operators.operatorframework.io/internal-objects: '["localvolumediscoveryresults.local.storage.openshift.io"]'
   labels:
     operator-metering: "true"
+    "operatorframework.io/arch.amd64": supported
+    "operatorframework.io/arch.ppc64le": supported
+    "operatorframework.io/arch.s390x": supported
 spec:
   displayName: Local Storage
   description: Local Storage Operator
@@ -50,7 +118,7 @@ spec:
       url: https://github.com/openshift/local-storage-operator/tree/master/docs
     - name: Source Repository
       url: https://github.com/openshift/local-storage-operator
-  version: 4.5.0
+  version: 4.8.0
   maturity: stable
   maintainers:
     - email: aos-storage-staff@redhat.com
@@ -60,7 +128,7 @@ spec:
     name: Red Hat
   labels:
     alm-owner-metering: local-storage-operator
-    alm-status-descriptors: local-storage-operator.v4.5.0
+    alm-status-descriptors: local-storage-operator.v4.8.0
   selector:
     matchLabels:
       alm-owner-metering: local-storage-operator
@@ -98,18 +166,6 @@ spec:
             verbs:
             - "*"
           - apiGroups:
-            - rbac.authorization.k8s.io
-            resources:
-            - roles
-            verbs:
-            - get
-            - list
-            - watch
-            - create
-            - update
-            - patch
-            - delete
-          - apiGroups:
             - apps
             resources:
             - deployments
@@ -142,6 +198,18 @@ spec:
             verbs:
             - update
           serviceAccountName: local-storage-operator
+        - rules:
+          - apiGroups:
+            - local.storage.openshift.io
+            resources:
+            - "*"
+            verbs:
+            - get
+            - list
+            - watch
+            - create
+            - update
+          serviceAccountName: local-storage-admin
       clusterPermissions:
         - rules:
           - apiGroups:
@@ -150,32 +218,6 @@ spec:
             - storageclasses
             verbs:
             - "*"
-          - apiGroups:
-            - rbac.authorization.k8s.io
-            resources:
-            - clusterroles
-            - clusterrolebindings
-            - rolebindings
-            verbs:
-            - get
-            - list
-            - watch
-            - create
-            - update
-            - patch
-            - delete
-          - apiGroups:
-            - ""
-            resources:
-            - serviceaccounts
-            verbs:
-            - get
-            - list
-            - watch
-            - create
-            - update
-            - patch
-            - delete
           - apiGroups:
             - ""
             resources:
@@ -195,6 +237,8 @@ spec:
             - nodes
             verbs:
             - get
+            - list
+            - watch
           - apiGroups:
             - ""
             resources:
@@ -215,6 +259,36 @@ spec:
             - use
             resourceNames:
             - privileged
+          - apiGroups:
+            - ""
+            resources:
+            - nodes
+            verbs:
+            - list
+            - get
+            - watch
+          - apiGroups:
+            - ""
+            - storage.k8s.io
+            resources:
+            - configmaps
+            - storageclasses
+            - persistentvolumeclaims
+            - persistentvolumes
+            verbs:
+            - "*"
+          - apiGroups:
+            - ""
+            - events.k8s.io
+            resources:
+            - events
+            verbs:
+            - get
+            - list
+            - watch
+            - create
+            - patch
+            - update
           serviceAccountName: local-storage-admin
       deployments:
         - name: local-storage-operator
@@ -288,3 +362,90 @@ spec:
             path: conditions
             x-descriptors:
               - 'urn:alm:descriptor:io.kubernetes.conditions'
+      - displayName: Local Volume Set
+        group: local.storage.openshift.io
+        kind: LocalVolumeSet
+        name: localvolumesets.local.storage.openshift.io
+        description: A Local Volume set allows you to filter a set of storage volumes, group them and create a dedicated storage class to consume storage from the set of volumes.
+        version: v1alpha1
+        specDescriptors:
+          - description: Selected nodes for local storage
+            displayName: NodeSelector
+            path: nodeSelector
+            x-descriptors:
+              - 'urn:alm:descriptor:com.tectonic.ui:selector'
+          - description: StorageClassName to use for set of matched devices
+            displayName: StorageClassName
+            path: storageClassName
+          - description: VolumeMode determines whether the PV created is Block or Filesystem. By default it will be block
+            displayName:  VolumeMode
+            path: volumeMode
+          - description: FSType type to create when volumeMode is Filesystem
+            displayName: FSType
+            path: fsType
+          - description: List of tolerations to pass to the discovery daemons
+            displayName: Tolerations
+            path: tolerations
+            x-descriptors:
+              - urn:alm:descriptor:io.kubernetes:Tolerations
+          - description: Filters for including a device in the device discovery
+            displayName: deviceInclusionSpec
+            path: deviceInclusionSpec
+        statusDescriptors:
+          - description: Last generation of this object
+            displayName: ObservedGeneration
+            path: observedGeneration
+          - description: Total devices over which the PVs has been provisioned
+            displayName: TotalProvisionedDeviceCount
+            path: totalProvisionedDeviceCount
+          - description: Last known condition of this object
+            displayName: Conditions
+            path: conditions
+            x-descriptors:
+              - 'urn:alm:descriptor:io.kubernetes.conditions'
+      - displayName: Local Volume Discovery
+        group: local.storage.openshift.io
+        kind: LocalVolumeDiscovery
+        name: localvolumediscoveries.local.storage.openshift.io
+        description: Discover list of potentially usable disks on the chosen set of nodes
+        version: v1alpha1
+        specDescriptors:
+          - description: Selected nodes for discovery
+            displayName: NodeSelector
+            path: nodeSelector
+            x-descriptors:
+              - 'urn:alm:descriptor:com.tectonic.ui:selector'
+          - description: List of tolerations to pass to the discovery daemons
+            displayName: Tolerations
+            path: tolerations
+            x-descriptors:
+              - urn:alm:descriptor:io.kubernetes:Tolerations
+        statusDescriptors:
+          - description: Current phase of the discovery
+            displayName: Phase
+            path: phase
+          - description: Last generation of this object
+            displayName: ObservedGeneration
+            path: observedGeneration
+          - description: Last known condition of this object
+            displayName: Conditions
+            path: conditions
+            x-descriptors:
+              - 'urn:alm:descriptor:io.kubernetes.conditions'
+      - displayName: Local Volume Discovery Result
+        group: local.storage.openshift.io
+        kind: LocalVolumeDiscoveryResult
+        name: localvolumediscoveryresults.local.storage.openshift.io
+        description: Disc inventory of available disks from selected nodes
+        version: v1alpha1
+        specDescriptors:
+          - description: Node on which the devices are discovered
+            displayName: NodeName
+            path: nodeName
+        statusDescriptors:
+          - description: DiscoveredTimeStamp is the last timestamp when the list of discovered devices was updated
+            displayName: DiscoveredTimeStamp
+            path: discoveredTimeStamp
+          - description: DiscoveredDevices contains the list of devices discovered on the node
+            displayName: DiscoveredDevices
+            path: discoveredDevices

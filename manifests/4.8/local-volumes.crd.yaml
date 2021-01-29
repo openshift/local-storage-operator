@@ -1,0 +1,151 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: localvolumes.local.storage.openshift.io
+spec:
+  group: local.storage.openshift.io
+  names:
+    kind: LocalVolume
+    listKind: LocalVolumeList
+    plural: localvolumes
+    singular: localvolume
+  scope: Namespaced
+  versions:
+    - name: v1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          description: LocalVolume is a local storage configuration used by the operator
+          properties:
+            apiVersion:
+              description: 'APIVersion defines the versioned schema of this representation
+                of an object. Servers should convert recognized schemas to the latest
+                internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#resources'
+              type: string
+            kind:
+              description: 'Kind is a string value representing the REST resource this
+                object represents. Servers may infer this from the endpoint the client
+                submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#types-kinds'
+              type: string
+            metadata:
+              type: object
+            spec:
+              description: 'spec is the specification of the desired state of selected local devices'
+              properties:
+                nodeSelector:
+                  description: Nodes on which the provisioner must run
+                  type: object
+                  x-kubernetes-preserve-unknown-fields: true
+                managementState:
+                  description: Indicates whether and how the operator should manage the component
+                  type: string
+                  enum: ["Managed", "Unmanaged", "Removed", "Force"]
+                logLevel:
+                  description: logLevel configures log level for the diskmaker and provisioner for this object
+                  type: string
+                  enum: ["Normal", "Debug", "Trace", "TraceAll"]
+                storageClassDevices:
+                  description: List of storage class and devices they can match
+                  items:
+                    properties:
+                      storageClassName:
+                        description: StorageClass name to use for set of matched devices
+                        type: string
+                      volumeMode:
+                        description: Volume mode. Block or Filesystem
+                        enum:
+                          - Block
+                          - Filesystem
+                        type: string
+                      fsType:
+                        description: File system type to create on empty volumes, such as "ext4" or "xfs". Used only when volumeMode is "Filesystem". Leave blank when volumeMode is "Block".
+                        type: string
+                      devicePaths:
+                        description: 'A list of devices which would be chosen for local storage.
+                        For example - ["/dev/sda", "/dev/sdb", "/dev/disk/by-id/ata-crucial"].
+                        It is strongly recommended to use the unique /dev/disk/by-id/... name if available, as these identifiers persist across node restarts.'
+                        items:
+                          type: string
+                        type: array
+                    required:
+                      - storageClassName
+                      - devicePaths
+                    type: object
+                  type: array
+                tolerations:
+                  description: A list of tolerations to pass to the diskmaker and provisioner DaemonSets.
+                  items:
+                    type: object
+                    x-kubernetes-preserve-unknown-fields: true
+                  type: array
+              required:
+                - storageClassDevices
+              type: object
+            status:
+              description: 'status is the most recently observed status selected local devices'
+              properties:
+                generations:
+                  description: 'generations are used to determine when an item needs to be reconciled or has changed in a way that needs a reaction.'
+                  items:
+                    description: 'GenerationStatus keeps track of the generation for a given resource so that decisions about forced updates can be made.'
+                    properties:
+                      group:
+                        type: string
+                      resource:
+                        type: string
+                      lastGeneration:
+                        format: int64
+                        type: integer
+                      name:
+                        type: string
+                      namespace:
+                        type: string
+                    required:
+                    - group
+                    - resource
+                    - namespace
+                    - name
+                    - lastGeneration
+                    type: object
+                  type: array
+                conditions:
+                  description: 'conditions is a list of conditions and their status'
+                  type: array
+                  items:
+                    description: 'OperatorCondition is just the standard condition fields'
+                    type: object
+                    properties:
+                      type:
+                        type: string
+                      status:
+                        type: string
+                        enum: ["True", "False", "Unknown"]
+                      lastTransitionTime:
+                        type: string
+                        format: date-time
+                      reason:
+                        type: string
+                      message:
+                        type: string
+                    required:
+                    - type
+                    - status
+                observedGeneration:
+                  format: int64
+                  type: integer
+                managementState:
+                  type: string
+                  enum: ["Managed", "Unmanaged", "Removed", "Force"]
+                readyReplicas:
+                  type: integer
+                  format: int32
+              type: object
+              required:
+              - conditions
+              - generations
+          required:
+            - spec
+      subresources:
+        status: {}

@@ -1,0 +1,121 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: localvolumediscoveryresults.local.storage.openshift.io
+spec:
+  group: local.storage.openshift.io
+  names:
+    kind: LocalVolumeDiscoveryResult
+    listKind: LocalVolumeDiscoveryResultList
+    plural: localvolumediscoveryresults
+    singular: localvolumediscoveryresult
+  scope: Namespaced
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          description: LocalVolumeDiscoveryResult is the Schema for the localvolumediscoveryresults
+            API
+          properties:
+            apiVersion:
+              description: 'APIVersion defines the versioned schema of this representation
+                of an object. Servers should convert recognized schemas to the latest
+                internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
+              type: string
+            kind:
+              description: 'Kind is a string value representing the REST resource this
+                object represents. Servers may infer this from the endpoint the client
+                submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+              type: string
+            metadata:
+              type: object
+            spec:
+              description: LocalVolumeDiscoveryResultSpec defines the desired state of
+                LocalVolumeDiscoveryResult
+              properties:
+                nodeName:
+                  description: Node on which the devices are discovered
+                  type: string
+              required:
+              - nodeName
+              type: object
+            status:
+              description: LocalVolumeDiscoveryResultStatus defines the observed state
+                of LocalVolumeDiscoveryResult
+              properties:
+                discoveredDevices:
+                  description: DiscoveredDevices contains the list of devices on which
+                    LSO is capable of creating LocalPVs The devices in this list qualify
+                    these following conditions. - it should be a non-removable device.
+                    - it should not be a read-only device. - it should not be mounted
+                    anywhere - it should not be a boot device - it should not have child
+                    partitions
+                  items:
+                    description: DiscoveredDevice shows the list of discovered devices
+                      with their properties
+                    properties:
+                      deviceID:
+                        description: DeviceID represents the persistent name of the device.
+                          For eg, /dev/disk/by-id/...
+                        type: string
+                      fstype:
+                        description: FSType represents the filesystem available on the
+                          device
+                        type: string
+                      model:
+                        description: Model of the discovered device
+                        type: string
+                      path:
+                        description: Path represents the device path. For eg, /dev/sdb
+                        type: string
+                      property:
+                        description: Property represents whether the device type is rotational
+                          or not
+                        type: string
+                      serial:
+                        description: Serial number of the disk
+                        type: string
+                      size:
+                        description: Size of the discovered device
+                        format: int64
+                        type: integer
+                      status:
+                        description: Status defines whether the device is available for
+                          use or not
+                        properties:
+                          state:
+                            description: State shows the availability of the device
+                            type: string
+                        required:
+                        - state
+                        type: object
+                      type:
+                        description: Type of the discovered device
+                        type: string
+                      vendor:
+                        description: Vendor of the discovered device
+                        type: string
+                    required:
+                    - deviceID
+                    - fstype
+                    - model
+                    - path
+                    - property
+                    - serial
+                    - size
+                    - status
+                    - type
+                    - vendor
+                    type: object
+                  type: array
+                discoveredTimeStamp:
+                  description: DiscoveredTimeStamp is the last timestamp when the list
+                    of discovered devices was updated
+                  type: string
+              type: object
+          type: object
+      subresources:
+        status: {}
