@@ -33,7 +33,7 @@ func (r *ReconcileLocalVolumeSet) createPV(
 		return fmt.Errorf("could node find label %q for node %q", corev1.LabelHostname, r.runtimeConfig.Node.GetName())
 	}
 
-	pvName := generatePVName(symLinkPath, r.runtimeConfig.Node.GetName(), storageClass.GetName())
+	pvName := generatePVName(filepath.Base(symLinkPath), r.runtimeConfig.Node.Name, storageClass.Name)
 
 	pvLogger := devLogger.WithValues("pv.Name", pvName)
 
