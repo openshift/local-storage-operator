@@ -1,6 +1,6 @@
-FROM registry.ci.openshift.org/ocp/4.7:must-gather AS builder
+FROM registry.ci.openshift.org/ocp/4.8:must-gather AS builder
 
-FROM registry.ci.openshift.org/ocp/4.7:cli
+FROM registry.ci.openshift.org/ocp/4.8:cli
 
 RUN microdnf -y install rsync
 
