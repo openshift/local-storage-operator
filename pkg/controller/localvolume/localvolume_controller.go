@@ -121,6 +121,7 @@ func (r *ReconcileLocalVolume) syncLocalVolumeProvider(instance *localv1.LocalVo
 	// Create a copy so as we don't modify original LocalVolume
 	o := instance.DeepCopy()
 
+	klog.Infof("just a dummy change")
 	// set default image version etc
 	o.SetDefaults()
 
