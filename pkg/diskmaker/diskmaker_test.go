@@ -111,7 +111,6 @@ func TestCreateSymLinkByDeviceName(t *testing.T) {
 func getFakeDiskMaker(configLocation, symlinkLocation string) *DiskMaker {
 	d := &DiskMaker{configLocation: configLocation, symlinkLocation: symlinkLocation}
 	d.apiClient = &MockAPIUpdater{}
-	d.eventSync = NewEventReporter(d.apiClient)
 	return d
 }
 

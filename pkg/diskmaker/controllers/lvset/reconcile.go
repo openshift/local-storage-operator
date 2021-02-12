@@ -13,8 +13,8 @@ import (
 	"github.com/go-logr/logr"
 	localv1alpha1 "github.com/openshift/local-storage-operator/pkg/apis/local/v1alpha1"
 	"github.com/openshift/local-storage-operator/pkg/common"
-	"github.com/openshift/local-storage-operator/pkg/diskmaker"
 	"github.com/openshift/local-storage-operator/pkg/internal"
+	"github.com/openshift/local-storage-operator/pkg/internal/events"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
@@ -131,11 +131,11 @@ func (r *ReconcileLocalVolumeSet) Reconcile(request reconcile.Request) (reconcil
 	// list block devices
 	blockDevices, badRows, err := internal.ListBlockDevices()
 	if err != nil {
-		r.eventReporter.Report(lvset, newDiskEvent(diskmaker.ErrorRunningBlockList, "failed to list block devices", "", corev1.EventTypeWarning))
+		r.eventReporter.ReportKeyedEvent(lvset, events.NewDiskEvent(events.ErrorRunningBlockList, "failed to list block devices", "", corev1.EventTypeWarning))
 		reqLogger.Error(err, "could not list block devices", "lsblk.BadRows", badRows)
 		return reconcile.Result{}, err
 	} else if len(badRows) > 0 {
-		r.eventReporter.Report(lvset, newDiskEvent(diskmaker.ErrorRunningBlockList, fmt.Sprintf("error parsing rows: %+v", badRows), "", corev1.EventTypeWarning))
+		r.eventReporter.ReportKeyedEvent(lvset, events.NewDiskEvent(events.ErrorRunningBlockList, fmt.Sprintf("error parsing rows: %+v", badRows), "", corev1.EventTypeWarning))
 		reqLogger.Error(fmt.Errorf("bad rows"), "could not parse all the lsblk rows", "lsblk.BadRows", badRows)
 	}
 
@@ -163,7 +163,7 @@ func (r *ReconcileLocalVolumeSet) Reconcile(request reconcile.Request) (reconcil
 		alreadyProvisionedCount, currentDeviceSymlinked, noMatch, err = getAlreadySymlinked(symLinkDir, blockDevice, blockDevices)
 		_ = currentDeviceSymlinked
 		if err != nil && lvset.Spec.MaxDeviceCount != nil {
-			r.eventReporter.Report(lvset, newDiskEvent(ErrorListingExistingSymlinks, "error determining already provisioned disks", "", corev1.EventTypeWarning))
+			r.eventReporter.ReportKeyedEvent(lvset, events.NewDiskEvent(events.ErrorListingExistingSymlinks, "error determining already provisioned disks", "", corev1.EventTypeWarning))
 			return reconcile.Result{}, fmt.Errorf("could not determine how many devices are already provisioned: %w", err)
 		}
 		withinMax := true
@@ -188,10 +188,10 @@ func (r *ReconcileLocalVolumeSet) Reconcile(request reconcile.Request) (reconcil
 		}
 
 		devLogger.Info("provisioning PV")
-		r.eventReporter.Report(lvset, newDiskEvent(diskmaker.FoundMatchingDisk, "provisioning matching disk", blockDevice.KName, corev1.EventTypeNormal))
+		r.eventReporter.ReportKeyedEvent(lvset, events.NewDiskEvent(events.FoundMatchingDisk, "provisioning matching disk", blockDevice.KName, corev1.EventTypeNormal))
 		err = r.provisionPV(lvset, devLogger, blockDevice, *storageClass, mountPointMap, symlinkSourcePath, symlinkPath, idExists)
 		if err != nil {
-			r.eventReporter.Report(lvset, newDiskEvent(diskmaker.ErrorProvisioningDisk, "provisioning failed", blockDevice.KName, corev1.EventTypeWarning))
+			r.eventReporter.ReportKeyedEvent(lvset, events.NewDiskEvent(events.ErrorProvisioningDisk, "provisioning failed", blockDevice.KName, corev1.EventTypeWarning))
 			return reconcile.Result{}, fmt.Errorf("could not provision disk: %w", err)
 		}
 		devLogger.Info("provisioning succeeded")
@@ -254,12 +254,13 @@ DeviceLoop:
 			delayedDevices = append(delayedDevices, blockDevice)
 			// record DiscoveredDevice event
 			if lvset != nil {
-				r.eventReporter.Report(
+				r.eventReporter.ReportKeyedEvent(
 					lvset,
-					newDiskEvent(
-						DiscoveredNewDevice,
+					events.NewDiskEvent(
+						events.DiscoveredNewDevice,
 						fmt.Sprintf("found possible matching disk, waiting %v to claim", deviceMinAge),
-						blockDevice.KName, corev1.EventTypeNormal,
+						blockDevice.KName,
+						corev1.EventTypeNormal,
 					),
 				)
 			}

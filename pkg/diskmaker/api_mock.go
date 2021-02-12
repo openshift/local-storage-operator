@@ -3,12 +3,13 @@ package diskmaker
 import (
 	localv1 "github.com/openshift/local-storage-operator/pkg/apis/local/v1"
 	"github.com/openshift/local-storage-operator/pkg/apis/local/v1alpha1"
+	"github.com/openshift/local-storage-operator/pkg/internal/events"
 	"k8s.io/apimachinery/pkg/runtime"
 )
 
 // MockAPIUpdater mocks all the ApiUpdater Commands
 type MockAPIUpdater struct {
-	events                          []*DiskEvent
+	events                          []events.KeyedEvent
 	MockGetDiscoveryResult          func(name, namespace string) (*v1alpha1.LocalVolumeDiscoveryResult, error)
 	MockCreateDiscoveryResult       func(lvdr *v1alpha1.LocalVolumeDiscoveryResult) error
 	MockUpdateDiscoveryResultStatus func(lvdr *v1alpha1.LocalVolumeDiscoveryResult) error
@@ -18,7 +19,7 @@ type MockAPIUpdater struct {
 
 var _ ApiUpdater = &MockAPIUpdater{}
 
-func (f *MockAPIUpdater) recordEvent(obj runtime.Object, e *DiskEvent) {
+func (f *MockAPIUpdater) RecordKeyedEvent(obj runtime.Object, e events.KeyedEvent) {
 	f.events = append(f.events, e)
 }
 

@@ -6,10 +6,11 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/openshift/library-go/pkg/operator/events"
+	eventHelpers "github.com/openshift/library-go/pkg/operator/events"
 	"github.com/openshift/library-go/pkg/operator/resource/resourceapply"
 	localv1 "github.com/openshift/local-storage-operator/pkg/apis/local/v1"
 	commontypes "github.com/openshift/local-storage-operator/pkg/common"
+	"github.com/openshift/local-storage-operator/pkg/internal/events"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -50,20 +51,22 @@ type sdkAPIUpdater struct {
 	recorder record.EventRecorder
 	// This client, initialized using mgr.Client() above, is a split client
 	// that reads objects from the cache and writes to the apiserver
-	client    client.Client
-	clientset kubernetes.Interface
+	client        client.Client
+	clientset     kubernetes.Interface
+	eventReporter *events.EventReporter
 }
 
-func newAPIUpdater(mgr manager.Manager) apiUpdater {
+func newAPIUpdater(mgr manager.Manager, r *events.EventReporter) apiUpdater {
 	// creates the clientset
 	clientset, err := kubernetes.NewForConfig(mgr.GetConfig())
 	if err != nil {
 		panic(err)
 	}
 	apiClient := &sdkAPIUpdater{
-		recorder:  mgr.GetEventRecorderFor(componentName),
-		client:    mgr.GetClient(),
-		clientset: clientset,
+		recorder:      mgr.GetEventRecorderFor(ComponentName),
+		client:        mgr.GetClient(),
+		clientset:     clientset,
+		eventReporter: r,
 	}
 	return apiClient
 }
@@ -98,27 +101,27 @@ func (s *sdkAPIUpdater) syncStatus(oldInstance, newInstance *localv1.LocalVolume
 }
 
 func (s *sdkAPIUpdater) applyServiceAccount(sa *corev1.ServiceAccount) (*corev1.ServiceAccount, bool, error) {
-	return resourceapply.ApplyServiceAccount(s.clientset.CoreV1(), events.NewInMemoryRecorder(componentName), sa)
+	return resourceapply.ApplyServiceAccount(s.clientset.CoreV1(), eventHelpers.NewInMemoryRecorder(ComponentName), sa)
 }
 
 func (s *sdkAPIUpdater) applyConfigMap(configmap *corev1.ConfigMap) (*corev1.ConfigMap, bool, error) {
-	return resourceapply.ApplyConfigMap(s.clientset.CoreV1(), events.NewInMemoryRecorder(componentName), configmap)
+	return resourceapply.ApplyConfigMap(s.clientset.CoreV1(), eventHelpers.NewInMemoryRecorder(ComponentName), configmap)
 }
 
 func (s *sdkAPIUpdater) applyRole(role *rbacv1.Role) (*rbacv1.Role, bool, error) {
-	return resourceapply.ApplyRole(s.clientset.RbacV1(), events.NewInMemoryRecorder(componentName), role)
+	return resourceapply.ApplyRole(s.clientset.RbacV1(), eventHelpers.NewInMemoryRecorder(ComponentName), role)
 }
 
 func (s *sdkAPIUpdater) applyRoleBinding(roleBinding *rbacv1.RoleBinding) (*rbacv1.RoleBinding, bool, error) {
-	return resourceapply.ApplyRoleBinding(s.clientset.RbacV1(), events.NewInMemoryRecorder(componentName), roleBinding)
+	return resourceapply.ApplyRoleBinding(s.clientset.RbacV1(), eventHelpers.NewInMemoryRecorder(ComponentName), roleBinding)
 }
 
 func (s *sdkAPIUpdater) applyClusterRole(clusterRole *rbacv1.ClusterRole) (*rbacv1.ClusterRole, bool, error) {
-	return resourceapply.ApplyClusterRole(s.clientset.RbacV1(), events.NewInMemoryRecorder(componentName), clusterRole)
+	return resourceapply.ApplyClusterRole(s.clientset.RbacV1(), eventHelpers.NewInMemoryRecorder(ComponentName), clusterRole)
 }
 
 func (s *sdkAPIUpdater) applyClusterRoleBinding(roleBinding *rbacv1.ClusterRoleBinding) (*rbacv1.ClusterRoleBinding, bool, error) {
-	return resourceapply.ApplyClusterRoleBinding(s.clientset.RbacV1(), events.NewInMemoryRecorder(componentName), roleBinding)
+	return resourceapply.ApplyClusterRoleBinding(s.clientset.RbacV1(), eventHelpers.NewInMemoryRecorder(ComponentName), roleBinding)
 }
 
 func (s *sdkAPIUpdater) applyStorageClass(sc *storagev1.StorageClass) (*storagev1.StorageClass, bool, error) {
@@ -129,7 +132,7 @@ func (s *sdkAPIUpdater) applyDaemonSet(ds *appsv1.DaemonSet, expectedGeneration 
 	if forceRollout {
 		klog.Infof("Rolling out DaemonSet: %s/%s", ds.Name, ds.Namespace)
 	}
-	return resourceapply.ApplyDaemonSet(s.clientset.AppsV1(), events.NewInMemoryRecorder(componentName), ds, expectedGeneration, forceRollout)
+	return resourceapply.ApplyDaemonSet(s.clientset.AppsV1(), eventHelpers.NewInMemoryRecorder(ComponentName), ds, expectedGeneration, forceRollout)
 }
 
 func (s *sdkAPIUpdater) getDaemonSet(namespace, dsName string) (*appsv1.DaemonSet, error) {
@@ -145,7 +148,8 @@ func (s *sdkAPIUpdater) listPersistentVolumes(listOptions metav1.ListOptions) (*
 }
 
 func (s *sdkAPIUpdater) recordEvent(lv *localv1.LocalVolume, eventType, reason, messageFmt string, args ...interface{}) {
-	s.recorder.Eventf(lv, eventType, reason, messageFmt)
+	e := events.NewReconcileEvent(reason, fmt.Sprintf(messageFmt, args...), eventType)
+	s.eventReporter.ReportKeyedEvent(lv, e)
 }
 
 func (s *sdkAPIUpdater) apiContext() (goctx.Context, goctx.CancelFunc) {

@@ -3,12 +3,11 @@ package events
 import (
 	"fmt"
 	"sync"
+	"time"
 
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/record"
-
-	"k8s.io/apimachinery/pkg/util/sets"
 )
 
 const (
@@ -23,15 +22,17 @@ const (
 type KeyedEvent interface {
 	GetKey(string, string) string
 	GetMessage() string
-	GetEventReason() string
-	GetEventType() string
+	GetReason() string
+	GetType() string
+	// should return the interval after which the key can repeat
+	GetInterval() time.Duration
 }
 
 // EventReporter for reporting events
 type EventReporter struct {
 	sync.Mutex
 	Recorder       record.EventRecorder
-	reportedEvents sets.String
+	reportedEvents map[string]time.Time
 }
 
 // NewEventReporter returns an EventReporter
@@ -39,7 +40,7 @@ func NewEventReporter(eventRecorder record.EventRecorder) *EventReporter {
 	er := &EventReporter{
 		Recorder: eventRecorder,
 	}
-	er.reportedEvents = sets.NewString()
+	er.reportedEvents = make(map[string]time.Time)
 	return er
 }
 
@@ -59,10 +60,10 @@ func (r *EventReporter) ReportKeyedEvent(obj runtime.Object, e KeyedEvent) error
 		return fmt.Errorf("name: %q or kind: %q is empty for obj: %+v", name, kind, obj)
 	}
 	eventKey := e.GetKey(name, kind)
-	if r.reportedEvents.Has(eventKey) {
-		return nil
+	lastReported, found := r.reportedEvents[eventKey]
+	if !found || time.Since(lastReported) >= e.GetInterval() {
+		r.Recorder.Eventf(obj, e.GetType(), e.GetReason(), e.GetMessage())
+		r.reportedEvents[eventKey] = time.Now()
 	}
-	r.Recorder.Eventf(obj, e.GetEventType(), e.GetEventReason(), e.GetMessage())
-	r.reportedEvents.Insert(eventKey)
 	return nil
 }

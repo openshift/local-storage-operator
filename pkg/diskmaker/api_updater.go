@@ -2,18 +2,17 @@ package diskmaker
 
 import (
 	"context"
-	"fmt"
-	"os"
 
 	localv1 "github.com/openshift/local-storage-operator/pkg/apis/local/v1"
 	"github.com/openshift/local-storage-operator/pkg/apis/local/v1alpha1"
+	"github.com/openshift/local-storage-operator/pkg/internal/events"
 	"github.com/prometheus/common/log"
+	typedcorev1 "k8s.io/client-go/kubernetes/typed/core/v1"
 
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
-	typedcorev1 "k8s.io/client-go/kubernetes/typed/core/v1"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/klog"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -23,7 +22,7 @@ import (
 const componentName = "local-storage-diskmaker"
 
 type ApiUpdater interface {
-	recordEvent(obj runtime.Object, e *DiskEvent)
+	RecordKeyedEvent(obj runtime.Object, e events.KeyedEvent)
 	getLocalVolume(lv *localv1.LocalVolume) (*localv1.LocalVolume, error)
 	CreateDiscoveryResult(lvdr *v1alpha1.LocalVolumeDiscoveryResult) error
 	GetDiscoveryResult(name, namespace string) (*v1alpha1.LocalVolumeDiscoveryResult, error)
@@ -33,7 +32,7 @@ type ApiUpdater interface {
 }
 
 type sdkAPIUpdater struct {
-	recorder record.EventRecorder
+	EventReporter *events.EventReporter
 	// This client, initialized using mgr.Client() above, is a split client
 	// that reads objects from the cache and writes to the apiserver
 	client client.Client
@@ -45,7 +44,7 @@ func NewAPIUpdater(scheme *runtime.Scheme) (ApiUpdater, error) {
 		log.Error(err, "failed to get event recorder")
 		return &sdkAPIUpdater{}, err
 	}
-
+	reporter := events.NewEventReporter(recorder)
 	config, err := config.GetConfig()
 	if err != nil {
 		log.Error(err, "failed to get rest.config")
@@ -58,8 +57,8 @@ func NewAPIUpdater(scheme *runtime.Scheme) (ApiUpdater, error) {
 	}
 
 	apiClient := &sdkAPIUpdater{
-		client:   crClient,
-		recorder: recorder,
+		client:        crClient,
+		EventReporter: reporter,
 	}
 	return apiClient, nil
 }
@@ -82,14 +81,8 @@ func getEventRecorder(scheme *runtime.Scheme) (record.EventRecorder, error) {
 	return recorder, nil
 }
 
-func (s *sdkAPIUpdater) recordEvent(obj runtime.Object, e *DiskEvent) {
-	nodeName := os.Getenv("MY_NODE_NAME")
-	message := e.Message
-	if len(nodeName) != 0 {
-		message = fmt.Sprintf("%s - %s", nodeName, message)
-	}
-
-	s.recorder.Eventf(obj, e.EventType, e.EventReason, message)
+func (s *sdkAPIUpdater) RecordKeyedEvent(obj runtime.Object, e events.KeyedEvent) {
+	s.EventReporter.ReportKeyedEvent(obj, e)
 }
 
 func (s *sdkAPIUpdater) getLocalVolume(lv *localv1.LocalVolume) (*localv1.LocalVolume, error) {

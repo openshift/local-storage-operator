@@ -6,6 +6,7 @@ import (
 
 	localv1alpha1 "github.com/openshift/local-storage-operator/pkg/apis/local/v1alpha1"
 	"github.com/openshift/local-storage-operator/pkg/common"
+	"github.com/openshift/local-storage-operator/pkg/internal/events"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -62,7 +63,7 @@ func Add(mgr manager.Manager) error {
 		client:         crClient,
 		scheme:         mgr.GetScheme(),
 		nodeName:       getNodeNameEnvVar(),
-		eventReporter:  newEventReporter(mgr.GetEventRecorderFor(ComponentName)),
+		eventReporter:  events.NewEventReporter(mgr.GetEventRecorderFor(ComponentName)),
 		deviceAgeMap:   newAgeMap(clock),
 		cleanupTracker: cleanupTracker,
 		runtimeConfig:  runtimeConfig,
@@ -165,7 +166,7 @@ type ReconcileLocalVolumeSet struct {
 	// that reads objects from the cache and writes to the apiserver
 	client        client.Client
 	scheme        *runtime.Scheme
-	eventReporter *eventReporter
+	eventReporter *events.EventReporter
 	nodeName      string
 	// map from KNAME of device to time when the device was first observed since the process started
 	deviceAgeMap *ageMap

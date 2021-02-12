@@ -12,11 +12,13 @@ import (
 	"time"
 
 	"github.com/openshift/local-storage-operator/pkg/internal"
+	"github.com/openshift/local-storage-operator/pkg/internal/events"
 
 	"github.com/ghodss/yaml"
 	"github.com/openshift/local-storage-operator/pkg/apis"
 	localv1 "github.com/openshift/local-storage-operator/pkg/apis/local/v1"
 	"github.com/prometheus/common/log"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/kubernetes/scheme"
@@ -37,7 +39,7 @@ type DiskMaker struct {
 	symlinkLocation string
 	apiClient       ApiUpdater
 	localVolume     *localv1.LocalVolume
-	eventSync       *EventReporter
+	eventReporter   *events.EventReporter
 }
 
 type DiskLocation struct {
@@ -60,7 +62,6 @@ func NewDiskMaker(configLocation, symLinkLocation string) (*DiskMaker, error) {
 	t.configLocation = configLocation
 	t.symlinkLocation = symLinkLocation
 	t.apiClient = apiUpdater
-	t.eventSync = NewEventReporter(t.apiClient)
 	return t, nil
 }
 
@@ -162,8 +163,8 @@ func (d *DiskMaker) createSymLink(deviceNameLocation DiskLocation, symLinkDirPat
 	err = os.MkdirAll(symLinkDirPath, 0755)
 	if err != nil {
 		msg := fmt.Sprintf("error creating symlink dir %s: %v", symLinkDirPath, err)
-		e := NewEvent(ErrorFindingMatchingDisk, msg, symLinkTarget)
-		d.eventSync.Report(e, d.localVolume)
+		e := events.NewDiskEvent(events.ErrorFindingMatchingDisk, msg, symLinkTarget, corev1.EventTypeWarning)
+		d.apiClient.RecordKeyedEvent(d.localVolume, e)
 		klog.Errorf(msg)
 		return
 	}
@@ -176,23 +177,23 @@ func (d *DiskMaker) createSymLink(deviceNameLocation DiskLocation, symLinkDirPat
 	err = os.Symlink(symLinkSource, symLinkTarget)
 	if err != nil {
 		msg := fmt.Sprintf("error creating symlink %s: %v", symLinkTarget, err)
-		e := NewEvent(ErrorFindingMatchingDisk, msg, symLinkSource)
-		d.eventSync.Report(e, d.localVolume)
+		e := events.NewDiskEvent(events.ErrorFindingMatchingDisk, msg, symLinkSource, corev1.EventTypeWarning)
+		d.apiClient.RecordKeyedEvent(d.localVolume, e)
 		klog.Errorf(msg)
 		return
 	}
 
 	if isSymLinkedByDeviceName {
 		msg := fmt.Sprintf("created symlink on device name %s with no disk/by-id. device name might not persist on reboot", symLinkSource)
-		e := NewEvent(SymLinkedOnDeviceName, msg, symLinkSource)
-		d.eventSync.Report(e, d.localVolume)
+		e := events.NewDiskEvent(events.SymLinkedOnDeviceName, msg, symLinkSource, corev1.EventTypeWarning)
+		d.apiClient.RecordKeyedEvent(d.localVolume, e)
 		klog.Warningf(msg)
 		return
 	}
 
 	successMsg := fmt.Sprintf("found matching disk %s with id %s", deviceNameLocation.diskNamePath, deviceNameLocation.diskID)
-	e := NewSuccessEvent(FoundMatchingDisk, successMsg, deviceNameLocation.diskNamePath)
-	d.eventSync.Report(e, d.localVolume)
+	e := events.NewDiskEvent(events.FoundMatchingDisk, successMsg, deviceNameLocation.diskNamePath, corev1.EventTypeNormal)
+	d.apiClient.RecordKeyedEvent(d.localVolume, e)
 }
 
 func (d *DiskMaker) symLinkDisks(diskConfig *DiskConfig) {
@@ -206,8 +207,8 @@ func (d *DiskMaker) symLinkDisks(diskConfig *DiskConfig) {
 	err = cmd.Run()
 	if err != nil {
 		msg := fmt.Sprintf("error running lsblk: %v", err)
-		e := NewEvent(ErrorRunningBlockList, msg, "")
-		d.eventSync.Report(e, d.localVolume)
+		e := events.NewDiskEvent(events.ErrorRunningBlockList, msg, "", corev1.EventTypeWarning)
+		d.apiClient.RecordKeyedEvent(d.localVolume, e)
 		klog.Errorf(msg)
 		return
 	}
@@ -222,8 +223,8 @@ func (d *DiskMaker) symLinkDisks(diskConfig *DiskConfig) {
 	allDiskIds, err := filepath.Glob(diskByIDPath)
 	if err != nil {
 		msg := fmt.Sprintf("error listing disks in /dev/disk/by-id: %v", err)
-		e := NewEvent(ErrorListingDeviceID, msg, "")
-		d.eventSync.Report(e, d.localVolume)
+		e := events.NewDiskEvent(events.ErrorListingDeviceID, msg, "", corev1.EventTypeWarning)
+		d.apiClient.RecordKeyedEvent(d.localVolume, e)
 		klog.Errorf(msg)
 		return
 	}
@@ -231,8 +232,8 @@ func (d *DiskMaker) symLinkDisks(diskConfig *DiskConfig) {
 	deviceMap, err := d.findMatchingDisks(diskConfig, deviceSet, allDiskIds)
 	if err != nil {
 		msg := fmt.Sprintf("error finding matching disks: %v", err)
-		e := NewEvent(ErrorFindingMatchingDisk, msg, "")
-		d.eventSync.Report(e, d.localVolume)
+		e := events.NewDiskEvent(events.ErrorFindingMatchingDisk, msg, "", corev1.EventTypeWarning)
+		d.apiClient.RecordKeyedEvent(d.localVolume, e)
 		klog.Errorf(msg)
 		return
 	}
@@ -255,8 +256,8 @@ func (d *DiskMaker) symLinkDisks(diskConfig *DiskConfig) {
 			}
 			msg = strings.Join(diff.List(), ", ") + " was defined in devicePaths, but expected a path in /dev/"
 		}
-		e := NewEvent(ErrorFindingMatchingDisk, msg, "")
-		d.eventSync.Report(e, d.localVolume)
+		e := events.NewDiskEvent(events.ErrorFindingMatchingDisk, msg, "", corev1.EventTypeWarning)
+		d.apiClient.RecordKeyedEvent(d.localVolume, e)
 		klog.Errorf(msg)
 		return
 	}
@@ -317,8 +318,8 @@ func (d *DiskMaker) findMatchingDisks(diskConfig *DiskConfig, deviceSet sets.Str
 				default:
 					msg = fmt.Sprintf("unable to find matching disk %v", diskName)
 				}
-				e := NewEvent(ErrorFindingMatchingDisk, msg, diskName)
-				d.eventSync.Report(e, d.localVolume)
+				e := events.NewDiskEvent(events.ErrorFindingMatchingDisk, msg, diskName, corev1.EventTypeWarning)
+				d.apiClient.RecordKeyedEvent(d.localVolume, e)
 				klog.Errorf(msg)
 			}
 		}
@@ -329,8 +330,8 @@ func (d *DiskMaker) findMatchingDisks(diskConfig *DiskConfig, deviceSet sets.Str
 			matchedDeviceID, matchedDiskName, err := d.findDeviceByID(deviceID)
 			if err != nil {
 				msg := fmt.Sprintf("unable to add disk-id %s to local disk pool: %v", deviceID, err)
-				e := NewEvent(ErrorFindingMatchingDisk, msg, deviceID)
-				d.eventSync.Report(e, d.localVolume)
+				e := events.NewDiskEvent(events.ErrorFindingMatchingDisk, msg, deviceID, corev1.EventTypeWarning)
+				d.apiClient.RecordKeyedEvent(d.localVolume, e)
 				klog.Errorf(msg)
 				continue
 			}

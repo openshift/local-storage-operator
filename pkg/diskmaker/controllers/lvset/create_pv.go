@@ -8,6 +8,7 @@ import (
 	"github.com/go-logr/logr"
 	localv1alpha1 "github.com/openshift/local-storage-operator/pkg/apis/local/v1alpha1"
 	"github.com/openshift/local-storage-operator/pkg/common"
+	"github.com/openshift/local-storage-operator/pkg/internal/events"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -161,7 +162,8 @@ func (r *ReconcileLocalVolumeSet) createPV(
 			*existingPV.Spec.VolumeMode == corev1.PersistentVolumeBlock && actualVolumeMode == corev1.PersistentVolumeFilesystem {
 			err := fmt.Errorf("incorrect Volume Mode: PV requires block mode but path was in fs mode")
 			pvLogger.Error(err, "pvName", pvName, "filePath", symLinkPath)
-			r.runtimeConfig.Recorder.Eventf(existingPV, corev1.EventTypeWarning, provCommon.EventVolumeFailedDelete, err.Error())
+			event := events.NewDiskEvent(provCommon.EventVolumeFailedDelete, err.Error(), deviceName, corev1.EventTypeWarning)
+			r.eventReporter.ReportKeyedEvent(existingPV, event)
 		}
 
 		// replace labels if and only if they don't already exist

@@ -8,8 +8,9 @@ import (
 	"time"
 
 	"github.com/openshift/local-storage-operator/pkg/apis/local/v1alpha1"
-	"github.com/openshift/local-storage-operator/pkg/diskmaker"
+	"github.com/openshift/local-storage-operator/pkg/internal/events"
 	"github.com/pkg/errors"
+	corev1 "k8s.io/api/core/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	apiTypes "k8s.io/apimachinery/pkg/types"
@@ -62,8 +63,9 @@ func (discovery *DeviceDiscovery) ensureDiscoveryResultCR() error {
 			return errors.Wrapf(err, "failed to create LocalVolumeDiscoveryResult resource")
 		}
 		message := "successfully created LocalVolumeDiscoveryResult resource"
-		e := diskmaker.NewSuccessEvent(diskmaker.CreatedDiscoveryResultObject, message, "")
-		discovery.eventSync.Report(e, discovery.localVolumeDiscovery)
+
+		e := events.NewReconcileEvent(events.CreatedDiscoveryResultObject, message, corev1.EventTypeNormal)
+		discovery.apiClient.RecordKeyedEvent(discovery.localVolumeDiscovery, e)
 		klog.Info(message)
 		return nil
 	}
