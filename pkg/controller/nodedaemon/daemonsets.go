@@ -87,6 +87,9 @@ func getDiskMakerDSMutateFn(
 		ds.Spec.Template.Spec.Containers[0].Image = common.GetDiskMakerImage()
 		ds.Spec.Template.Spec.Containers[0].Args = []string{"lv-manager"}
 
+		// to read /proc/1/mountinfo
+		ds.Spec.Template.Spec.HostPID = true
+
 		return nil
 	}
 }
