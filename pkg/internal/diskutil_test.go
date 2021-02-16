@@ -259,28 +259,28 @@ func TestHasBindMounts(t *testing.T) {
 	}{
 		{
 			label:              "Case 1: device with bind mounts",
-			blockDevice:        BlockDevice{Name: "sdc"},
+			blockDevice:        BlockDevice{KName: "sdc"},
 			mountInfo:          "5595 121 0:6 /sdc /var/lib/kubelet/plugins/kubernetes.io~local-volume/volumeDevices/local-pv-343bdd9/6d9d33ae-408e-4bac-81f7-c0bc347a9667 rw shared:23 - devtmpfs devtmpfs rw,seclabel,size=32180404k,nr_inodes=8045101,mode=755",
 			expected:           true,
 			expectedMountPoint: "/var/lib/kubelet/plugins/kubernetes.io~local-volume/volumeDevices/local-pv-343bdd9/6d9d33ae-408e-4bac-81f7-c0bc347a9667",
 		},
 		{
 			label:              "Case 2: device with regular mounts",
-			blockDevice:        BlockDevice{Name: "sdc"},
+			blockDevice:        BlockDevice{KName: "sdc"},
 			mountInfo:          "121 98 259:1 / /boot rw,relatime shared:65 - ext4 /dev/sdc rw,seclabel",
 			expected:           true,
 			expectedMountPoint: "/boot",
 		},
 		{
 			label:              "Case 3: device with no mount points",
-			blockDevice:        BlockDevice{Name: "sdd"},
+			blockDevice:        BlockDevice{KName: "sdd"},
 			mountInfo:          "5595 121 0:6 /sdc /var/lib/kubelet/plugins/kubernetes.io~local-volume/volumeDevices/local-pv-343bdd9/6d9d33ae-408e-4bac-81f7-c0bc347a9667 rw shared:23 - devtmpfs devtmpfs rw,seclabel,size=32180404k,nr_inodes=8045101,mode=755",
 			expected:           false,
 			expectedMountPoint: "",
 		},
 		{
 			label:              "Case 4: device with no mount point",
-			blockDevice:        BlockDevice{Name: "sdc"},
+			blockDevice:        BlockDevice{KName: "sdc"},
 			mountInfo:          "",
 			expected:           false,
 			expectedMountPoint: "",
@@ -310,7 +310,7 @@ func TestHasChildrenFail(t *testing.T) {
 	}{
 		{
 			label:       "Case 1: filepath.Glob command failure",
-			blockDevice: BlockDevice{Name: "sdb"},
+			blockDevice: BlockDevice{KName: "sdb"},
 			fakeGlobfunc: func(name string) ([]string, error) {
 				return []string{}, fmt.Errorf("failed to list matching files")
 			},
@@ -385,7 +385,7 @@ func TestGetPathByIDFail(t *testing.T) {
 	}{
 		{
 			label:       "Case 1: filepath.Glob command failure",
-			blockDevice: BlockDevice{Name: "sdb"},
+			blockDevice: BlockDevice{KName: "sdb"},
 			fakeGlobfunc: func(name string) ([]string, error) {
 				return []string{}, fmt.Errorf("failed to list matching files")
 			},
@@ -397,7 +397,7 @@ func TestGetPathByIDFail(t *testing.T) {
 
 		{
 			label:       "Case 2: filepath.EvalSymlinks command failure",
-			blockDevice: BlockDevice{Name: "sdb", PathByID: ""},
+			blockDevice: BlockDevice{KName: "sdb", PathByID: ""},
 			fakeGlobfunc: func(name string) ([]string, error) {
 				return []string{"/dev/disk/by-id/sdb"}, nil
 			},
