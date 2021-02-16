@@ -17,6 +17,7 @@ const (
 	notSuspended          = "notSuspended"
 	noBiosBootInPartLabel = "noBiosBootInPartLabel"
 	noFilesystemSignature = "noFilesystemSignature"
+	noBindMounts          = "noBindMounts"
 	// file access , can't mock test
 	noChildren = "noChildren"
 	// file access , can't mock test
@@ -62,6 +63,11 @@ var FilterMap = map[string]func(internal.BlockDevice, *localv1alpha1.DeviceInclu
 		matched := dev.FSType == ""
 		return matched, nil
 	},
+	noBindMounts: func(dev internal.BlockDevice, spec *localv1alpha1.DeviceInclusionSpec) (bool, error) {
+		hasBindMounts, _, err := dev.HasBindMounts()
+		return !hasBindMounts, err
+	},
+
 	noChildren: func(dev internal.BlockDevice, spec *localv1alpha1.DeviceInclusionSpec) (bool, error) {
 		hasChildren, err := dev.HasChildren()
 		return !hasChildren, err
