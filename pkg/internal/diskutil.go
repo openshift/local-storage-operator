@@ -109,7 +109,7 @@ func (b BlockDevice) HasChildren() (bool, error) {
 	sysDevDir := filepath.Join("/sys/block/", b.KName, "/*")
 	paths, err := FilePathGlob(sysDevDir)
 	if err != nil {
-		return false, errors.Wrapf(err, "failed to check if device %q has partitions", b.Name)
+		return false, errors.Wrapf(err, "failed to check if device %q has partitions", b.KName)
 	}
 	for _, path := range paths {
 		name := filepath.Base(path)
@@ -130,11 +130,11 @@ func (b BlockDevice) HasBindMounts() (bool, string, error) {
 
 	mountString := string(data)
 	for _, mountInfo := range strings.Split(mountString, "\n") {
-		if strings.Contains(mountInfo, b.Name) {
+		if strings.Contains(mountInfo, b.KName) {
 			mountInfoList := strings.Split(mountInfo, " ")
 			if len(mountInfoList) >= 10 {
 				// device source is 4th field for bind mounts and 10th for regular mounts
-				if mountInfoList[3] == fmt.Sprintf("/%s", b.Name) || mountInfoList[9] == fmt.Sprintf("/dev/%s", b.Name) {
+				if mountInfoList[3] == fmt.Sprintf("/%s", b.KName) || mountInfoList[9] == fmt.Sprintf("/dev/%s", b.KName) {
 					return true, mountInfoList[4], nil
 				}
 			}
@@ -157,7 +157,7 @@ func (b BlockDevice) GetPathByID() (string, error) {
 
 	// return if previously populated value is valid
 	if len(b.PathByID) > 0 && strings.HasPrefix(b.PathByID, DiskByIDDir) {
-		evalsCorrectly, err := PathEvalsToDiskLabel(b.PathByID, b.Name)
+		evalsCorrectly, err := PathEvalsToDiskLabel(b.PathByID, b.KName)
 		if err == nil && evalsCorrectly {
 			return b.PathByID, nil
 		}
