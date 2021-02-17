@@ -225,7 +225,8 @@ func verifyLocalVolumeDiscoveryResult(t *testing.T, lvdr *localv1alpha1.LocalVol
 		}
 
 		if len(lvdr.Status.DiscoveredDevices) == 0 {
-			return false, fmt.Errorf("failed to get the discovered devices")
+			t.Errorf("waiting for discovered devices to be populated")
+			return false, nil
 		}
 
 		discoveredDevices = lvdr.Status.DiscoveredDevices
