@@ -9,13 +9,11 @@ import (
 )
 
 var (
-	configLocation  string
 	symlinkLocation string
 	version         = "unknown"
 )
 
 func init() {
-	flag.StringVar(&configLocation, "config", "/etc/local-storage-operator/config/diskMakerConfig", "location where config map that contains disk maker configuration is mounted")
 	flag.StringVar(&symlinkLocation, "local-disk-location", "/mnt/local-storage", "location where local disks should be symlinked")
 }
 

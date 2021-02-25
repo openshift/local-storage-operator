@@ -18,7 +18,6 @@ import (
 	localv1 "github.com/openshift/local-storage-operator/pkg/apis/local/v1"
 	"github.com/openshift/local-storage-operator/pkg/common"
 	commontypes "github.com/openshift/local-storage-operator/pkg/common"
-	"github.com/openshift/local-storage-operator/pkg/diskmaker/controllers/lv"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
@@ -164,12 +163,6 @@ func (r *ReconcileLocalVolume) syncLocalVolumeProvider(instance *localv1.LocalVo
 		return r.addFailureCondition(instance, o, err)
 	}
 
-	diskMakerConfigMapModified, err := r.syncDiskMakerConfigMap(o)
-	if err != nil {
-		klog.Errorf("error creating diskmaker configmap %s: %v", o.Name, err)
-		return r.addFailureCondition(instance, o, err)
-	}
-
 	err = r.syncStorageClass(o)
 	if err != nil {
 		klog.Errorf("failed to create storageClass: %v", err)
@@ -177,7 +170,7 @@ func (r *ReconcileLocalVolume) syncLocalVolumeProvider(instance *localv1.LocalVo
 	}
 
 	rollOutDaemonSet := false
-	if diskMakerConfigMapModified || provisionerConfigMapModified {
+	if provisionerConfigMapModified {
 		rollOutDaemonSet = true
 	}
 
@@ -299,18 +292,6 @@ func (r *ReconcileLocalVolume) syncProvisionerConfigMap(o *localv1.LocalVolume) 
 	return modified, nil
 }
 
-func (r *ReconcileLocalVolume) syncDiskMakerConfigMap(o *localv1.LocalVolume) (bool, error) {
-	diskMakerConfigMap, err := r.generateDiskMakerConfig(o)
-	if err != nil {
-		return false, fmt.Errorf("error generating diskmaker configmap %s: %v", o.Name, err)
-	}
-	_, modified, err := r.apiClient.applyConfigMap(diskMakerConfigMap)
-	if err != nil {
-		return false, fmt.Errorf("error creating diskmarker configmap %s: %v", o.Name, err)
-	}
-	return modified, nil
-}
-
 // CreateConfigMap Create configmap requires by the local storage provisioner
 func (r *ReconcileLocalVolume) generateProvisionerConfigMap(cr *localv1.LocalVolume) (*corev1.ConfigMap, error) {
 	r.provisonerConfigName = cr.Name + "-local-provisioner-configmap"
@@ -391,49 +372,6 @@ func (r *ReconcileLocalVolume) removeUnExpectedStorageClasses(cr *localv1.LocalV
 		}
 	}
 	return utilerrors.NewAggregate(removeErrors)
-}
-
-func (r *ReconcileLocalVolume) generateDiskMakerConfig(cr *localv1.LocalVolume) (*corev1.ConfigMap, error) {
-	r.diskMakerConfigName = cr.Name + "-diskmaker-configmap"
-	configMapData := &lv.DiskConfig{
-		Disks:           map[string]*lv.Disks{},
-		OwnerName:       cr.Name,
-		OwnerNamespace:  cr.Namespace,
-		OwnerKind:       localv1.LocalVolumeKind,
-		OwnerUID:        string(cr.UID),
-		OwnerAPIVersion: localv1.SchemeGroupVersion.String(),
-	}
-
-	storageClassDevices := cr.Spec.StorageClassDevices
-	for _, storageClassDevice := range storageClassDevices {
-		disks := new(lv.Disks)
-		if len(storageClassDevice.DevicePaths) > 0 {
-			disks.DevicePaths = storageClassDevice.DevicePaths
-		}
-		configMapData.Disks[storageClassDevice.StorageClassName] = disks
-	}
-
-	configMap := &corev1.ConfigMap{
-		TypeMeta: metav1.TypeMeta{
-			Kind:       "ConfigMap",
-			APIVersion: "v1",
-		},
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      r.diskMakerConfigName,
-			Labels:    diskMakerLabels(cr.Name),
-			Namespace: cr.Namespace,
-		},
-	}
-	yaml, err := configMapData.ToYAML()
-	if err != nil {
-		return nil, err
-	}
-	configMap.Data = map[string]string{
-		"diskMakerConfig": yaml,
-	}
-	addOwnerLabels(&configMap.ObjectMeta, cr)
-	addOwner(&configMap.ObjectMeta, cr)
-	return configMap, nil
 }
 
 func (r *ReconcileLocalVolume) syncDiskMakerDaemonset(cr *localv1.LocalVolume, forceRollout bool) (*appsv1.DaemonSet, error) {
