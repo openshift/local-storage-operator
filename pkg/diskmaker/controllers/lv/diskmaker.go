@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"os/exec"
 	"path"
@@ -16,12 +15,11 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	"github.com/ghodss/yaml"
 	localv1 "github.com/openshift/local-storage-operator/pkg/apis/local/v1"
 
 	//	"github.com/prometheus/common/log"
+	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/klog"
 )
@@ -35,43 +33,15 @@ var (
 	diskByIDPath  = "/dev/disk/by-id/*"
 )
 
+const (
+	ownerNamespaceLabel = "local.storage.openshift.io/owner-namespace"
+	ownerNameLabel      = "local.storage.openshift.io/owner-name"
+)
+
 type DiskLocation struct {
 	// diskNamePath stores full device name path - "/dev/sda"
 	diskNamePath string
 	diskID       string
-}
-
-func (r *ReconcileLocalVolume) loadConfig() (*DiskConfig, error) {
-	var err error
-	content, err := ioutil.ReadFile(r.configLocation)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read file %s: %v", r.configLocation, err)
-	}
-	var diskConfig DiskConfig
-	err = yaml.Unmarshal(content, &diskConfig)
-	if err != nil {
-		return nil, fmt.Errorf("error unmarshalling %s: %v", r.configLocation, err)
-	}
-
-	lv := &localv1.LocalVolume{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      diskConfig.OwnerName,
-			Namespace: diskConfig.OwnerNamespace,
-		},
-		TypeMeta: metav1.TypeMeta{
-			Kind:       diskConfig.OwnerKind,
-			APIVersion: diskConfig.OwnerAPIVersion,
-		},
-	}
-	err = r.client.Get(context.TODO(), types.NamespacedName{Name: diskConfig.OwnerName, Namespace: diskConfig.OwnerNamespace}, lv)
-
-	localKey := fmt.Sprintf("%s/%s", diskConfig.OwnerNamespace, diskConfig.OwnerName)
-	if err != nil {
-		return nil, fmt.Errorf("error fetching local volume %s: %v", localKey, err)
-	}
-	r.localVolume = lv
-
-	return &diskConfig, nil
 }
 
 func (r *ReconcileLocalVolume) createSymLink(deviceNameLocation DiskLocation, symLinkDirPath string) {
@@ -140,21 +110,85 @@ func (r *ReconcileLocalVolume) createSymLink(deviceNameLocation DiskLocation, sy
 	successMsg := fmt.Sprintf("found matching disk %s with id %s", deviceNameLocation.diskNamePath, deviceNameLocation.diskID)
 	r.eventSync.Report(r.localVolume, newDiskEvent(FoundMatchingDisk, successMsg, deviceNameLocation.diskNamePath, corev1.EventTypeNormal))
 }
+func diskMakerLabels(crName string) map[string]string {
+	return map[string]string{
+		"app": fmt.Sprintf("local-volume-diskmaker-%s", crName),
+	}
+}
+func (r *ReconcileLocalVolume) generateConfig() *DiskConfig {
+	configMapData := &DiskConfig{
+		Disks:           map[string]*Disks{},
+		OwnerName:       r.localVolume.Name,
+		OwnerNamespace:  r.localVolume.Namespace,
+		OwnerKind:       localv1.LocalVolumeKind,
+		OwnerUID:        string(r.localVolume.UID),
+		OwnerAPIVersion: localv1.SchemeGroupVersion.String(),
+	}
 
+	storageClassDevices := r.localVolume.Spec.StorageClassDevices
+	for _, storageClassDevice := range storageClassDevices {
+		disks := new(Disks)
+		if len(storageClassDevice.DevicePaths) > 0 {
+			disks.DevicePaths = storageClassDevice.DevicePaths
+		}
+		configMapData.Disks[storageClassDevice.StorageClassName] = disks
+	}
+
+	return configMapData
+}
+func addOwner(meta *metav1.ObjectMeta, cr *localv1.LocalVolume) {
+	trueVal := true
+	meta.OwnerReferences = []metav1.OwnerReference{
+		{
+			APIVersion: localv1.SchemeGroupVersion.String(),
+			Kind:       localv1.LocalVolumeKind,
+			Name:       cr.Name,
+			UID:        cr.UID,
+			Controller: &trueVal,
+		},
+	}
+}
+func addOwnerLabels(meta *metav1.ObjectMeta, cr *localv1.LocalVolume) bool {
+	changed := false
+	if meta.Labels == nil {
+		meta.Labels = map[string]string{}
+		changed = true
+	}
+	if v, exists := meta.Labels[ownerNamespaceLabel]; !exists || v != cr.Namespace {
+		meta.Labels[ownerNamespaceLabel] = cr.Namespace
+		changed = true
+	}
+	if v, exists := meta.Labels[ownerNameLabel]; !exists || v != cr.Name {
+		meta.Labels[ownerNameLabel] = cr.Name
+		changed = true
+	}
+
+	return changed
+}
 func (r *ReconcileLocalVolume) Reconcile(request reconcile.Request) (reconcile.Result, error) {
 	reqLogger := log.WithValues("request.namespace", request.Namespace, "Request.Name", request.Name)
 	reqLogger.Info("Reconciling LocalVolume")
 
-	err := os.MkdirAll(r.symlinkLocation, 0755)
+	lv := &localv1.LocalVolume{}
+	err := r.client.Get(context.TODO(), request.NamespacedName, lv)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			// Request object not found, could have been deleted after reconcile request.
+			// Return and don't requeue
+			return reconcile.Result{}, nil
+		}
+		// Error reading the object - requeue the request.
+		return reconcile.Result{}, err
+	}
+
+	r.localVolume = lv
+
+	err = os.MkdirAll(r.symlinkLocation, 0755)
 	if err != nil {
 		klog.Errorf("error creating local-storage directory %s: %v", r.symlinkLocation, err)
 		os.Exit(-1)
 	}
-	diskConfig, err := r.loadConfig()
-	if err != nil {
-		klog.Errorf("error loading configuration: %v", err)
-		return reconcile.Result{}, err
-	}
+	diskConfig := r.generateConfig()
 	// run command lsblk --all --noheadings --pairs --output "KNAME,PKNAME,TYPE,MOUNTPOINT"
 	// the reason we are using KNAME instead of NAME is because for lvm disks(and may be others)
 	// the NAME and device file in /dev directory do not match.

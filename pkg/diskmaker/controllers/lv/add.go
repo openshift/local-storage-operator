@@ -30,7 +30,6 @@ func Add(mgr manager.Manager) error {
 		client:          mgr.GetClient(),
 		scheme:          mgr.GetScheme(),
 		eventSync:       newEventReporter(mgr.GetEventRecorderFor(ComponentName)),
-		configLocation:  "/etc/local-storage-operator/config/diskMakerConfig",
 		symlinkLocation: "/mnt/local-storage",
 	}
 	// Create a new controller
@@ -54,7 +53,6 @@ func Add(mgr manager.Manager) error {
 type ReconcileLocalVolume struct {
 	client          client.Client
 	scheme          *runtime.Scheme
-	configLocation  string
 	symlinkLocation string
 	localVolume     *localv1.LocalVolume
 	eventSync       *eventReporter

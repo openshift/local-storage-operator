@@ -19,7 +19,7 @@ import (
 )
 
 func TestFindMatchingDisk(t *testing.T) {
-	d := getFakeDiskMaker(t, nil, "/tmp/foo", "/mnt/local-storage")
+	d := getFakeDiskMaker(t, nil, "/mnt/local-storage")
 	deviceSet := d.findNewDisks(getRawOutput())
 	if len(deviceSet) != 5 {
 		t.Errorf("expected 7 devices got %d", len(deviceSet))
@@ -76,11 +76,10 @@ func TestLoadConfig(t *testing.T) {
 		t.Fatalf("error writing yaml to disk : %v", err)
 	}
 
-	d := getFakeDiskMaker(t, lv, filename, "/mnt/local-storage")
-	diskConfigFromDisk, err := d.loadConfig()
-	if err != nil {
-		t.Fatalf("error loading diskconfig from disk : %v", err)
-	}
+	d := getFakeDiskMaker(t, lv, "/mnt/local-storage")
+	d.localVolume = lv
+	diskConfigFromDisk := d.generateConfig()
+
 	if diskConfigFromDisk == nil {
 		t.Fatalf("expected a diskconfig got nil")
 	}
@@ -111,7 +110,7 @@ func TestCreateSymLinkByDeviceID(t *testing.T) {
 			Namespace: "default",
 		},
 	}
-	d := getFakeDiskMaker(t, lv, "", tmpSymLinkTargetDir)
+	d := getFakeDiskMaker(t, lv, tmpSymLinkTargetDir)
 	diskLocation := DiskLocation{fakeDisk.Name(), fakeDiskByID.Name()}
 
 	d.createSymLink(diskLocation, tmpSymLinkTargetDir)
@@ -137,7 +136,7 @@ func TestCreateSymLinkByDeviceName(t *testing.T) {
 		},
 	}
 
-	d := getFakeDiskMaker(t, lv, "", tmpSymLinkTargetDir)
+	d := getFakeDiskMaker(t, lv, tmpSymLinkTargetDir)
 	diskLocation := DiskLocation{fakeDisk.Name(), ""}
 	d.createSymLink(diskLocation, tmpSymLinkTargetDir)
 
@@ -145,8 +144,8 @@ func TestCreateSymLinkByDeviceName(t *testing.T) {
 	assert.Truef(t, hasFile(t, tmpSymLinkTargetDir, "diskName"), "failed to find symlink with disk name in %s directory", tmpSymLinkTargetDir)
 }
 
-func getFakeDiskMaker(t *testing.T, objs runtime.Object, configLocation, symlinkLocation string) *ReconcileLocalVolume {
-	r := &ReconcileLocalVolume{configLocation: configLocation, symlinkLocation: symlinkLocation}
+func getFakeDiskMaker(t *testing.T, objs runtime.Object, symlinkLocation string) *ReconcileLocalVolume {
+	r := &ReconcileLocalVolume{symlinkLocation: symlinkLocation}
 	scheme, err := localv1.SchemeBuilder.Build()
 	assert.NoErrorf(t, err, "creating scheme")
 	err = corev1.AddToScheme(scheme)
