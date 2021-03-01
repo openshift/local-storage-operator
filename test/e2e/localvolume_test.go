@@ -86,7 +86,7 @@ func LocalVolumeTest(ctx *framework.Context, cleanupFuncs *[]cleanupFn) func(*te
 			},
 		)
 
-		provisionerDSName := localVolume.Name + "-local-provisioner"
+		provisionerDSName := "local-provisioner"
 		diskMakerDSName := "diskmaker-manager"
 
 		err = waitForDaemonSet(t, f.KubeClient, namespace, provisionerDSName, retryInterval, timeout)

@@ -40,9 +40,10 @@ func Add(mgr manager.Manager) error {
 	}
 
 	err = c.Watch(&source.Kind{Type: &corev1.ConfigMap{}}, &handler.EnqueueRequestForOwner{
-		IsController: true,
-		OwnerType:    &localv1.LocalVolume{},
+		OwnerType: &localv1.LocalVolume{},
 	})
+
+	err = c.Watch(&source.Kind{Type: &localv1.LocalVolume{}}, &handler.EnqueueRequestForObject{})
 	if err != nil {
 		return err
 	}

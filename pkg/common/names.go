@@ -28,7 +28,7 @@ const (
 	LocalDiskLocationEnv = "LOCAL_DISK_LOCATION"
 
 	// ProvisionerConfigMapName is the name of the local-static-provisioner configmap
-	ProvisionerConfigMapName = "local-volumeset-provisioner"
+	ProvisionerConfigMapName = "local-provisioner"
 )
 
 // GetLocalProvisionerImage return the image to be used for provisioner daemonset
