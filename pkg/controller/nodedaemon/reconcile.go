@@ -21,7 +21,7 @@ import (
 
 const (
 	// ProvisionerName is the name of the local-static-provisioner daemonset
-	ProvisionerName = "localvolumeset-local-provisioner"
+	ProvisionerName = "local-provisioner"
 	// DiskMakerName is the name of the diskmaker-manager daemonset
 	DiskMakerName = "diskmaker-manager"
 
@@ -65,7 +65,7 @@ func (r *DaemonReconciler) Reconcile(request reconcile.Request) (reconcile.Resul
 		return reconcile.Result{}, nil
 	}
 
-	configMap, opResult, err := r.reconcileProvisionerConfigMap(request, lvSets.Items, ownerRefs)
+	configMap, opResult, err := r.reconcileProvisionerConfigMap(request, lvSets.Items, lvs.Items, ownerRefs)
 	if err != nil {
 		return reconcile.Result{}, err
 	} else if opResult == controllerutil.OperationResultUpdated || opResult == controllerutil.OperationResultCreated {
@@ -76,6 +76,14 @@ func (r *DaemonReconciler) Reconcile(request reconcile.Request) (reconcile.Resul
 
 	diskMakerDSMutateFn := getDiskMakerDSMutateFn(request, tolerations, ownerRefs, nodeSelector, configMapDataHash)
 	ds, opResult, err := CreateOrUpdateDaemonset(r.client, diskMakerDSMutateFn)
+	if err != nil {
+		return reconcile.Result{}, err
+	} else if opResult == controllerutil.OperationResultUpdated || opResult == controllerutil.OperationResultCreated {
+		r.reqLogger.Info("daemonset changed", "daemonset.Name", ds.GetName(), "op.Result", opResult)
+	}
+
+	localProvisionerDSMutateFn := getLocalProvisionerDSMutateFn(request, tolerations, ownerRefs, nodeSelector, configMapDataHash)
+	ds, opResult, err = CreateOrUpdateDaemonset(r.client, localProvisionerDSMutateFn)
 	if err != nil {
 		return reconcile.Result{}, err
 	} else if opResult == controllerutil.OperationResultUpdated || opResult == controllerutil.OperationResultCreated {

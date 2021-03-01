@@ -106,7 +106,6 @@ func (r *ReconcileLocalVolume) createSymLink(deviceNameLocation DiskLocation, sy
 		klog.Warningf(msg)
 		return
 	}
-
 	successMsg := fmt.Sprintf("found matching disk %s with id %s", deviceNameLocation.diskNamePath, deviceNameLocation.diskID)
 	r.eventSync.Report(r.localVolume, newDiskEvent(FoundMatchingDisk, successMsg, deviceNameLocation.diskNamePath, corev1.EventTypeNormal))
 }

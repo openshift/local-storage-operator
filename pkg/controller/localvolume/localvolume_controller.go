@@ -2,22 +2,19 @@ package localvolume
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/json"
 	"fmt"
 
-	"gopkg.in/yaml.v2"
 	"k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/klog"
 
 	operatorv1 "github.com/openshift/api/operator/v1"
 	secv1client "github.com/openshift/client-go/security/clientset/versioned/typed/security/v1"
 	localv1 "github.com/openshift/local-storage-operator/pkg/apis/local/v1"
-	"github.com/openshift/local-storage-operator/pkg/common"
 	commontypes "github.com/openshift/local-storage-operator/pkg/common"
+	"github.com/openshift/local-storage-operator/pkg/controller/nodedaemon"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
@@ -36,25 +33,12 @@ import (
 type localDiskData map[string]map[string]string
 
 const (
-	// Name of the component
-	componentName = "local-storage-operator"
-
-	localDiskLocation            = "/mnt/local-storage"
-	provisionerServiceAccount    = "local-storage-admin"
-	provisionerPVRoleBindingName = "local-storage-provisioner-pv-binding"
-	provisionerNodeRoleName      = "local-storage-provisioner-node-clusterrole"
-
-	localVolumeRoleName        = "local-storage-provisioner-cr-role"
-	localVolumeRoleBindingName = "local-storage-provisioner-cr-rolebinding"
-
-	defaultPVClusterRole           = "system:persistent-volume-provisioner"
-	provisionerNodeRoleBindingName = "local-storage-provisioner-node-binding"
-	ownerNamespaceLabel            = "local.storage.openshift.io/owner-namespace"
-	ownerNameLabel                 = "local.storage.openshift.io/owner-name"
+	componentName       = "local-storage-operator"
+	localDiskLocation   = "/mnt/local-storage"
+	ownerNamespaceLabel = "local.storage.openshift.io/owner-namespace"
+	ownerNameLabel      = "local.storage.openshift.io/owner-name"
 
 	localVolumeFinalizer = "storage.openshift.com/local-volume-protection"
-
-	specHashAnnotation = "operator.openshift.io/spec-hash"
 )
 
 // ReconcileLocalVolume reconciles a LocalVolume object
@@ -157,43 +141,48 @@ func (r *ReconcileLocalVolume) syncLocalVolumeProvider(instance *localv1.LocalVo
 		return nil
 	}
 
-	provisionerConfigMapModified, err := r.syncProvisionerConfigMap(o)
-	if err != nil {
-		klog.Errorf("error creating provisioner configmap %s: %v", o.Name, err)
-		return r.addFailureCondition(instance, o, err)
-	}
-
 	err = r.syncStorageClass(o)
 	if err != nil {
 		klog.Errorf("failed to create storageClass: %v", err)
 		return r.addFailureCondition(instance, o, err)
 	}
 
-	rollOutDaemonSet := false
-	if provisionerConfigMapModified {
-		rollOutDaemonSet = true
-	}
-
-	if o.Status.ObservedGeneration != nil &&
-		(*o.Status.ObservedGeneration != o.Generation) {
-		rollOutDaemonSet = true
-	}
-
 	children := []operatorv1.GenerationStatus{}
+	localProvisionerDS := &appsv1.DaemonSet{}
+	key := types.NamespacedName{Name: nodedaemon.ProvisionerName, Namespace: o.ObjectMeta.Namespace}
+	err = r.client.Get(context.TODO(), key, localProvisionerDS)
 
-	provisionerDS, err := r.syncProvisionerDaemonset(o, rollOutDaemonSet)
 	if err != nil {
-		klog.Errorf("failed to create daemonset for provisioner %s: %v", o.Name, err)
+		klog.Errorf("failed to create daemonset for provisioner %v", err)
 		return r.addFailureCondition(instance, o, err)
 	}
 
-	if provisionerDS != nil {
+	if localProvisionerDS != nil {
 		children = append(children, operatorv1.GenerationStatus{
 			Group:          appsv1.GroupName,
 			Resource:       "DaemonSet",
-			Namespace:      provisionerDS.Namespace,
-			Name:           provisionerDS.Name,
-			LastGeneration: provisionerDS.Generation,
+			Namespace:      key.Namespace,
+			Name:           key.Name,
+			LastGeneration: localProvisionerDS.Generation,
+		})
+	}
+
+	diskMakerDS := &appsv1.DaemonSet{}
+	key = types.NamespacedName{Name: nodedaemon.DiskMakerName, Namespace: o.ObjectMeta.Namespace}
+	err = r.client.Get(context.TODO(), key, diskMakerDS)
+
+	if err != nil {
+		klog.Errorf("failed to create daemonset for provisioner %v", err)
+		return r.addFailureCondition(instance, o, err)
+	}
+
+	if diskMakerDS != nil {
+		children = append(children, operatorv1.GenerationStatus{
+			Group:          appsv1.GroupName,
+			Resource:       "DaemonSet",
+			Namespace:      diskMakerDS.Namespace,
+			Name:           diskMakerDS.Name,
+			LastGeneration: diskMakerDS.Generation,
 		})
 	}
 
@@ -278,64 +267,6 @@ func (r *ReconcileLocalVolume) cleanupLocalVolumeDeployment(lv *localv1.LocalVol
 	return r.apiClient.updateLocalVolume(lv)
 }
 
-// syncProvisionerConfigMap syncs the configmap and returns true if configmap was modified
-func (r *ReconcileLocalVolume) syncProvisionerConfigMap(o *localv1.LocalVolume) (bool, error) {
-	provisionerConfigMap, err := r.generateProvisionerConfigMap(o)
-	if err != nil {
-		klog.Errorf("error generating provisioner configmap %s: %v", o.Name, err)
-		return false, err
-	}
-	_, modified, err := r.apiClient.applyConfigMap(provisionerConfigMap)
-	if err != nil {
-		return false, fmt.Errorf("error creating provisioner configmap %s: %v", o.Name, err)
-	}
-	return modified, nil
-}
-
-// CreateConfigMap Create configmap requires by the local storage provisioner
-func (r *ReconcileLocalVolume) generateProvisionerConfigMap(cr *localv1.LocalVolume) (*corev1.ConfigMap, error) {
-	r.provisonerConfigName = cr.Name + "-local-provisioner-configmap"
-	configMapData := make(localDiskData)
-	storageClassDevices := cr.Spec.StorageClassDevices
-	for _, storageClassDevice := range storageClassDevices {
-		storageClassName := storageClassDevice.StorageClassName
-		storageClassData := map[string]string{}
-		storageClassData["fstype"] = storageClassDevice.FSType
-		storageClassData["volumeMode"] = string(storageClassDevice.VolumeMode)
-		storageClassData["hostDir"] = fmt.Sprintf("%s/%s", r.localDiskLocation, storageClassName)
-		storageClassData["mountDir"] = fmt.Sprintf("%s/%s", r.localDiskLocation, storageClassName)
-		configMapData[storageClassName] = storageClassData
-	}
-	configmap := &corev1.ConfigMap{
-		TypeMeta: metav1.TypeMeta{
-			Kind:       "ConfigMap",
-			APIVersion: "v1",
-		},
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      r.provisonerConfigName,
-			Labels:    provisionerLabels(cr.Name),
-			Namespace: cr.Namespace,
-		},
-	}
-	y, err := yaml.Marshal(configMapData)
-	if err != nil {
-		return nil, fmt.Errorf("error creating configmap while marshalling yaml: %v", err)
-	}
-
-	pvLabelString, err := yaml.Marshal(pvLabels(cr))
-	if err != nil {
-		return nil, fmt.Errorf("error generating pv labels: %v", err)
-	}
-
-	configmap.Data = map[string]string{
-		"storageClassMap": string(y),
-		"labelsForPV":     string(pvLabelString),
-	}
-	addOwnerLabels(&configmap.ObjectMeta, cr)
-	addOwner(&configmap.ObjectMeta, cr)
-	return configmap, nil
-}
-
 func (r *ReconcileLocalVolume) syncStorageClass(cr *localv1.LocalVolume) error {
 	storageClassDevices := cr.Spec.StorageClassDevices
 	expectedStorageClasses := sets.NewString()
@@ -372,307 +303,6 @@ func (r *ReconcileLocalVolume) removeUnExpectedStorageClasses(cr *localv1.LocalV
 		}
 	}
 	return utilerrors.NewAggregate(removeErrors)
-}
-
-func (r *ReconcileLocalVolume) syncDiskMakerDaemonset(cr *localv1.LocalVolume, forceRollout bool) (*appsv1.DaemonSet, error) {
-	ds := r.generateDiskMakerDaemonSet(cr)
-	dsName := ds.Name
-	generation := getExpectedGeneration(cr, ds)
-
-	// See if we need to roll out the pods based on the DaemonSet hash
-	forceRollout = r.checkDaemonSetHash(ds, forceRollout)
-
-	ds, _, err := r.apiClient.applyDaemonSet(ds, generation, forceRollout)
-	if err != nil {
-		return nil, fmt.Errorf("error applying diskmaker daemonset %s: %v", dsName, err)
-	}
-	return ds, nil
-}
-
-func (r *ReconcileLocalVolume) syncProvisionerDaemonset(cr *localv1.LocalVolume, forceRollout bool) (*appsv1.DaemonSet, error) {
-	ds := r.generateLocalProvisionerDaemonset(cr)
-	dsName := ds.Name
-	generation := getExpectedGeneration(cr, ds)
-
-	// See if we need to roll out the pods based on the DaemonSet hash
-	forceRollout = r.checkDaemonSetHash(ds, forceRollout)
-
-	ds, _, err := r.apiClient.applyDaemonSet(ds, generation, forceRollout)
-	if err != nil {
-		return nil, fmt.Errorf("error applying provisioner daemonset %s: %v", dsName, err)
-	}
-	return ds, nil
-}
-
-func (r *ReconcileLocalVolume) generateLocalProvisionerDaemonset(cr *localv1.LocalVolume) *appsv1.DaemonSet {
-	privileged := true
-	hostContainerPropagation := corev1.MountPropagationHostToContainer
-	directoryHostPath := corev1.HostPathDirectory
-	containers := []corev1.Container{
-		{
-			Name:  "local-storage-provisioner",
-			Image: common.GetLocalProvisionerImage(),
-			SecurityContext: &corev1.SecurityContext{
-				Privileged: &privileged,
-			},
-			Env: []corev1.EnvVar{
-				{
-					Name: "MY_NODE_NAME",
-					ValueFrom: &corev1.EnvVarSource{
-						FieldRef: &corev1.ObjectFieldSelector{
-							FieldPath: "spec.nodeName",
-						},
-					},
-				},
-			},
-			VolumeMounts: []corev1.VolumeMount{
-				{
-					Name:      "provisioner-config",
-					ReadOnly:  true,
-					MountPath: "/etc/provisioner/config",
-				},
-				{
-					Name:             "local-disks",
-					MountPath:        r.localDiskLocation,
-					MountPropagation: &hostContainerPropagation,
-				},
-				{
-					Name:             "device-dir",
-					MountPath:        "/dev",
-					MountPropagation: &hostContainerPropagation,
-				},
-			},
-		},
-	}
-	volumes := []corev1.Volume{
-		{
-			Name: "provisioner-config",
-			VolumeSource: corev1.VolumeSource{
-				ConfigMap: &corev1.ConfigMapVolumeSource{
-					LocalObjectReference: corev1.LocalObjectReference{
-						Name: r.provisonerConfigName,
-					},
-				},
-			},
-		},
-		{
-			Name: "local-disks",
-			VolumeSource: corev1.VolumeSource{
-				HostPath: &corev1.HostPathVolumeSource{
-					Path: r.localDiskLocation,
-				},
-			},
-		},
-		{
-			Name: "device-dir",
-			VolumeSource: corev1.VolumeSource{
-				HostPath: &corev1.HostPathVolumeSource{
-					Path: "/dev",
-					Type: &directoryHostPath,
-				},
-			},
-		},
-	}
-	ds := &appsv1.DaemonSet{
-		TypeMeta: metav1.TypeMeta{
-			Kind:       "DaemonSet",
-			APIVersion: "apps/v1",
-		},
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      cr.Name + "-local-provisioner",
-			Namespace: cr.Namespace,
-			Labels:    provisionerLabels(cr.Name),
-		},
-		Spec: appsv1.DaemonSetSpec{
-			Selector: &metav1.LabelSelector{
-				MatchLabels: provisionerLabels(cr.Name),
-			},
-			Template: corev1.PodTemplateSpec{
-				ObjectMeta: metav1.ObjectMeta{
-					Labels: provisionerLabels(cr.Name),
-				},
-				Spec: corev1.PodSpec{
-					Containers:         containers,
-					ServiceAccountName: provisionerServiceAccount,
-					Tolerations:        cr.Spec.Tolerations,
-					Volumes:            volumes,
-				},
-			},
-		},
-	}
-
-	err := addDaemonSetHash(ds)
-	if err != nil {
-		klog.Errorf("Unable to apply DaemonSet hash for provisioner daemonset: %v", err)
-	}
-
-	r.applyNodeSelector(cr, ds)
-	addOwner(&ds.ObjectMeta, cr)
-	addOwnerLabels(&ds.ObjectMeta, cr)
-	return ds
-}
-
-func (r *ReconcileLocalVolume) applyNodeSelector(cr *localv1.LocalVolume, ds *appsv1.DaemonSet) *appsv1.DaemonSet {
-	nodeSelector := cr.Spec.NodeSelector
-	if nodeSelector != nil {
-		ds.Spec.Template.Spec.Affinity = &corev1.Affinity{
-			NodeAffinity: &corev1.NodeAffinity{
-				RequiredDuringSchedulingIgnoredDuringExecution: nodeSelector,
-			},
-		}
-	}
-	return ds
-}
-
-func (r *ReconcileLocalVolume) generateDiskMakerDaemonSet(cr *localv1.LocalVolume) *appsv1.DaemonSet {
-	privileged := true
-	hostContainerPropagation := corev1.MountPropagationHostToContainer
-	containers := []corev1.Container{
-		{
-			Name:  "local-diskmaker",
-			Image: common.GetDiskMakerImage(),
-			Args:  []string{"lv-controller"},
-			SecurityContext: &corev1.SecurityContext{
-				Privileged: &privileged,
-			},
-			Env: []corev1.EnvVar{
-				{
-					Name: "MY_NODE_NAME",
-					ValueFrom: &corev1.EnvVarSource{
-						FieldRef: &corev1.ObjectFieldSelector{
-							FieldPath: "spec.nodeName",
-						},
-					},
-				},
-				{
-					Name: "WATCH_NAMESPACE",
-					ValueFrom: &corev1.EnvVarSource{
-						FieldRef: &corev1.ObjectFieldSelector{
-							FieldPath: "metadata.namespace",
-						},
-					},
-				},
-				{
-					Name: "POD_NAME",
-					ValueFrom: &corev1.EnvVarSource{
-						FieldRef: &corev1.ObjectFieldSelector{
-							FieldPath: "metadata.name",
-						},
-					},
-				},
-			},
-			VolumeMounts: []corev1.VolumeMount{
-				{
-					Name:      "provisioner-config",
-					ReadOnly:  true,
-					MountPath: "/etc/local-storage-operator/config",
-				},
-				{
-					Name:             "local-disks",
-					MountPath:        r.localDiskLocation,
-					MountPropagation: &hostContainerPropagation,
-				},
-				{
-					Name:             "device-dir",
-					MountPath:        "/dev",
-					MountPropagation: &hostContainerPropagation,
-				},
-			},
-		},
-	}
-	directoryHostPath := corev1.HostPathDirectory
-	volumes := []corev1.Volume{
-		{
-			Name: "provisioner-config",
-			VolumeSource: corev1.VolumeSource{
-				ConfigMap: &corev1.ConfigMapVolumeSource{
-					LocalObjectReference: corev1.LocalObjectReference{
-						Name: r.diskMakerConfigName,
-					},
-				},
-			},
-		},
-		{
-			Name: "local-disks",
-			VolumeSource: corev1.VolumeSource{
-				HostPath: &corev1.HostPathVolumeSource{
-					Path: r.localDiskLocation,
-				},
-			},
-		},
-		{
-			Name: "device-dir",
-			VolumeSource: corev1.VolumeSource{
-				HostPath: &corev1.HostPathVolumeSource{
-					Path: "/dev",
-					Type: &directoryHostPath,
-				},
-			},
-		},
-	}
-	ds := &appsv1.DaemonSet{
-		TypeMeta: metav1.TypeMeta{
-			Kind:       "DaemonSet",
-			APIVersion: "apps/v1",
-		},
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      cr.Name + "-local-diskmaker",
-			Namespace: cr.Namespace,
-			Labels:    diskMakerLabels(cr.Name),
-		},
-		Spec: appsv1.DaemonSetSpec{
-			Selector: &metav1.LabelSelector{
-				MatchLabels: diskMakerLabels(cr.Name),
-			},
-			Template: corev1.PodTemplateSpec{
-				ObjectMeta: metav1.ObjectMeta{
-					Labels: diskMakerLabels(cr.Name),
-				},
-				Spec: corev1.PodSpec{
-					Containers:         containers,
-					ServiceAccountName: provisionerServiceAccount,
-					Tolerations:        cr.Spec.Tolerations,
-					Volumes:            volumes,
-				},
-			},
-		},
-	}
-
-	err := addDaemonSetHash(ds)
-	if err != nil {
-		klog.Errorf("Unable to apply DaemonSet hash for diskmaker daemonset: %v", err)
-	}
-
-	r.applyNodeSelector(cr, ds)
-	addOwner(&ds.ObjectMeta, cr)
-	addOwnerLabels(&ds.ObjectMeta, cr)
-	return ds
-}
-
-// Checks to see if the DaemonSetHash has been modified. Returns true
-// if a modification has been detected, or the original forceRollout
-// value otherwise.
-func (r *ReconcileLocalVolume) checkDaemonSetHash(ds *appsv1.DaemonSet, forceRollout bool) bool {
-	daemonSetUpdated := false
-
-	existingDS, err := r.apiClient.getDaemonSet(ds.Namespace, ds.Name)
-	if err != nil {
-		// If we can't fetch an existing DS, then return the passed in forceRollout
-		klog.Infof("Error getting existing provisioner DaemonSet: %v", err)
-		return forceRollout
-	}
-
-	existingAnnotations := existingDS.ObjectMeta.Annotations
-	if existingAnnotations == nil ||
-		existingAnnotations[specHashAnnotation] != ds.ObjectMeta.Annotations[specHashAnnotation] {
-		daemonSetUpdated = true
-	}
-
-	if daemonSetUpdated {
-		forceRollout = daemonSetUpdated
-	}
-
-	return forceRollout
 }
 
 func addFinalizer(lv *localv1.LocalVolume) (*localv1.LocalVolume, bool) {
@@ -725,26 +355,6 @@ func addOwnerLabels(meta *metav1.ObjectMeta, cr *localv1.LocalVolume) bool {
 	return changed
 }
 
-func diskMakerLabels(crName string) map[string]string {
-	return map[string]string{
-		"app": fmt.Sprintf("local-volume-diskmaker-%s", crName),
-	}
-}
-
-func provisionerLabels(crName string) map[string]string {
-	return map[string]string{
-		"app": fmt.Sprintf("local-volume-provisioner-%s", crName),
-	}
-}
-
-// name of the CR that owns this local volume
-func pvLabels(lv *localv1.LocalVolume) map[string]string {
-	return map[string]string{
-		commontypes.LocalVolumeOwnerNameForPV:      lv.Name,
-		commontypes.LocalVolumeOwnerNamespaceForPV: lv.Namespace,
-	}
-}
-
 func generateStorageClass(cr *localv1.LocalVolume, scName string) *storagev1.StorageClass {
 	deleteReclaimPolicy := corev1.PersistentVolumeReclaimDelete
 	firstConsumerBinding := storagev1.VolumeBindingWaitForFirstConsumer
@@ -772,25 +382,6 @@ func getOwnerLabelSelector(cr *localv1.LocalVolume) labels.Selector {
 	return labels.SelectorFromSet(ownerLabels)
 }
 
-func getExpectedGeneration(cr *localv1.LocalVolume, obj runtime.Object) int64 {
-	gvk := obj.GetObjectKind().GroupVersionKind()
-	var lastGeneration int64 = -1
-	for _, child := range cr.Status.Generations {
-		if child.Group != gvk.Group || child.Resource != gvk.Kind {
-			continue
-		}
-		accessor, err := meta.Accessor(obj)
-		if err != nil {
-			return -1
-		}
-		if child.Name != accessor.GetName() || child.Namespace != accessor.GetNamespace() {
-			continue
-		}
-		lastGeneration = child.LastGeneration
-	}
-	return lastGeneration
-}
-
 func contains(list []string, s string) bool {
 	for _, v := range list {
 		if v == s {
@@ -812,18 +403,4 @@ func remove(list []string, s string) []string {
 // isDeletionCandidate checks if object is candidate to be deleted
 func isDeletionCandidate(obj metav1.Object, finalizer string) bool {
 	return obj.GetDeletionTimestamp() != nil && contains(obj.GetFinalizers(), finalizer)
-}
-
-func addDaemonSetHash(daemonSet *appsv1.DaemonSet) error {
-	jsonBytes, err := json.Marshal(daemonSet.Spec)
-	if err != nil {
-		return err
-	}
-	specHash := fmt.Sprintf("%x", sha256.Sum256(jsonBytes))
-	if daemonSet.Annotations == nil {
-		daemonSet.Annotations = map[string]string{}
-	}
-
-	daemonSet.Annotations[specHashAnnotation] = specHash
-	return nil
 }
