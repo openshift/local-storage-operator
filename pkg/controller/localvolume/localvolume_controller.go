@@ -153,7 +153,7 @@ func (r *ReconcileLocalVolume) syncLocalVolumeProvider(instance *localv1.LocalVo
 	err = r.client.Get(context.TODO(), key, localProvisionerDS)
 
 	if err != nil {
-		klog.Errorf("failed to create daemonset for provisioner %v", err)
+		klog.Errorf("failed to get daemonset for provisioner %v", err)
 		return r.addFailureCondition(instance, o, err)
 	}
 

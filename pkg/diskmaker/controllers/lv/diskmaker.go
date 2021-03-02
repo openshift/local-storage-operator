@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/openshift/local-storage-operator/pkg/common"
 	"github.com/openshift/local-storage-operator/pkg/internal"
 	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -20,6 +21,7 @@ import (
 	//	"github.com/prometheus/common/log"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/klog"
 )
@@ -181,6 +183,24 @@ func (r *ReconcileLocalVolume) Reconcile(request reconcile.Request) (reconcile.R
 	}
 
 	r.localVolume = lv
+
+	// ignore LocalVolumes whose LabelSelector doesn't match this node
+	// NodeSelectorTerms.MatchExpressions are ORed
+	node := &corev1.Node{}
+	err = r.client.Get(context.TODO(), types.NamespacedName{Name: os.Getenv("MY_NODE_NAME")}, node)
+	if err != nil {
+		return reconcile.Result{}, err
+	}
+
+	matches, err := common.NodeSelectorMatchesNodeLabels(node, lv.Spec.NodeSelector)
+	if err != nil {
+		reqLogger.Error(err, "failed to match nodeSelector to node labels")
+		return reconcile.Result{}, err
+	}
+
+	if !matches {
+		return reconcile.Result{}, nil
+	}
 
 	err = os.MkdirAll(r.symlinkLocation, 0755)
 	if err != nil {
