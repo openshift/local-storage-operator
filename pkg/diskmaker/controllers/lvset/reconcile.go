@@ -18,10 +18,8 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
-	corev1helper "k8s.io/kubernetes/pkg/apis/core/v1/helper"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	provCommon "sigs.k8s.io/sig-storage-local-static-provisioner/pkg/common"
 	staticProvisioner "sigs.k8s.io/sig-storage-local-static-provisioner/pkg/common"
@@ -58,7 +56,7 @@ func (r *ReconcileLocalVolumeSet) Reconcile(request reconcile.Request) (reconcil
 
 	// ignore LocalVolmeSets whose LabelSelector doesn't match this node
 	// NodeSelectorTerms.MatchExpressions are ORed
-	matches, err := nodeSelectorMatchesNodeLabels(r.runtimeConfig.Node, lvset.Spec.NodeSelector)
+	matches, err := common.NodeSelectorMatchesNodeLabels(r.runtimeConfig.Node, lvset.Spec.NodeSelector)
 	if err != nil {
 		reqLogger.Error(err, "failed to match nodeSelector to node labels")
 		return reconcile.Result{}, err
@@ -401,19 +399,6 @@ func generatePVName(file, node, class string) string {
 	h.Write([]byte(class))
 	// This is the FNV-1a 32-bit hash
 	return fmt.Sprintf("local-pv-%x", h.Sum32())
-}
-
-func nodeSelectorMatchesNodeLabels(node *corev1.Node, nodeSelector *corev1.NodeSelector) (bool, error) {
-	if nodeSelector == nil {
-		return true, nil
-	}
-	if node == nil {
-		return false, fmt.Errorf("the node var is nil")
-	}
-	matches := corev1helper.MatchNodeSelectorTerms(nodeSelector.NodeSelectorTerms, node.Labels, fields.Set{
-		"metadata.name": node.Name,
-	})
-	return matches, nil
 }
 
 func getSymLinkSourceAndTarget(dev internal.BlockDevice, symlinkDir string) (string, string, bool, error) {

@@ -12,6 +12,7 @@ import (
 	operatorv1 "github.com/openshift/api/operator/v1"
 	localv1 "github.com/openshift/local-storage-operator/pkg/apis/local/v1"
 	commontypes "github.com/openshift/local-storage-operator/pkg/common"
+	"github.com/openshift/local-storage-operator/pkg/controller/nodedaemon"
 	framework "github.com/operator-framework/operator-sdk/pkg/test"
 	v1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -86,15 +87,12 @@ func LocalVolumeTest(ctx *framework.Context, cleanupFuncs *[]cleanupFn) func(*te
 			},
 		)
 
-		provisionerDSName := "local-provisioner"
-		diskMakerDSName := "diskmaker-manager"
-
-		err = waitForDaemonSet(t, f.KubeClient, namespace, provisionerDSName, retryInterval, timeout)
+		err = waitForDaemonSet(t, f.KubeClient, namespace, nodedaemon.ProvisionerName, retryInterval, timeout)
 		if err != nil {
 			t.Fatalf("error waiting for provisioner daemonset : %v", err)
 		}
 
-		err = waitForDaemonSet(t, f.KubeClient, namespace, diskMakerDSName, retryInterval, timeout)
+		err = waitForDaemonSet(t, f.KubeClient, namespace, nodedaemon.DiskMakerName, retryInterval, timeout)
 		if err != nil {
 			t.Fatalf("error waiting for diskmaker daemonset : %v", err)
 		}
@@ -104,12 +102,12 @@ func LocalVolumeTest(ctx *framework.Context, cleanupFuncs *[]cleanupFn) func(*te
 			t.Fatalf("error verifying localvolume cr: %v", err)
 		}
 
-		err = verifyDaemonSetTolerations(f.KubeClient, provisionerDSName, namespace, localVolume.Spec.Tolerations)
+		err = verifyDaemonSetTolerations(f.KubeClient, nodedaemon.ProvisionerName, namespace, localVolume.Spec.Tolerations)
 		if err != nil {
 			t.Fatalf("error verifying provisioner tolerations match localvolume: %v", err)
 		}
 
-		err = verifyDaemonSetTolerations(f.KubeClient, diskMakerDSName, namespace, localVolume.Spec.Tolerations)
+		err = verifyDaemonSetTolerations(f.KubeClient, nodedaemon.DiskMakerName, namespace, localVolume.Spec.Tolerations)
 		if err != nil {
 			t.Fatalf("error verifying diskmaker tolerations match localvolume: %v", err)
 		}

@@ -20,6 +20,7 @@ import (
 )
 
 const (
+	oldProvisionerName = "localvolumeset-local-provisioner"
 	// ProvisionerName is the name of the local-static-provisioner daemonset
 	ProvisionerName = "local-provisioner"
 	// DiskMakerName is the name of the diskmaker-manager daemonset
@@ -99,16 +100,16 @@ func (r *DaemonReconciler) cleanupOldDaemonsets(namespace string) error {
 		return nil
 	}
 	provisioner := &appsv1.DaemonSet{}
-	err := r.client.Get(context.TODO(), types.NamespacedName{Name: ProvisionerName, Namespace: namespace}, provisioner)
+	err := r.client.Get(context.TODO(), types.NamespacedName{Name: oldProvisionerName, Namespace: namespace}, provisioner)
 	if err == nil { // provisioner daemonset found
-		r.reqLogger.Info(fmt.Sprintf("old daemonset %q found, cleaning up", ProvisionerName))
+		r.reqLogger.Info(fmt.Sprintf("old daemonset %q found, cleaning up", oldProvisionerName))
 		err = r.client.Delete(context.TODO(), provisioner)
 		if err != nil && !errors.IsGone(err) {
-			r.reqLogger.Error(err, fmt.Sprintf("could not delete daemonset %q", ProvisionerName))
+			r.reqLogger.Error(err, fmt.Sprintf("could not delete daemonset %q", oldProvisionerName))
 			return err
 		}
 	} else if !errors.IsNotFound(err) { // unknown error
-		r.reqLogger.Error(err, fmt.Sprintf("could not fetch daemonset %q to clean it up", ProvisionerName))
+		r.reqLogger.Error(err, fmt.Sprintf("could not fetch daemonset %q to clean it up", oldProvisionerName))
 		return err
 	}
 
@@ -122,13 +123,13 @@ func (r *DaemonReconciler) cleanupOldDaemonsets(namespace string) error {
 	}, func() (done bool, err error) {
 		podList := &corev1.PodList{}
 		allGone := false
-		err = r.client.List(context.TODO(), podList, client.MatchingLabels{"app": ProvisionerName})
+		err = r.client.List(context.TODO(), podList, client.MatchingLabels{"app": oldProvisionerName})
 		if err != nil && !errors.IsNotFound(err) {
 			return false, err
 		} else if len(podList.Items) == 0 {
 			allGone = true
 		}
-		r.reqLogger.Info(fmt.Sprintf("waiting for 0 pods with label app : %q", ProvisionerName), "numberFound", len(podList.Items))
+		r.reqLogger.Info(fmt.Sprintf("waiting for 0 pods with label app : %q", oldProvisionerName), "numberFound", len(podList.Items))
 		return allGone, nil
 	})
 	if err != nil {
