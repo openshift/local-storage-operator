@@ -7,6 +7,8 @@ import (
 
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/util/clock"
+
 	"k8s.io/client-go/tools/record"
 )
 
@@ -33,12 +35,14 @@ type EventReporter struct {
 	sync.Mutex
 	Recorder       record.EventRecorder
 	reportedEvents map[string]time.Time
+	clock          clock.Clock
 }
 
 // NewEventReporter returns an EventReporter
 func NewEventReporter(eventRecorder record.EventRecorder) *EventReporter {
 	er := &EventReporter{
 		Recorder: eventRecorder,
+		clock:    clock.RealClock{},
 	}
 	er.reportedEvents = make(map[string]time.Time)
 	return er
@@ -61,9 +65,9 @@ func (r *EventReporter) ReportKeyedEvent(obj runtime.Object, e KeyedEvent) error
 	}
 	eventKey := e.GetKey(name, kind)
 	lastReported, found := r.reportedEvents[eventKey]
-	if !found || time.Since(lastReported) >= e.GetInterval() {
+	if !found || r.clock.Since(lastReported) >= e.GetInterval() {
 		r.Recorder.Eventf(obj, e.GetType(), e.GetReason(), e.GetMessage())
-		r.reportedEvents[eventKey] = time.Now()
+		r.reportedEvents[eventKey] = r.clock.Now()
 	}
 	return nil
 }

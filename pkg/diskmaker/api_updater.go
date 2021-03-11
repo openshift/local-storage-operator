@@ -5,7 +5,7 @@ import (
 
 	localv1 "github.com/openshift/local-storage-operator/pkg/apis/local/v1"
 	"github.com/openshift/local-storage-operator/pkg/apis/local/v1alpha1"
-	"github.com/openshift/local-storage-operator/pkg/internal/events"
+	"github.com/openshift/local-storage-operator/pkg/common/events"
 	"github.com/prometheus/common/log"
 	typedcorev1 "k8s.io/client-go/kubernetes/typed/core/v1"
 

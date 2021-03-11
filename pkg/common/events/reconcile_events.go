@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-// NewReconcileEvent returns a DiskEvent
+// NewReconcileEvent returns a Reconcile event with a default interval of 30 minutes
 func NewReconcileEvent(eventReason, message, eventType string) ReconcileEvent {
 	return ReconcileEvent{
 		Reason:   eventReason,
@@ -32,7 +32,7 @@ func (e ReconcileEvent) GetInterval() time.Duration {
 func (e ReconcileEvent) GetKey(objectName, objectKind string) string {
 	// objectKind is not currently in the key, but if we ever use one eventreporter for two kinds,
 	// we should add kind to the key
-	return fmt.Sprintf("%s:%s:%s", objectName, e.Reason, e.Type)
+	return fmt.Sprintf("%s:%s:%s:%s", objectName, e.Message, e.Reason, e.Type)
 }
 
 // GetMessage returns the message for

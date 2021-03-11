@@ -3,7 +3,7 @@ package diskmaker
 import (
 	localv1 "github.com/openshift/local-storage-operator/pkg/apis/local/v1"
 	"github.com/openshift/local-storage-operator/pkg/apis/local/v1alpha1"
-	"github.com/openshift/local-storage-operator/pkg/internal/events"
+	"github.com/openshift/local-storage-operator/pkg/common/events"
 	"k8s.io/apimachinery/pkg/runtime"
 )
 

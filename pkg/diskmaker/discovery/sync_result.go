@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/openshift/local-storage-operator/pkg/apis/local/v1alpha1"
-	"github.com/openshift/local-storage-operator/pkg/internal/events"
+	"github.com/openshift/local-storage-operator/pkg/common/events"
 	"github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"

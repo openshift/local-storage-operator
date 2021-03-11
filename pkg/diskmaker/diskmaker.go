@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/openshift/local-storage-operator/pkg/common/events"
 	"github.com/openshift/local-storage-operator/pkg/internal"
-	"github.com/openshift/local-storage-operator/pkg/internal/events"
 
 	"github.com/ghodss/yaml"
 	"github.com/openshift/local-storage-operator/pkg/apis"

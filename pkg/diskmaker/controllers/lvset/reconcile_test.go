@@ -6,7 +6,7 @@ import (
 
 	"github.com/openshift/client-go/security/clientset/versioned/scheme"
 	"github.com/openshift/local-storage-operator/pkg/apis"
-	"github.com/openshift/local-storage-operator/pkg/internal/events"
+	"github.com/openshift/local-storage-operator/pkg/common/events"
 	"github.com/stretchr/testify/assert"
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
