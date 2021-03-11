@@ -18,6 +18,7 @@ import (
 	localv1 "github.com/openshift/local-storage-operator/pkg/apis/local/v1"
 	"github.com/openshift/local-storage-operator/pkg/common"
 	commontypes "github.com/openshift/local-storage-operator/pkg/common"
+	"github.com/openshift/local-storage-operator/pkg/common/events"
 	"github.com/openshift/local-storage-operator/pkg/diskmaker"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -37,8 +38,8 @@ import (
 type localDiskData map[string]map[string]string
 
 const (
-	// Name of the component
-	componentName = "local-storage-operator"
+	// ComponentName for this controller
+	ComponentName = "localvolume-controller"
 
 	localDiskLocation            = "/mnt/local-storage"
 	provisionerServiceAccount    = "local-storage-admin"
@@ -90,10 +91,11 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 }
 
 func newReconciler(mgr manager.Manager) reconcile.Reconciler {
+	reporter := events.NewEventReporter(mgr.GetEventRecorderFor(ComponentName))
 	return &ReconcileLocalVolume{
 		localDiskLocation: localDiskLocation,
 		client:            mgr.GetClient(),
-		apiClient:         newAPIUpdater(mgr),
+		apiClient:         newAPIUpdater(mgr, reporter),
 		secClient:         secv1client.NewForConfigOrDie(mgr.GetConfig()),
 		scheme:            mgr.GetScheme(),
 	}

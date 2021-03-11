@@ -538,7 +538,6 @@ func TestParseDeviceProperty(t *testing.T) {
 func getFakeDeviceDiscovery() *DeviceDiscovery {
 	dd := &DeviceDiscovery{}
 	dd.apiClient = &diskmaker.MockAPIUpdater{}
-	dd.eventSync = diskmaker.NewEventReporter(dd.apiClient)
 	dd.disks = []v1alpha1.DiscoveredDevice{}
 	dd.localVolumeDiscovery = &v1alpha1.LocalVolumeDiscovery{}
 
