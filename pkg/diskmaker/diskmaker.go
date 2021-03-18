@@ -1,11 +1,9 @@
 package diskmaker
 
 import (
-	"bytes"
 	"fmt"
 	"io/ioutil"
 	"os"
-	"os/exec"
 	"path"
 	"path/filepath"
 	"strings"
@@ -196,24 +194,29 @@ func (d *DiskMaker) createSymLink(deviceNameLocation DiskLocation, symLinkDirPat
 }
 
 func (d *DiskMaker) symLinkDisks(diskConfig *DiskConfig) {
-	// run command lsblk --all --noheadings --pairs --output "KNAME,PKNAME,TYPE,MOUNTPOINT"
-	// the reason we are using KNAME instead of NAME is because for lvm disks(and may be others)
-	// the NAME and device file in /dev directory do not match.
-	cmd := exec.Command("lsblk", "--all", "--noheadings", "--pairs", "--output", "KNAME,PKNAME,TYPE,MOUNTPOINT")
-	var out bytes.Buffer
-	var err error
-	cmd.Stdout = &out
-	err = cmd.Run()
+	blockDevices, badRows, err := internal.ListBlockDevices()
 	if err != nil {
-		msg := fmt.Sprintf("error running lsblk: %v", err)
+		msg := fmt.Sprintf("failed to list block devices: %v", err)
 		e := NewEvent(ErrorRunningBlockList, msg, "")
 		d.eventSync.Report(e, d.localVolume)
-		klog.Errorf(msg)
+		klog.Errorf(msg, "could not list block devices", "lsblk.BadRows", badRows)
 		return
+	} else if len(badRows) > 0 {
+		msg := fmt.Sprintf("error parsing rows: %+v", badRows)
+		e := NewEvent(ErrorRunningBlockList, msg, "")
+		d.eventSync.Report(e, d.localVolume)
+		klog.Errorf(msg, "could not parse all the lsblk rows", "lsblk.BadRows", badRows)
 	}
-	deviceSet := d.findNewDisks(out.String())
 
-	if len(deviceSet) == 0 {
+	validBlockDevices := make([]internal.BlockDevice, 0)
+	for _, blockDevice := range blockDevices {
+		if ignoreDevices(blockDevice) {
+			continue
+		}
+		validBlockDevices = append(validBlockDevices, blockDevice)
+	}
+
+	if len(validBlockDevices) == 0 {
 		klog.V(3).Infof("unable to find any new disks")
 		return
 	}
@@ -228,7 +231,7 @@ func (d *DiskMaker) symLinkDisks(diskConfig *DiskConfig) {
 		return
 	}
 
-	deviceMap, err := d.findMatchingDisks(diskConfig, deviceSet, allDiskIds)
+	deviceMap, err := d.findMatchingDisks(diskConfig, validBlockDevices, allDiskIds)
 	if err != nil {
 		msg := fmt.Sprintf("error finding matching disks: %v", err)
 		e := NewEvent(ErrorFindingMatchingDisk, msg, "")
@@ -270,7 +273,21 @@ func (d *DiskMaker) symLinkDisks(diskConfig *DiskConfig) {
 
 }
 
-func (d *DiskMaker) findMatchingDisks(diskConfig *DiskConfig, deviceSet sets.String, allDiskIds []string) (map[string][]DiskLocation, error) {
+func ignoreDevices(dev internal.BlockDevice) bool {
+	if hasBindMounts, _, err := dev.HasBindMounts(); err != nil || hasBindMounts {
+		klog.Infof("ignoring mount device %q", dev.Name)
+		return true
+	}
+
+	if hasChildren, err := dev.HasChildren(); err != nil || hasChildren {
+		klog.Infof("ignoring root device %q", dev.Name)
+		return true
+	}
+
+	return false
+}
+
+func (d *DiskMaker) findMatchingDisks(diskConfig *DiskConfig, blockDevices []internal.BlockDevice, allDiskIds []string) (map[string][]DiskLocation, error) {
 	// blockDeviceMap is a map of storageclass and device locations
 	blockDeviceMap := make(map[string][]DiskLocation)
 
@@ -287,7 +304,7 @@ func (d *DiskMaker) findMatchingDisks(diskConfig *DiskConfig, deviceSet sets.Str
 		deviceNames := disks.DeviceNames().List()
 		for _, diskName := range deviceNames {
 			baseDeviceName := filepath.Base(diskName)
-			if hasExactDisk(deviceSet, baseDeviceName) {
+			if hasExactDisk(blockDevices, baseDeviceName) {
 				matchedDeviceID, err := d.findStableDeviceID(baseDeviceName, allDiskIds)
 				// This means no /dev/disk/by-id entry was created for requested device.
 				if err != nil {
@@ -336,7 +353,7 @@ func (d *DiskMaker) findMatchingDisks(diskConfig *DiskConfig, deviceSet sets.Str
 			}
 			baseDeviceName := filepath.Base(matchedDiskName)
 			// We need to make sure that requested device is not already mounted.
-			if hasExactDisk(deviceSet, baseDeviceName) {
+			if hasExactDisk(blockDevices, baseDeviceName) {
 				addDiskToMap(storageClass, matchedDeviceID, matchedDiskName)
 			}
 		}
@@ -367,22 +384,9 @@ func (d *DiskMaker) findStableDeviceID(diskName string, allDisks []string) (stri
 	return "", fmt.Errorf("unable to find ID of disk %s", diskName)
 }
 
-func (d *DiskMaker) findNewDisks(content string) sets.String {
-	deviceSet := sets.NewString()
-	fullDiskTable := newDiskTable()
-	fullDiskTable.parse(content)
-	usableDisks := fullDiskTable.filterUsableDisks()
-
-	for _, disk := range usableDisks {
-		diskName := disk["KNAME"]
-		deviceSet.Insert(diskName)
-	}
-	return deviceSet
-}
-
-func hasExactDisk(disks sets.String, device string) bool {
-	for _, disk := range disks.List() {
-		if disk == device {
+func hasExactDisk(blockDevices []internal.BlockDevice, device string) bool {
+	for _, blockDevice := range blockDevices {
+		if blockDevice.KName == device {
 			return true
 		}
 	}

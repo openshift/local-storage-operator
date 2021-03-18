@@ -1,6 +1,7 @@
 package diskmaker
 
 import (
+	"github.com/openshift/local-storage-operator/pkg/internal"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -14,24 +15,33 @@ import (
 
 func TestFindMatchingDisk(t *testing.T) {
 	d := getFakeDiskMaker("/tmp/foo", "/mnt/local-storage")
-	deviceSet := d.findNewDisks(getRawOutput())
-	if len(deviceSet) != 5 {
-		t.Errorf("expected 7 devices got %d", len(deviceSet))
+	blockDevices := []internal.BlockDevice{
+		{
+			Name:  "sdb1",
+			KName: "sdb1",
+		},
+		{
+			Name:  "sdb2",
+			KName: "sdb2",
+		},
+	}
+	if len(blockDevices) != 2 {
+		t.Errorf("expected 2 devices got %d", len(blockDevices))
 	}
 	diskConfig := &DiskConfig{
 		Disks: map[string]*Disks{
 			"foo": &Disks{
-				DevicePaths: []string{"xyz"},
+				DevicePaths: []string{"/dev/sdb1", "/dev/sdb2"},
 			},
 		},
 	}
 	allDiskIds := getDeiveIDs()
-	deviceMap, err := d.findMatchingDisks(diskConfig, deviceSet, allDiskIds)
+	deviceMap, err := d.findMatchingDisks(diskConfig, blockDevices, allDiskIds)
 	if err != nil {
 		t.Fatalf("error finding matchin device %v", err)
 	}
-	if len(deviceMap) != 0 {
-		t.Errorf("expected 0 elements in map got %d", len(deviceMap))
+	if len(deviceMap) != 1 {
+		t.Errorf("expected 1 elements in map got %d", len(deviceMap))
 	}
 }
 
