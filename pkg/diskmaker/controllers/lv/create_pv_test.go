@@ -1,4 +1,4 @@
-package lvset
+package lv
 
 import (
 	"context"
@@ -9,7 +9,6 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	localv1 "github.com/openshift/local-storage-operator/pkg/apis/local/v1"
-	localv1alpha1 "github.com/openshift/local-storage-operator/pkg/apis/local/v1alpha1"
 	"github.com/openshift/local-storage-operator/pkg/common"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
@@ -26,7 +25,7 @@ func TestCreatePV(t *testing.T) {
 	testTable := []struct {
 		desc      string
 		shouldErr bool
-		lvset     localv1alpha1.LocalVolumeSet
+		lv        localv1.LocalVolume
 		node      corev1.Node
 		sc        storagev1.StorageClass
 		// device stuff
@@ -40,13 +39,10 @@ func TestCreatePV(t *testing.T) {
 	}{
 		{
 			desc: "basic creation: block on block",
-			lvset: localv1alpha1.LocalVolumeSet{
+			lv: localv1.LocalVolume{
 				ObjectMeta: metav1.ObjectMeta{
-					Name: "lvset-a",
+					Name: "lv-a",
 					// Namespace: "a",
-				},
-				Spec: localv1alpha1.LocalVolumeSetSpec{
-					StorageClassName: "storageclass-a",
 				},
 			},
 			node: corev1.Node{
@@ -71,13 +67,10 @@ func TestCreatePV(t *testing.T) {
 		{
 			desc:      "basic creation: block on fs",
 			shouldErr: true,
-			lvset: localv1alpha1.LocalVolumeSet{
+			lv: localv1.LocalVolume{
 				ObjectMeta: metav1.ObjectMeta{
-					Name: "lvset-a",
+					Name: "lv-a",
 					// Namespace: "a",
-				},
-				Spec: localv1alpha1.LocalVolumeSetSpec{
-					StorageClassName: "storageclass-a",
 				},
 			},
 			node: corev1.Node{
@@ -101,13 +94,10 @@ func TestCreatePV(t *testing.T) {
 		},
 		{
 			desc: "basic creation: fs on block",
-			lvset: localv1alpha1.LocalVolumeSet{
+			lv: localv1.LocalVolume{
 				ObjectMeta: metav1.ObjectMeta{
-					Name: "lvset-a",
+					Name: "lv-a",
 					// Namespace: "a",
-				},
-				Spec: localv1alpha1.LocalVolumeSetSpec{
-					StorageClassName: "storageclass-a",
 				},
 			},
 			node: corev1.Node{
@@ -131,13 +121,10 @@ func TestCreatePV(t *testing.T) {
 		},
 		{
 			desc: "basic creation: fs",
-			lvset: localv1alpha1.LocalVolumeSet{
+			lv: localv1.LocalVolume{
 				ObjectMeta: metav1.ObjectMeta{
-					Name: "lvset-a",
+					Name: "lv-a",
 					// Namespace: "a",
-				},
-				Spec: localv1alpha1.LocalVolumeSetSpec{
-					StorageClassName: "storageclass-a",
 				},
 			},
 			node: corev1.Node{
@@ -162,13 +149,10 @@ func TestCreatePV(t *testing.T) {
 		{
 			desc:      "actual volume mode is fs, but is not mountpoint",
 			shouldErr: true,
-			lvset: localv1alpha1.LocalVolumeSet{
+			lv: localv1.LocalVolume{
 				ObjectMeta: metav1.ObjectMeta{
-					Name: "lvset-b",
+					Name: "lv-b",
 					// Namespace: "a",
-				},
-				Spec: localv1alpha1.LocalVolumeSetSpec{
-					StorageClassName: "storageclass-b",
 				},
 			},
 			node: corev1.Node{
@@ -196,13 +180,11 @@ func TestCreatePV(t *testing.T) {
 		t.Logf("Test Case #%d: %q", i, tc.desc)
 
 		// fake setup
-		tc.lvset.Spec.VolumeMode = localv1.PersistentVolumeMode(tc.desiredVolMode)
-		if tc.lvset.Namespace == "" {
-			tc.lvset.Namespace = "default"
+		if tc.lv.Namespace == "" {
+			tc.lv.Namespace = "default"
 		}
-		tc.lvset.Kind = localv1alpha1.LocalVolumeSetKind
-		r, testConfig := newFakeLocalVolumeSetReconciler(t, &tc.lvset, &tc.node, &tc.sc)
-		r.nodeName = tc.node.Name
+		tc.lv.Kind = localv1.LocalVolumeKind
+		r, testConfig := getFakeDiskMaker(t, "/mnt/local-storage", &tc.lv, &tc.node, &tc.sc)
 		testConfig.runtimeConfig.Node = &tc.node
 		testConfig.runtimeConfig.DiscoveryMap[tc.sc.Name] = provCommon.MountConfig{VolumeMode: tc.desiredVolMode}
 
@@ -225,7 +207,7 @@ func TestCreatePV(t *testing.T) {
 		testConfig.fakeVolUtil.AddNewDirEntries("/mnt/local-storage/", dirFiles)
 
 		err := common.CreateLocalPV(
-			&tc.lvset,
+			&tc.lv,
 			r.runtimeConfig,
 			r.cleanupTracker,
 			log.WithName("testLogger"),
@@ -270,7 +252,7 @@ func TestCreatePV(t *testing.T) {
 
 		// test idempotency by running again
 		err = common.CreateLocalPV(
-			&tc.lvset,
+			&tc.lv,
 			r.runtimeConfig,
 			r.cleanupTracker,
 			log.WithName("testLogger"),

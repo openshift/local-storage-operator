@@ -87,11 +87,6 @@ func LocalVolumeTest(ctx *framework.Context, cleanupFuncs *[]cleanupFn) func(*te
 			},
 		)
 
-		err = waitForDaemonSet(t, f.KubeClient, namespace, nodedaemon.ProvisionerName, retryInterval, timeout)
-		if err != nil {
-			t.Fatalf("error waiting for provisioner daemonset : %v", err)
-		}
-
 		err = waitForDaemonSet(t, f.KubeClient, namespace, nodedaemon.DiskMakerName, retryInterval, timeout)
 		if err != nil {
 			t.Fatalf("error waiting for diskmaker daemonset : %v", err)
@@ -100,11 +95,6 @@ func LocalVolumeTest(ctx *framework.Context, cleanupFuncs *[]cleanupFn) func(*te
 		err = verifyLocalVolume(localVolume, f.Client)
 		if err != nil {
 			t.Fatalf("error verifying localvolume cr: %v", err)
-		}
-
-		err = verifyDaemonSetTolerations(f.KubeClient, nodedaemon.ProvisionerName, namespace, localVolume.Spec.Tolerations)
-		if err != nil {
-			t.Fatalf("error verifying provisioner tolerations match localvolume: %v", err)
 		}
 
 		err = verifyDaemonSetTolerations(f.KubeClient, nodedaemon.DiskMakerName, namespace, localVolume.Spec.Tolerations)

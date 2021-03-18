@@ -2,11 +2,8 @@ package lvset
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"hash/fnv"
 	"os"
-	"path"
 	"path/filepath"
 	"time"
 
@@ -21,7 +18,6 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
-	provCommon "sigs.k8s.io/sig-storage-local-static-provisioner/pkg/common"
 	staticProvisioner "sigs.k8s.io/sig-storage-local-static-provisioner/pkg/common"
 )
 
@@ -45,6 +41,11 @@ func (r *ReconcileLocalVolumeSet) Reconcile(request reconcile.Request) (reconcil
 		}
 		// Error reading the object - requeue the request.
 		return reconcile.Result{}, err
+	}
+
+	// don't provision for deleted lvsets
+	if !lvset.DeletionTimestamp.IsZero() {
+		return reconcile.Result{}, nil
 	}
 
 	// get the node and determine if the localvolumeset selects this node
@@ -76,6 +77,9 @@ func (r *ReconcileLocalVolumeSet) Reconcile(request reconcile.Request) (reconcil
 		return reconcile.Result{}, err
 	}
 
+	r.provisionerMux.Lock()
+	defer r.provisionerMux.Unlock()
+
 	// get associated provisioner config
 	cm := &corev1.ConfigMap{}
 	err = r.client.Get(context.TODO(), types.NamespacedName{Name: common.ProvisionerConfigMapName, Namespace: request.Namespace}, cm)
@@ -90,34 +94,19 @@ func (r *ReconcileLocalVolumeSet) Reconcile(request reconcile.Request) (reconcil
 
 	r.runtimeConfig.DiscoveryMap = provisionerConfig.StorageClassConfig
 	r.runtimeConfig.NodeLabelsForPV = provisionerConfig.NodeLabelsForPV
-	r.runtimeConfig.UseAlphaAPI = provisionerConfig.UseAlphaAPI
-	r.runtimeConfig.UseJobForCleaning = provisionerConfig.UseJobForCleaning
-	r.runtimeConfig.MinResyncPeriod = provisionerConfig.MinResyncPeriod
-	r.runtimeConfig.UseNodeNameOnly = provisionerConfig.UseNodeNameOnly
 	r.runtimeConfig.Namespace = request.Namespace
-	r.runtimeConfig.LabelsForPV = provisionerConfig.LabelsForPV
 	r.runtimeConfig.SetPVOwnerRef = provisionerConfig.SetPVOwnerRef
-	r.runtimeConfig.Name = getProvisionedByValue(*r.runtimeConfig.Node)
+	r.runtimeConfig.Name = common.GetProvisionedByValue(*r.runtimeConfig.Node)
 
-	// initialize the deleter's pv cache on the first run
-	if !r.firstRunOver {
-		log.Info("initializing PV cache")
-		pvList := &corev1.PersistentVolumeList{}
-		err := r.client.List(context.TODO(), pvList)
-		if err != nil {
-			return reconcile.Result{}, fmt.Errorf("failed to initialize PV cache")
-		}
-		for _, pv := range pvList.Items {
-			// skip non-owned PVs
-			name, found := pv.Annotations[provCommon.AnnProvisionedBy]
-			if !found || name != r.runtimeConfig.Name {
-				continue
-			}
-			addOrUpdatePV(r.runtimeConfig, pv)
-		}
+	// ignored by our implementation of static-provisioner,
+	// but not by deleter (if applicable)
+	r.runtimeConfig.UseNodeNameOnly = provisionerConfig.UseNodeNameOnly
+	r.runtimeConfig.MinResyncPeriod = provisionerConfig.MinResyncPeriod
+	r.runtimeConfig.UseAlphaAPI = provisionerConfig.UseAlphaAPI
+	r.runtimeConfig.LabelsForPV = provisionerConfig.LabelsForPV
 
-		r.firstRunOver = true
-	}
+	// unsupported
+	r.runtimeConfig.UseJobForCleaning = false
 
 	// get symlinkdir
 	symLinkConfig, ok := provisionerConfig.StorageClassConfig[storageClassName]
@@ -145,14 +134,14 @@ func (r *ReconcileLocalVolumeSet) Reconcile(request reconcile.Request) (reconcil
 	for _, blockDevice := range validDevices {
 		devLogger := reqLogger.WithValues("Device.Name", blockDevice.Name)
 
-		symlinkSourcePath, symlinkPath, idExists, err := getSymLinkSourceAndTarget(blockDevice, symLinkDir)
+		symlinkSourcePath, symlinkPath, idExists, err := common.GetSymLinkSourceAndTarget(blockDevice, symLinkDir)
 		if err != nil {
-			if errors.As(err, &internal.IDPathNotFoundError{}) {
-				devLogger.Info("Using real device path, this could have problems if device name changes")
-			} else {
-				devLogger.Error(err, "error while discovering symlink source and target")
-				continue
-			}
+			devLogger.Error(err, "error while discovering symlink source and target")
+			continue
+		}
+
+		if !idExists {
+			devLogger.Info("Using real device path, this could have problems if device name changes")
 		}
 
 		// validate MaxDeviceCount
@@ -173,16 +162,9 @@ func (r *ReconcileLocalVolumeSet) Reconcile(request reconcile.Request) (reconcil
 			break
 		}
 
-		// Retrieve list of mount points to iterate through discovered paths (aka files) below
-		mountPoints, err := r.runtimeConfig.Mounter.List()
+		mountPointMap, err := common.GenerateMountMap(r.runtimeConfig)
 		if err != nil {
-			return reconcile.Result{}, fmt.Errorf("error retrieving mountpoints: %w", err)
-		}
-		// Put mount points into set for faster checks below
-		type empty struct{}
-		mountPointMap := sets.NewString()
-		for _, mp := range mountPoints {
-			mountPointMap.Insert(mp.Path)
+			return reconcile.Result{}, err
 		}
 
 		devLogger.Info("provisioning PV")
@@ -198,8 +180,6 @@ func (r *ReconcileLocalVolumeSet) Reconcile(request reconcile.Request) (reconcil
 	if len(noMatch) > 0 {
 		reqLogger.Info("found stale symLink Entries", "storageClass.Name", storageClassName, "paths.List", noMatch, "directory", symLinkDir)
 	}
-
-	r.deleter.DeletePVs()
 
 	// shorten the requeueTime if there are delayed devices
 	requeueTime := time.Minute
@@ -358,7 +338,18 @@ func (r *ReconcileLocalVolumeSet) provisionPV(
 	if len(existingSymlinks) > 0 { // already claimed
 		for _, path := range existingSymlinks {
 			if path == symlinkPath { // symlinked in this folder, ensure the PV exists
-				return r.createPV(obj, devLogger, storageClass, mountPointMap, symlinkPath, dev.KName, idExists)
+				return common.CreateLocalPV(
+					obj,
+					r.runtimeConfig,
+					r.cleanupTracker,
+					devLogger,
+					storageClass,
+					mountPointMap,
+					r.client,
+					symlinkPath,
+					dev.KName,
+					idExists,
+				)
 			}
 		}
 		return nil
@@ -383,49 +374,33 @@ func (r *ReconcileLocalVolumeSet) provisionPV(
 				// existing file evals to disk
 			} else if valid {
 				// if file exists and is accurate symlink, create pv
-				return r.createPV(obj, devLogger, storageClass, mountPointMap, symlinkPath, dev.KName, idExists)
+				return common.CreateLocalPV(
+					obj,
+					r.runtimeConfig,
+					r.cleanupTracker,
+					devLogger,
+					storageClass,
+					mountPointMap,
+					r.client,
+					symlinkPath,
+					dev.KName,
+					idExists,
+				)
 			}
 		}
 	} else if err != nil {
 		return err
 	}
-	return r.createPV(obj, devLogger, storageClass, mountPointMap, symlinkPath, dev.KName, idExists)
-}
-
-func generatePVName(file, node, class string) string {
-	h := fnv.New32a()
-	h.Write([]byte(file))
-	h.Write([]byte(node))
-	h.Write([]byte(class))
-	// This is the FNV-1a 32-bit hash
-	return fmt.Sprintf("local-pv-%x", h.Sum32())
-}
-
-func getSymLinkSourceAndTarget(dev internal.BlockDevice, symlinkDir string) (string, string, bool, error) {
-	var source string
-	var target string
-	var idExists = true
-	var err error
-
-	// get /dev/KNAME path
-	devLabelPath, err := dev.GetDevPath()
-	if err != nil {
-		return source, target, false, err
-	}
-	// determine symlink source
-	source, err = dev.GetPathByID()
-	if errors.As(err, &internal.IDPathNotFoundError{}) {
-		// no disk-by-id
-		idExists = false
-		source = devLabelPath
-	} else if err != nil {
-		return source, target, false, err
-	}
-	target = path.Join(symlinkDir, filepath.Base(source))
-	return source, target, idExists, err
-
-}
-
-func getNodeNameEnvVar() string {
-	return os.Getenv("MY_NODE_NAME")
+	return common.CreateLocalPV(
+		obj,
+		r.runtimeConfig,
+		r.cleanupTracker,
+		devLogger,
+		storageClass,
+		mountPointMap,
+		r.client,
+		symlinkPath,
+		dev.KName,
+		idExists,
+	)
 }

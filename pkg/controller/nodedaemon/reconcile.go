@@ -83,14 +83,6 @@ func (r *DaemonReconciler) Reconcile(request reconcile.Request) (reconcile.Resul
 		r.reqLogger.Info("daemonset changed", "daemonset.Name", ds.GetName(), "op.Result", opResult)
 	}
 
-	localProvisionerDSMutateFn := getLocalProvisionerDSMutateFn(request, tolerations, ownerRefs, nodeSelector, configMapDataHash)
-	ds, opResult, err = CreateOrUpdateDaemonset(r.client, localProvisionerDSMutateFn)
-	if err != nil {
-		return reconcile.Result{}, err
-	} else if opResult == controllerutil.OperationResultUpdated || opResult == controllerutil.OperationResultCreated {
-		r.reqLogger.Info("daemonset changed", "daemonset.Name", ds.GetName(), "op.Result", opResult)
-	}
-
 	return reconcile.Result{}, err
 }
 

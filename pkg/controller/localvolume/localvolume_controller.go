@@ -148,31 +148,12 @@ func (r *ReconcileLocalVolume) syncLocalVolumeProvider(instance *localv1.LocalVo
 	}
 
 	children := []operatorv1.GenerationStatus{}
-	localProvisionerDS := &appsv1.DaemonSet{}
-	key := types.NamespacedName{Name: nodedaemon.ProvisionerName, Namespace: o.ObjectMeta.Namespace}
-	err = r.client.Get(context.TODO(), key, localProvisionerDS)
-
-	if err != nil {
-		klog.Errorf("failed to get daemonset for provisioner %v", err)
-		return r.addFailureCondition(instance, o, err)
-	}
-
-	if localProvisionerDS != nil {
-		children = append(children, operatorv1.GenerationStatus{
-			Group:          appsv1.GroupName,
-			Resource:       "DaemonSet",
-			Namespace:      key.Namespace,
-			Name:           key.Name,
-			LastGeneration: localProvisionerDS.Generation,
-		})
-	}
 
 	diskMakerDS := &appsv1.DaemonSet{}
-	key = types.NamespacedName{Name: nodedaemon.DiskMakerName, Namespace: o.ObjectMeta.Namespace}
+	key := types.NamespacedName{Name: nodedaemon.DiskMakerName, Namespace: o.ObjectMeta.Namespace}
 	err = r.client.Get(context.TODO(), key, diskMakerDS)
-
 	if err != nil {
-		klog.Errorf("failed to create daemonset for provisioner %v", err)
+		klog.Errorf("failed to fetch diskmaker daemonset %v", err)
 		return r.addFailureCondition(instance, o, err)
 	}
 

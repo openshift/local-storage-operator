@@ -1,39 +1,64 @@
-package lvset
+package common
 
 import (
 	"context"
 	"fmt"
+	"hash/fnv"
 	"path/filepath"
 
 	"github.com/go-logr/logr"
-	localv1alpha1 "github.com/openshift/local-storage-operator/pkg/apis/local/v1alpha1"
-	"github.com/openshift/local-storage-operator/pkg/common"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/klog"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+
 	provCommon "sigs.k8s.io/sig-storage-local-static-provisioner/pkg/common"
+	provDeleter "sigs.k8s.io/sig-storage-local-static-provisioner/pkg/deleter"
 )
 
-func (r *ReconcileLocalVolumeSet) createPV(
-	obj *localv1alpha1.LocalVolumeSet,
+// GenerateMountMap is used to get a set of mountpoints that can be quickly looked up
+func GenerateMountMap(runtimeConfig *provCommon.RuntimeConfig) (sets.String, error) {
+	type empty struct{}
+	mountPointMap := sets.NewString()
+	// Retrieve list of mount points to iterate through discovered paths (aka files) below
+	mountPoints, err := runtimeConfig.Mounter.List()
+	if err != nil {
+		return mountPointMap, fmt.Errorf("error retrieving mountpoints: %w", err)
+	}
+	// Put mount points into set for faster checks below
+	for _, mp := range mountPoints {
+		mountPointMap.Insert(mp.Path)
+	}
+	return mountPointMap, nil
+}
+
+// CreateLocalPV is used to create a local PV against a symlink
+// after passing the same validations against that symlink that local-static-provisioner uses
+func CreateLocalPV(
+	obj runtime.Object,
+	runtimeConfig *provCommon.RuntimeConfig,
+	cleanupTracker *provDeleter.CleanupStatusTracker,
 	devLogger logr.Logger,
 	storageClass storagev1.StorageClass,
 	mountPointMap sets.String,
+	client client.Client,
 	symLinkPath string,
 	deviceName string,
 	idExists bool,
 ) error {
 	useJob := false
-	nodeLabels := r.runtimeConfig.Node.GetLabels()
+	nodeLabels := runtimeConfig.Node.GetLabels()
 	hostname, found := nodeLabels[corev1.LabelHostname]
 	if !found {
-		return fmt.Errorf("could node find label %q for node %q", corev1.LabelHostname, r.runtimeConfig.Node.GetName())
+		return fmt.Errorf("could node find label %q for node %q", corev1.LabelHostname, runtimeConfig.Node.GetName())
 	}
 
-	pvName := generatePVName(filepath.Base(symLinkPath), r.runtimeConfig.Node.Name, storageClass.Name)
+	pvName := GeneratePVName(filepath.Base(symLinkPath), runtimeConfig.Node.Name, storageClass.Name)
 
 	pvLogger := devLogger.WithValues("pv.Name", pvName)
 
@@ -53,24 +78,24 @@ func (r *ReconcileLocalVolumeSet) createPV(
 		},
 	}
 
-	mountConfig, found := r.runtimeConfig.DiscoveryMap[storageClass.GetName()]
+	mountConfig, found := runtimeConfig.DiscoveryMap[storageClass.GetName()]
 	if !found {
 		return fmt.Errorf("could not find config for storageClass: %q", storageClass.GetName())
 	}
 
 	desiredVolumeMode := corev1.PersistentVolumeMode(mountConfig.VolumeMode)
 
-	actualVolumeMode, err := provCommon.GetVolumeMode(r.runtimeConfig.VolUtil, symLinkPath)
+	actualVolumeMode, err := provCommon.GetVolumeMode(runtimeConfig.VolUtil, symLinkPath)
 	if err != nil {
 		return fmt.Errorf("could not read the device's volume mode from the node: %w", err)
 	}
 
-	if r.cleanupTracker.InProgress(pvName, useJob) {
+	if cleanupTracker.InProgress(pvName, useJob) {
 		pvLogger.Info("PV is still being cleaned, not going to recreate it")
 		return nil
 	}
 
-	_, _, err = r.cleanupTracker.RemoveStatus(pvName, useJob)
+	_, _, err = cleanupTracker.RemoveStatus(pvName, useJob)
 	if err != nil {
 		pvLogger.Error(err, "expected status exists and fail to remove cleanup status")
 		return err
@@ -79,7 +104,7 @@ func (r *ReconcileLocalVolumeSet) createPV(
 	var capacityBytes int64
 	switch actualVolumeMode {
 	case corev1.PersistentVolumeBlock:
-		capacityBytes, err = r.runtimeConfig.VolUtil.GetBlockCapacityByte(symLinkPath)
+		capacityBytes, err = runtimeConfig.VolUtil.GetBlockCapacityByte(symLinkPath)
 		if err != nil {
 			return fmt.Errorf("could not read device capacity: %w", err)
 		}
@@ -95,7 +120,7 @@ func (r *ReconcileLocalVolumeSet) createPV(
 		if !mountPointMap.Has(symLinkPath) {
 			return fmt.Errorf("path %q is not an actual mountpoint", symLinkPath)
 		}
-		capacityBytes, err = r.runtimeConfig.VolUtil.GetFsCapacityByte(symLinkPath)
+		capacityBytes, err = runtimeConfig.VolUtil.GetFsCapacityByte(symLinkPath)
 		if err != nil {
 			return fmt.Errorf("path %q fs stats error: %w", symLinkPath, err)
 		}
@@ -104,15 +129,28 @@ func (r *ReconcileLocalVolumeSet) createPV(
 		return fmt.Errorf("path %q has unexpected volume type %q", symLinkPath, actualVolumeMode)
 	}
 
+	accessor, err := meta.Accessor(obj)
+	if err != nil {
+
+		return fmt.Errorf("could not get object metadata accessor from obj: %+v", obj)
+	}
+
+	name := accessor.GetName()
+	namespace := accessor.GetNamespace()
+	kind := obj.GetObjectKind().GroupVersionKind().Kind
+	if len(name) == 0 || len(namespace) == 0 || len(kind) == 0 {
+		return fmt.Errorf("name: %q, namespace: %q, or  kind: %q is empty for obj: %+v", name, namespace, kind, obj)
+	}
+
 	labels := map[string]string{
-		corev1.LabelHostname:         hostname,
-		common.PVOwnerKindLabel:      obj.Kind,
-		common.PVOwnerNamespaceLabel: obj.GetNamespace(),
-		common.PVOwnerNameLabel:      obj.GetName(),
-		common.PVDeviceNameLabel:     deviceName,
+		corev1.LabelHostname:  hostname,
+		PVOwnerKindLabel:      kind,
+		PVOwnerNamespaceLabel: namespace,
+		PVOwnerNameLabel:      name,
+		PVDeviceNameLabel:     deviceName,
 	}
 	if idExists {
-		labels[common.PVDeviceIDLabel] = filepath.Base(symLinkPath)
+		labels[PVDeviceIDLabel] = filepath.Base(symLinkPath)
 	}
 
 	var reclaimPolicy corev1.PersistentVolumeReclaimPolicy
@@ -126,30 +164,31 @@ func (r *ReconcileLocalVolumeSet) createPV(
 	localPVConfig := &provCommon.LocalPVConfig{
 		Name:            pvName,
 		HostPath:        symLinkPath,
-		Capacity:        common.RoundDownCapacityPretty(capacityBytes), // d.VolUtil.GetBlockCapacityByte(filePath)
+		Capacity:        RoundDownCapacityPretty(capacityBytes), // d.VolUtil.GetBlockCapacityByte(filePath)
 		StorageClass:    storageClass.GetName(),
-		ReclaimPolicy:   reclaimPolicy,        // fetch from storageClass (created by LocalVolumeSet operator controller)
-		ProvisionerName: r.runtimeConfig.Name, // populate in runtimeconfig earlier
+		ReclaimPolicy:   reclaimPolicy,      // fetch from storageClass (created by LocalVolumeSet operator controller)
+		ProvisionerName: runtimeConfig.Name, // populate in runtimeconfig earlier
 		VolumeMode:      desiredVolumeMode,
 		MountOptions:    storageClass.MountOptions, // d.getMountOptionsFromStorageClass(class)
 		SetPVOwnerRef:   true,                      // set owner reference from node to PV
 		OwnerReference: &metav1.OwnerReference{
-			Kind:       r.runtimeConfig.Node.Kind,
-			APIVersion: r.runtimeConfig.Node.APIVersion,
-			Name:       r.runtimeConfig.Node.GetName(),
-			UID:        r.runtimeConfig.Node.GetUID(),
+			Kind:       runtimeConfig.Node.Kind,
+			APIVersion: runtimeConfig.Node.APIVersion,
+			Name:       runtimeConfig.Node.GetName(),
+			UID:        runtimeConfig.Node.GetUID(),
 		},
 		NodeAffinity: nodeAffinity,
 	}
-	if desiredVolumeMode == corev1.PersistentVolumeFilesystem && obj.Spec.FSType != "" {
-		localPVConfig.FsType = &obj.Spec.FSType
+	fsType := mountConfig.FsType
+	if desiredVolumeMode == corev1.PersistentVolumeFilesystem && fsType != "" {
+		localPVConfig.FsType = &fsType
 	}
 	newPV := provCommon.CreateLocalPVSpec(localPVConfig)
 
 	existingPV := &corev1.PersistentVolume{ObjectMeta: metav1.ObjectMeta{Name: pvName}}
 
 	pvLogger.Info("creating")
-	opRes, err := controllerutil.CreateOrUpdate(context.TODO(), r.client, existingPV, func() error {
+	opRes, err := controllerutil.CreateOrUpdate(context.TODO(), client, existingPV, func() error {
 		if existingPV.CreationTimestamp.IsZero() {
 			// operations for create
 			newPV.DeepCopyInto(existingPV)
@@ -161,11 +200,11 @@ func (r *ReconcileLocalVolumeSet) createPV(
 			*existingPV.Spec.VolumeMode == corev1.PersistentVolumeBlock && actualVolumeMode == corev1.PersistentVolumeFilesystem {
 			err := fmt.Errorf("incorrect Volume Mode: PV requires block mode but path was in fs mode")
 			pvLogger.Error(err, "pvName", pvName, "filePath", symLinkPath)
-			r.runtimeConfig.Recorder.Eventf(existingPV, corev1.EventTypeWarning, provCommon.EventVolumeFailedDelete, err.Error())
+			runtimeConfig.Recorder.Eventf(existingPV, corev1.EventTypeWarning, provCommon.EventVolumeFailedDelete, err.Error())
 		}
 
 		// replace labels if and only if they don't already exist
-		common.InitMapIfNil(&existingPV.ObjectMeta.Labels)
+		InitMapIfNil(&existingPV.ObjectMeta.Labels)
 		for labelKey := range labels {
 			_, found := existingPV.ObjectMeta.Labels[labelKey]
 			if !found {
@@ -180,4 +219,16 @@ func (r *ReconcileLocalVolumeSet) createPV(
 	}
 
 	return err
+}
+
+// GeneratePVName is used to generate a PV name based on the filename, node, and storageclass
+// Important, this hash value should remain consistent, so this function should not be changed
+// in a way that would change its output.
+func GeneratePVName(file, node, class string) string {
+	h := fnv.New32a()
+	h.Write([]byte(file))
+	h.Write([]byte(node))
+	h.Write([]byte(class))
+	// This is the FNV-1a 32-bit hash
+	return fmt.Sprintf("local-pv-%x", h.Sum32())
 }

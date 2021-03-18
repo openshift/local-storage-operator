@@ -5,6 +5,7 @@ import (
 	"os"
 
 	localv1 "github.com/openshift/local-storage-operator/pkg/apis/local/v1"
+	corev1 "k8s.io/api/core/v1"
 )
 
 const (
@@ -58,4 +59,10 @@ func GetLocalDiskLocationPath() string {
 // LocalVolumeKey returns key for the localvolume
 func LocalVolumeKey(lv *localv1.LocalVolume) string {
 	return fmt.Sprintf("%s/%s", lv.Namespace, lv.Name)
+}
+
+// GetProvisionedByValue is the the annotation that indicates which node a PV was originally provisioned on
+// the key is provCommon.AnnProvisionedBy ("pv.kubernetes.io/provisioned-by")
+func GetProvisionedByValue(node corev1.Node) string {
+	return fmt.Sprintf("local-volume-provisioner-%v-%v", node.Name, node.UID)
 }
