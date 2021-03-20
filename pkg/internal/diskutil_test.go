@@ -142,6 +142,19 @@ func TestListBlockDevices(t *testing.T) {
 			totalBadRows:      0,
 			expected:          []BlockDevice{},
 		},
+		{
+			label:             "Case 4: lsblk output with white space",
+			lsblkOutput:       `NAME="sda" MODEL="VBOX HARDDISK   " VENDOR="ATA   "`,
+			totalBlockDevices: 1,
+			totalBadRows:      0,
+			expected: []BlockDevice{
+				{
+					Name:   "sda",
+					Model:  "VBOX HARDDISK",
+					Vendor: "ATA",
+				},
+			},
+		},
 	}
 
 	for _, tc := range testcases {

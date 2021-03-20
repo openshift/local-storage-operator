@@ -236,7 +236,7 @@ func ListBlockDevices() ([]BlockDevice, []string, error) {
 			}
 			key := strings.ToLower(keyValueList[0])
 			value := strings.Replace(keyValueList[1], `"`, "", -1)
-			outputMap[key] = value
+			outputMap[key] = strings.TrimSpace(value)
 		}
 
 		// only use device if name is populated, and non-empty
