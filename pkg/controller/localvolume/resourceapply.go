@@ -28,21 +28,6 @@ func applyStorageClass(client storageclientv1.StorageClassesGetter, required *st
 		existing.MountOptions = required.MountOptions
 	}
 
-	allowedExpansionEqual := true
-	if existing.AllowVolumeExpansion == nil && required.AllowVolumeExpansion != nil {
-		allowedExpansionEqual = false
-	}
-	if existing.AllowVolumeExpansion != nil && required.AllowVolumeExpansion == nil {
-		allowedExpansionEqual = false
-	}
-	if existing.AllowVolumeExpansion != nil && required.AllowVolumeExpansion != nil && *existing.AllowVolumeExpansion != *required.AllowVolumeExpansion {
-		allowedExpansionEqual = false
-	}
-	if !allowedExpansionEqual {
-		changed = true
-		existing.AllowVolumeExpansion = required.AllowVolumeExpansion
-	}
-
 	if !equality.Semantic.DeepEqual(existing.AllowedTopologies, required.AllowedTopologies) {
 		changed = true
 		existing.AllowedTopologies = required.AllowedTopologies
