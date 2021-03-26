@@ -77,9 +77,6 @@ func (r *ReconcileLocalVolumeSet) Reconcile(request reconcile.Request) (reconcil
 		return reconcile.Result{}, err
 	}
 
-	r.provisionerMux.Lock()
-	defer r.provisionerMux.Unlock()
-
 	// get associated provisioner config
 	cm := &corev1.ConfigMap{}
 	err = r.client.Get(context.TODO(), types.NamespacedName{Name: common.ProvisionerConfigMapName, Namespace: request.Namespace}, cm)

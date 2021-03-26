@@ -52,16 +52,34 @@ func LocalVolumeSetTest(ctx *framework.Context, cleanupFuncs *[]cleanupFn) func(
 		// represents the disk layout to setup on the nodes.
 		nodeEnv := []nodeDisks{
 			{
-				disks: []int{10, 20, 30, 40, 70},
-				node:  nodeList.Items[0],
+				disks: []disk{
+					{size: 10},
+					{size: 20},
+					{size: 30},
+					{size: 40},
+					{size: 70},
+				},
+				node: nodeList.Items[0],
 			},
 			{
-				disks: []int{10, 20, 30, 40, 70},
-				node:  nodeList.Items[1],
+				disks: []disk{
+					{size: 10},
+					{size: 20},
+					{size: 30},
+					{size: 40},
+					{size: 70},
+				},
+				node: nodeList.Items[1],
 			},
 			{
-				disks: []int{10, 20, 30, 40, 70},
-				node:  nodeList.Items[2],
+				disks: []disk{
+					{size: 10},
+					{size: 20},
+					{size: 30},
+					{size: 40},
+					{size: 70},
+				},
+				node: nodeList.Items[2],
 			},
 		}
 
@@ -75,7 +93,6 @@ func LocalVolumeSetTest(ctx *framework.Context, cleanupFuncs *[]cleanupFn) func(
 		matcher.Expect(err).NotTo(gomega.HaveOccurred(), "getEC2Client")
 
 		// cleanup host dirs
-
 		addToCleanupFuncs(cleanupFuncs, "cleanupSymlinkDir", func(t *testing.T) error {
 			return cleanupSymlinkDir(t, ctx, nodeEnv)
 		})
@@ -86,10 +103,10 @@ func LocalVolumeSetTest(ctx *framework.Context, cleanupFuncs *[]cleanupFn) func(
 
 		// create and attach volumes
 		t.Log("creating and attaching disks")
-		for _, nodeDisks := range nodeEnv {
-			_, err := createAndAttachAWSVolumes(t, ec2Client, ctx, namespace, nodeDisks.node, nodeDisks.disks...)
-			matcher.Expect(err).NotTo(gomega.HaveOccurred(), "createAndAttachAWSVolumes: %+v", nodeDisks)
-		}
+		//	for _, nodeDisks := range nodeEnv {
+		err = createAndAttachAWSVolumes(t, ec2Client, ctx, namespace, nodeEnv)
+		matcher.Expect(err).NotTo(gomega.HaveOccurred(), "createAndAttachAWSVolumes: %+v", nodeEnv)
+		//	}
 		tenGi := resource.MustParse("10G")
 		twentyGi := resource.MustParse("20G")
 		thirtyGi := resource.MustParse("30G")

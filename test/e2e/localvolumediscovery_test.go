@@ -101,7 +101,16 @@ func LocalVolumeDiscoveryTest(ctx *framework.Context, cleanupFuncs *[]cleanupFn)
 		// create and attach volumes
 		t.Log("creating and attaching disks")
 
-		_, err = createAndAttachAWSVolumes(t, ec2Client, ctx, namespace, selectedNode, 10)
+		// represents the disk layout to setup on the nodes.
+		nodeEnv := []nodeDisks{
+			{
+				disks: []disk{
+					{size: 10},
+				},
+				node: selectedNode,
+			},
+		}
+		err = createAndAttachAWSVolumes(t, ec2Client, ctx, namespace, nodeEnv)
 		matcher.Expect(err).NotTo(gomega.HaveOccurred(), "createAndAttachAWSVolumes: %+v", selectedNode)
 
 		// verify that discovered device list got updated when a new volume is added

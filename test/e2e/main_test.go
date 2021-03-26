@@ -28,9 +28,9 @@ var (
 	// test-wrapper returns a func that can be run with t.Run(func(*testing.T), but
 	// has access to a framework.Context and cleanupFuncs via closure.
 	testMap = map[string]func(*framework.Context, *[]cleanupFn) func(*testing.T){
-		"LocalVolumeDiscovery": LocalVolumeDiscoveryTest,
-		"LocalVolume":          LocalVolumeTest,
-		"LocalVolumeSet":       LocalVolumeSetTest,
+		// "LocalVolumeDiscovery": LocalVolumeDiscoveryTest,
+		"LocalVolume": LocalVolumeTest,
+		// "LocalVolumeSet":       LocalVolumeSetTest,
 	}
 )
 

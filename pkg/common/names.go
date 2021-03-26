@@ -30,6 +30,10 @@ const (
 
 	// ProvisionerConfigMapName is the name of the local-static-provisioner configmap
 	ProvisionerConfigMapName = "local-provisioner"
+
+	// DiscoveryNodeLabelKey is the label key on the discovery result CR used to identify the node it belongs to.
+	// the value is the node's name
+	DiscoveryNodeLabel = "discovery-result-node"
 )
 
 // GetLocalProvisionerImage return the image to be used for provisioner daemonset

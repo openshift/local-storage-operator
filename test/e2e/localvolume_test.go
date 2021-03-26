@@ -1,20 +1,25 @@
 package e2e
 
 import (
+	"context"
 	goctx "context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"reflect"
 	"regexp"
 	"testing"
 	"time"
 
+	"github.com/onsi/gomega"
 	operatorv1 "github.com/openshift/api/operator/v1"
 	localv1 "github.com/openshift/local-storage-operator/pkg/apis/local/v1"
 	commontypes "github.com/openshift/local-storage-operator/pkg/common"
 	"github.com/openshift/local-storage-operator/pkg/controller/nodedaemon"
 	framework "github.com/operator-framework/operator-sdk/pkg/test"
+	corev1 "k8s.io/api/core/v1"
 	v1 "k8s.io/api/core/v1"
+	storagev1 "k8s.io/api/storage/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
@@ -22,6 +27,7 @@ import (
 	utilnet "k8s.io/apimachinery/pkg/util/net"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	dynclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -37,100 +43,143 @@ func LocalVolumeTest(ctx *framework.Context, cleanupFuncs *[]cleanupFn) func(*te
 		if err != nil {
 			t.Fatalf("error fetching namespace : %v", err)
 		}
-		selectedNode := selectNode(t, f.KubeClient)
 
-		originalNodeTaints := selectedNode.Spec.Taints
-		selectedNode.Spec.Taints = []v1.Taint{
+		// get nodes
+		nodeList := &corev1.NodeList{}
+		err = f.Client.List(context.TODO(), nodeList, client.HasLabels{labelNodeRoleWorker})
+		if err != nil {
+			t.Fatalf("failed to list nodes: %+v", err)
+		}
+
+		minNodes := 3
+		if len(nodeList.Items) < minNodes {
+			t.Fatalf("expected to have at least %d nodes", minNodes)
+		}
+
+		// represents the disk layout to setup on the nodes.
+		nodeEnv := []nodeDisks{
 			{
-				Key:    "localstorage",
-				Value:  "testvalue",
-				Effect: "NoSchedule",
+				disks: []disk{
+					{size: 10},
+					{size: 20},
+				},
+				node: nodeList.Items[0],
+			},
+			{
+				disks: []disk{
+					{size: 10},
+					{size: 20},
+				},
+				node: nodeList.Items[1],
 			},
 		}
-		updatedNode, err := waitForNodeTaintUpdate(t, f.KubeClient, selectedNode, retryInterval, timeout)
-		if err != nil {
-			t.Fatalf("error tainting node : %v", err)
-		}
-		selectedNode = updatedNode
+		selectedNode := nodeEnv[0].node
 
-		addToCleanupFuncs(cleanupFuncs,
-			"restoreNodeTaints",
+		matcher := gomega.NewGomegaWithT(t)
+		gomega.SetDefaultEventuallyTimeout(time.Minute * 10)
+		gomega.SetDefaultEventuallyPollingInterval(time.Second * 2)
+
+		t.Log("getting AWS region info from node spec")
+		_, region, _, err := getAWSNodeInfo(nodeList.Items[0])
+		matcher.Expect(err).NotTo(gomega.HaveOccurred(), "getAWSNodeInfo")
+
+		// initialize client
+		t.Log("initialize ec2 creds")
+		ec2Client, err := getEC2Client(region)
+		matcher.Expect(err).NotTo(gomega.HaveOccurred(), "getEC2Client")
+
+		// cleanup host dirs
+		addToCleanupFuncs(cleanupFuncs, "cleanupSymlinkDir", func(t *testing.T) error {
+			return cleanupSymlinkDir(t, ctx, nodeEnv)
+		})
+		// register disk cleanup
+		addToCleanupFuncs(cleanupFuncs, "cleanupAWSDisks", func(t *testing.T) error {
+			return cleanupAWSDisks(t, ec2Client)
+		})
+
+		// create and attach volumes
+		t.Log("creating and attaching disks")
+		err = createAndAttachAWSVolumes(t, ec2Client, ctx, namespace, nodeEnv)
+		matcher.Expect(err).NotTo(gomega.HaveOccurred(), "createAndAttachAWSVolumes: %+v", nodeEnv)
+
+		// get the device paths and IDs
+		nodeEnv = populateDeviceInfo(t, ctx, nodeEnv)
+
+		selectedDisk := nodeEnv[0].disks[0]
+		matcher.Expect(selectedDisk.path).ShouldNot(gomega.BeZero(), "device path should not be empty")
+
+		localVolume := getFakeLocalVolume(selectedNode, selectedDisk.path, namespace)
+
+		matcher.Eventually(func() error {
+			t.Log("creating localvolume")
+			return f.Client.Create(goctx.TODO(), localVolume, &framework.CleanupOptions{TestContext: ctx})
+		}, time.Minute, time.Second*2).ShouldNot(gomega.HaveOccurred(), "creating localvolume")
+
+		// add pv and storageclass cleanup
+		addToCleanupFuncs(
+			cleanupFuncs,
+			"cleanupLVResources",
 			func(t *testing.T) error {
-				selectedNode.Spec.Taints = originalNodeTaints
-				selectedNode, err = waitForNodeTaintUpdate(t, f.KubeClient, selectedNode, retryInterval, timeout)
-				if err != nil {
-					t.Logf("error restoring original taints on node: %s", selectedNode.GetName())
-					return err
-				}
-				return nil
+				return cleanupLVResources(t, f, localVolume)
 			},
 		)
-
-		selectedDisk, _ := selectDisk(f.KubeClient, selectedNode)
-		waitForPVCreation := true
-		if selectedDisk == "" {
-			waitForPVCreation = false
-			selectedDisk = "/dev/foobar"
-		}
-
-		localVolume := getFakeLocalVolume(selectedNode, selectedDisk, namespace)
-
-		err = f.Client.Create(goctx.TODO(), localVolume, nil)
-		if err != nil {
-			t.Fatalf("error creating localvolume cr : %v", err)
-		}
-
-		addToCleanupFuncs(cleanupFuncs,
-			"deleteLocalVolume",
-			func(t *testing.T) error {
-				return deleteResource(localVolume, localVolume.Name, localVolume.Namespace, f.Client)
-			},
-		)
-
 		err = waitForDaemonSet(t, f.KubeClient, namespace, nodedaemon.DiskMakerName, retryInterval, timeout)
 		if err != nil {
 			t.Fatalf("error waiting for diskmaker daemonset : %v", err)
 		}
 
-		err = verifyLocalVolume(localVolume, f.Client)
+		err = verifyLocalVolume(t, localVolume, f.Client)
 		if err != nil {
 			t.Fatalf("error verifying localvolume cr: %v", err)
 		}
 
-		err = verifyDaemonSetTolerations(f.KubeClient, nodedaemon.DiskMakerName, namespace, localVolume.Spec.Tolerations)
-		if err != nil {
-			t.Fatalf("error verifying diskmaker tolerations match localvolume: %v", err)
-		}
-
-		err = checkLocalVolumeStatus(localVolume)
+		err = checkLocalVolumeStatus(t, localVolume)
 		if err != nil {
 			t.Fatalf("error checking localvolume condition: %v", err)
 		}
 
-		if waitForPVCreation {
-			err = waitForCreatedPV(f.KubeClient, localVolume)
-			if err != nil {
-				t.Fatalf("error waiting for creation of pv: %v", err)
+		pvs := eventuallyFindPVs(t, f, localVolume.Spec.StorageClassDevices[0].StorageClassName, 1)
+		var expectedPath string
+		if len(pvs) > 0 {
+			if selectedDisk.id != "" {
+				expectedPath = selectedDisk.id
+			} else {
+				expectedPath = selectedDisk.name
 			}
-			err = deleteCreatedPV(f.KubeClient, localVolume)
-			if err != nil {
-				t.Errorf("error deleting created PV: %v", err)
-			}
+		} else {
+			t.Fatalf("no pvs returned by eventuallyFindPVs: %+v", pvs)
 		}
-		err = deleteResource(localVolume, localVolume.Name, localVolume.Namespace, f.Client)
-		if err != nil {
-			t.Fatalf("error deleting localvolume: %v", err)
-		}
+		matcher.Expect(filepath.Base(pvs[0].Spec.Local.Path)).To(gomega.Equal(expectedPath))
 
-		err = verifyStorageClassDeletion(localVolume.Spec.StorageClassDevices[0].StorageClassName, f.KubeClient)
-		if err != nil {
-			t.Fatalf("error verifying storageClass cleanup: %v", err)
-		}
 	}
 
 }
 
-func verifyLocalVolume(lv *localv1.LocalVolume, client framework.FrameworkClient) error {
+func cleanupLVResources(t *testing.T, f *framework.Framework, localVolume *localv1.LocalVolume) error {
+	err := deleteResource(localVolume, localVolume.Name, localVolume.Namespace, f.Client)
+	if err != nil {
+		t.Fatalf("error deleting localvolume: %v", err)
+	}
+	sc := &storagev1.StorageClass{ObjectMeta: metav1.ObjectMeta{Name: localVolume.Spec.StorageClassDevices[0].StorageClassName}}
+	eventuallyDelete(t, sc, localVolume.Spec.StorageClassDevices[0].StorageClassName)
+	pvList := &corev1.PersistentVolumeList{}
+	matcher := gomega.NewWithT(t)
+	matcher.Eventually(func() error {
+		err := f.Client.List(context.TODO(), pvList)
+		if err != nil {
+			return err
+		}
+		t.Logf("Deleting %d PVs", len(pvList.Items))
+		for _, pv := range pvList.Items {
+			eventuallyDelete(t, &pv, pv.GetName())
+		}
+		return nil
+	}, time.Minute*3, time.Second*2).ShouldNot(gomega.HaveOccurred(), "cleaning up pvs for lv: %q", localVolume.GetName())
+
+	return nil
+
+}
+func verifyLocalVolume(t *testing.T, lv *localv1.LocalVolume, client framework.FrameworkClient) error {
 	waitErr := wait.PollImmediate(retryInterval, timeout, func() (bool, error) {
 		objectKey := dynclient.ObjectKey{
 			Namespace: lv.Namespace,
@@ -144,6 +193,7 @@ func verifyLocalVolume(lv *localv1.LocalVolume, client framework.FrameworkClient
 		if len(finaliers) == 0 {
 			return false, nil
 		}
+		t.Log("Local volume verification successful")
 		return true, nil
 	})
 	return waitErr
@@ -185,7 +235,7 @@ func verifyStorageClassDeletion(scName string, kubeclient kubernetes.Interface) 
 	return waitError
 }
 
-func checkLocalVolumeStatus(lv *localv1.LocalVolume) error {
+func checkLocalVolumeStatus(t *testing.T, lv *localv1.LocalVolume) error {
 	localVolumeConditions := lv.Status.Conditions
 	if len(localVolumeConditions) == 0 {
 		return fmt.Errorf("expected local volume to have conditions")
@@ -199,11 +249,15 @@ func checkLocalVolumeStatus(lv *localv1.LocalVolume) error {
 	if c.LastTransitionTime.IsZero() {
 		return fmt.Errorf("expect last transition time to be set")
 	}
+	t.Log("LocalVolume status verification successful")
 	return nil
 }
 
-func deleteCreatedPV(kubeClient kubernetes.Interface, lv *localv1.LocalVolume) error {
+func deleteCreatedPV(t *testing.T, kubeClient kubernetes.Interface, lv *localv1.LocalVolume) error {
 	err := kubeClient.CoreV1().PersistentVolumes().DeleteCollection(nil, metav1.ListOptions{LabelSelector: commontypes.GetPVOwnerSelector(lv).String()})
+	if err == nil {
+		t.Log("PV deletion successful")
+	}
 	return err
 }
 

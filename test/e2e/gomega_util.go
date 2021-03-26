@@ -31,7 +31,8 @@ func eventuallyDelete(t *testing.T, obj runtime.Object, name string) {
 
 }
 
-func eventuallyFindPVs(t *testing.T, f *framework.Framework, storageClassName string, expectedPVs int) {
+func eventuallyFindPVs(t *testing.T, f *framework.Framework, storageClassName string, expectedPVs int) []corev1.PersistentVolume {
+	var matchedPVs []corev1.PersistentVolume
 	matcher := gomega.NewWithT(t)
 	matcher.Eventually(func() []corev1.PersistentVolume {
 		pvList := &corev1.PersistentVolumeList{}
@@ -39,7 +40,7 @@ func eventuallyFindPVs(t *testing.T, f *framework.Framework, storageClassName st
 		matcher.Eventually(func() error {
 			return f.Client.List(context.TODO(), pvList)
 		}).ShouldNot(gomega.HaveOccurred())
-		matchedPVs := make([]corev1.PersistentVolume, 0)
+		matchedPVs = make([]corev1.PersistentVolume, 0)
 		for _, pv := range pvList.Items {
 			if pv.Spec.StorageClassName == storageClassName {
 				matchedPVs = append(matchedPVs, pv)
@@ -47,5 +48,6 @@ func eventuallyFindPVs(t *testing.T, f *framework.Framework, storageClassName st
 		}
 		return matchedPVs
 	}, time.Minute*5, time.Second*8).Should(gomega.HaveLen(expectedPVs), "checking number of PVs for for storageclass: %q", storageClassName)
+	return matchedPVs
 
 }
