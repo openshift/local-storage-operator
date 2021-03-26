@@ -1,10 +1,9 @@
-FROM quay.io/openshift/origin-must-gather:4.5.0 as builder
+FROM registry.ci.openshift.org/ocp/builder:rhel-8-golang-1.15-openshift-4.8 AS builder
+WORKDIR /go/src/github.com/openshift/local-storage-operator/must-gather
+COPY . .
 
-FROM registry.access.redhat.com/ubi8-minimal:latest
-
-RUN microdnf -y install rsync
-
-COPY --from=builder /usr/bin/oc /usr/bin/oc
-COPY must-gather/* /usr/bin/
+FROM registry.ci.openshift.org/ocp/4.8:must-gather
+COPY --from=builder /go/src/github.com/openshift/local-storage-operator/must-gather/* /usr/bin/
+RUN chmod +x /usr/bin/gather
 
 ENTRYPOINT /usr/bin/gather
