@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/openshift/local-storage-operator/pkg/internal"
+	"github.com/openshift/local-storage-operator/pkg/localmetrics"
 
 	"github.com/ghodss/yaml"
 	"github.com/openshift/local-storage-operator/pkg/apis"
@@ -271,6 +272,23 @@ func (d *DiskMaker) symLinkDisks(diskConfig *DiskConfig) {
 		}
 	}
 
+	for storageClass, deviceArray := range deviceMap {
+		symLinkDirPath := path.Join(d.symlinkLocation, storageClass)
+		orhanDevices, err := findOrphanedLocalVolumeDisks(symLinkDirPath, deviceArray)
+		if err != nil {
+			msg := fmt.Sprintf("error finding orphan symlink disks for storagclass %q. %v", storageClass, err)
+			e := NewEvent(ErrorFindingOrphanSymlinks, msg, "")
+			d.eventSync.Report(e, d.localVolume)
+			klog.Errorf(msg)
+			continue
+		}
+		if len(orhanDevices) > 0 {
+			klog.Warningf("orphan symlinks found for storageclass %q. Orphansymlinks : %v", storageClass, orhanDevices)
+		}
+
+		// update custom metric for local volume orphan symlinks
+		localmetrics.SetLVOrphanSymlinks(os.Getenv("MY_NODE_NAME"), storageClass, len(orhanDevices))
+	}
 }
 
 func ignoreDevices(dev internal.BlockDevice) bool {
@@ -359,6 +377,32 @@ func (d *DiskMaker) findMatchingDisks(diskConfig *DiskConfig, blockDevices []int
 		}
 	}
 	return blockDeviceMap, nil
+}
+
+// findOrphanedLocalVolumeDisks finds the symlinks that became orphan due to change in the devicefilter
+func findOrphanedLocalVolumeDisks(symlinkDir string, deviceList []DiskLocation) ([]string, error) {
+	orphanedSymlinkDevices := []string{}
+	paths, err := filepath.Glob(filepath.Join(symlinkDir, "/*"))
+	if err != nil {
+		return orphanedSymlinkDevices, err
+	}
+
+PathLoop:
+	for _, path := range paths {
+		for i, device := range deviceList {
+			devPath, err := internal.FilePathEvalSymLinks(path)
+			if err != nil {
+				return orphanedSymlinkDevices, err
+			}
+			if devPath == device.diskNamePath {
+				continue PathLoop
+			} else if i == len(deviceList)-1 {
+				orphanedSymlinkDevices = append(orphanedSymlinkDevices, path)
+			}
+		}
+	}
+
+	return orphanedSymlinkDevices, nil
 }
 
 // findDeviceByID finds device ID and return device name(such as sda, sdb) and complete deviceID path
