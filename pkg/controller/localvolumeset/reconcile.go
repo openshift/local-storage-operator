@@ -20,6 +20,7 @@ import (
 const (
 	LocalVolumeSetNameLabel      = "local.storage.openshift.io/localvolumeset-owner-name"
 	LocalVolumeSetNamespaceLabel = "local.storage.openshift.io/localvolumeset-owner-namespace"
+	lvsMetrics                   = "local-volume-set-metrics"
 )
 
 // blank assignment to verify that ReconcileLocalVolumeSet implements reconcile.Reconciler

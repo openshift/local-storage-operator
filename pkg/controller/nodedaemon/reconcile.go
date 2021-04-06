@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	"github.com/openshift/local-storage-operator/pkg/localmetrics"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -24,6 +25,9 @@ const (
 	ProvisionerName = "localvolumeset-local-provisioner"
 	// DiskMakerName is the name of the diskmaker-manager daemonset
 	DiskMakerName = "diskmaker-manager"
+
+	//localVolumeSetMetrics is the serivce and servicemonitor name for diskmaker manager
+	localVolumeSetMetrics = "%s-diskmaker-manager-metrics"
 
 	dataHashAnnotationKey = "local.storage.openshift.io/configMapDataHash"
 )
@@ -81,6 +85,17 @@ func (r *DaemonReconciler) Reconcile(request reconcile.Request) (reconcile.Resul
 		return reconcile.Result{}, err
 	} else if opResult == controllerutil.OperationResultUpdated || opResult == controllerutil.OperationResultCreated {
 		r.reqLogger.Info("daemonset changed", "daemonset.Name", ds.GetName(), "op.Result", opResult)
+	}
+
+	// enable service and servicemonitor
+	for _, lvset := range lvSets.Items {
+		lvsMetricLabels := map[string]string{"app": DiskMakerName}
+		exporterName := fmt.Sprintf(localVolumeSetMetrics, lvset.Name)
+		metricsExportor := localmetrics.NewExporter(r.client, exporterName, request.Namespace, ownerRefs, lvsMetricLabels)
+		if err := metricsExportor.EnableMetricsExporter(); err != nil {
+			r.reqLogger.Error(err, "failed to creates metrics service and servicemonitors", "object", lvset.Name)
+			return reconcile.Result{}, err
+		}
 	}
 
 	return reconcile.Result{}, err

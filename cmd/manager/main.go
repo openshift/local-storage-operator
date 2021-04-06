@@ -15,7 +15,9 @@ import (
 
 	"github.com/openshift/local-storage-operator/pkg/apis"
 	"github.com/openshift/local-storage-operator/pkg/controller"
+	"github.com/openshift/local-storage-operator/pkg/localmetrics"
 
+	monitoringv1 "github.com/coreos/prometheus-operator/pkg/apis/monitoring/v1"
 	"github.com/operator-framework/operator-sdk/pkg/k8sutil"
 	kubemetrics "github.com/operator-framework/operator-sdk/pkg/kube-metrics"
 	"github.com/operator-framework/operator-sdk/pkg/leader"
@@ -30,6 +32,7 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/manager/signals"
+	cmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
 )
 
 // Change below variables to serve metrics on different host or port.
@@ -116,9 +119,18 @@ func main() {
 
 	log.Info("Registering Components.")
 
+	// Setup Scheme for all api resources
+	mgrScheme := mgr.GetScheme()
+
 	// Setup Scheme for all resources
-	if err := apis.AddToScheme(mgr.GetScheme()); err != nil {
+	if err := apis.AddToScheme(mgrScheme); err != nil {
 		log.Error(err, "")
+		os.Exit(1)
+	}
+
+	// setup monitoring
+	if err := monitoringv1.AddToScheme(mgrScheme); err != nil {
+		log.Error(err, "failed to add monitoring/v1 apis to scheme")
 		os.Exit(1)
 	}
 
@@ -130,6 +142,9 @@ func main() {
 
 	// Add the Metrics Service
 	addMetrics(ctx, cfg)
+
+	// register custom metrics
+	cmetrics.Registry.MustRegister(localmetrics.LVSMetricsList...)
 
 	log.Info("Starting the Cmd.")
 

@@ -7,6 +7,7 @@ import (
 	operatorv1 "github.com/openshift/api/operator/v1"
 	localv1alpha1 "github.com/openshift/local-storage-operator/pkg/apis/local/v1alpha1"
 	"github.com/openshift/local-storage-operator/pkg/controller/nodedaemon"
+	"github.com/openshift/local-storage-operator/pkg/localmetrics"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
@@ -81,6 +82,7 @@ func (r *LocalVolumeSetReconciler) updateTotalProvisionedDeviceCountStatus(reque
 		return fmt.Errorf("failed to list persistent volumes: %w", err)
 	}
 
+	localmetrics.SetLVSProvisionedPVs(lvSet.Spec.StorageClassName, len(pvs.Items))
 	totalPVCount := int32(len(pvs.Items))
 	lvSet.Status.TotalProvisionedDeviceCount = &totalPVCount
 	lvSet.Status.ObservedGeneration = lvSet.Generation
