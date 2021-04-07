@@ -346,6 +346,7 @@ func (r *ReconcileLocalVolumeSet) provisionPV(
 					symlinkPath,
 					dev.KName,
 					idExists,
+					map[string]string{},
 				)
 			}
 		}
@@ -382,6 +383,7 @@ func (r *ReconcileLocalVolumeSet) provisionPV(
 					symlinkPath,
 					dev.KName,
 					idExists,
+					map[string]string{},
 				)
 			}
 		}
@@ -399,5 +401,6 @@ func (r *ReconcileLocalVolumeSet) provisionPV(
 		symlinkPath,
 		dev.KName,
 		idExists,
+		map[string]string{},
 	)
 }

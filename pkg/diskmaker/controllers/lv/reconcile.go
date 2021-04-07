@@ -353,6 +353,10 @@ func (r *ReconcileLocalVolume) Reconcile(request reconcile.Request) (reconcile.R
 					errors = append(errors, err)
 					break
 				}
+				lvOwnerLabels := map[string]string{
+					common.LocalVolumeOwnerNameForPV:      r.localVolume.Name,
+					common.LocalVolumeOwnerNamespaceForPV: r.localVolume.Namespace,
+				}
 
 				err = common.CreateLocalPV(
 					lv,
@@ -365,6 +369,7 @@ func (r *ReconcileLocalVolume) Reconcile(request reconcile.Request) (reconcile.R
 					target,
 					filepath.Base(deviceNameLocation.diskNamePath),
 					idExists,
+					lvOwnerLabels,
 				)
 				if err != nil {
 					devLogger.Error(err, "could not create local PV")

@@ -50,6 +50,7 @@ func CreateLocalPV(
 	symLinkPath string,
 	deviceName string,
 	idExists bool,
+	extraLabelsForPV map[string]string,
 ) error {
 	useJob := false
 	nodeLabels := runtimeConfig.Node.GetLabels()
@@ -147,10 +148,15 @@ func CreateLocalPV(
 		PVOwnerKindLabel:      kind,
 		PVOwnerNamespaceLabel: namespace,
 		PVOwnerNameLabel:      name,
-		PVDeviceNameLabel:     deviceName,
+	}
+	for key, value := range extraLabelsForPV {
+		labels[key] = value
+	}
+	annotations := map[string]string{
+		PVDeviceNameLabel: deviceName,
 	}
 	if idExists {
-		labels[PVDeviceIDLabel] = filepath.Base(symLinkPath)
+		annotations[PVDeviceIDLabel] = filepath.Base(symLinkPath)
 	}
 
 	var reclaimPolicy corev1.PersistentVolumeReclaimPolicy
@@ -205,10 +211,21 @@ func CreateLocalPV(
 
 		// replace labels if and only if they don't already exist
 		InitMapIfNil(&existingPV.ObjectMeta.Labels)
+		// remove deprecated labels
+		for _, key := range DeprecatedLabels {
+			delete(existingPV.Labels, key)
+		}
 		for labelKey := range labels {
 			_, found := existingPV.ObjectMeta.Labels[labelKey]
 			if !found {
 				existingPV.ObjectMeta.Labels[labelKey] = labels[labelKey]
+			}
+		}
+		InitMapIfNil(&existingPV.ObjectMeta.Annotations)
+		for annotationKey := range annotations {
+			_, found := existingPV.ObjectMeta.Annotations[annotationKey]
+			if !found {
+				existingPV.ObjectMeta.Annotations[annotationKey] = annotations[annotationKey]
 			}
 		}
 

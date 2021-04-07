@@ -217,6 +217,7 @@ func TestCreatePV(t *testing.T) {
 			tc.symlinkpath,
 			tc.deviceName,
 			true,
+			map[string]string{},
 		)
 		if tc.shouldErr {
 			assert.NotNil(t, err)
@@ -262,6 +263,7 @@ func TestCreatePV(t *testing.T) {
 			tc.symlinkpath,
 			tc.deviceName,
 			true,
+			map[string]string{},
 		)
 		assert.Nil(t, err)
 
