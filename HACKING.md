@@ -16,7 +16,32 @@ and then update `deploy/operator.yaml` to point to your images and follow rest o
 ```
 
 3. Tag and push both images to quay.io (or a container registry of your choice). Make sure that images are publicly available.
-4. Since we will be going to test with our version of images, we need to modify CSV file to point to our version of image. This can be done by modifying following file:
+
+## Automatic creation of bundle and index image
+
+Assuming we have `opm` command and images of `local-storage-operator` and `local-diskmaker`, we can use following command to create the bundle and index image:
+
+
+```
+~> ./hack/sync_bundle -o <operator_image> -d <diskmaker_image> -b <bundle_image> -i <index_image> bundle
+
+~> ./hack/sync_bundle -o quay.io/openshift/origin-local-storage-operator:latest  \
+        -d quay.io/openshift/origin-local-storage-diskmaker:latest \
+        -b quay.io/gnufied/local-storage-bundle:v1 \
+        -i quay.io/gnufied/gnufied-index:v1 bundle
+~> docker push quay.io/gnufied/gnufied-index:v1
+```
+
+This should give us index image `quay.io/gnufied/gnufied-index:v1`. Update the `CatalogSource` entry in `examples/olm/catalog-create-subscribe.yaml`
+to point to your newly created index image. Once updated, we can install local-storage-operator via following command:
+
+```
+~> oc create -f examples/olm/catalog-create-subscribe.yaml
+```
+
+## Manual creation of bundle and index image.
+
+1. Since we will be going to test with our version of images, we need to modify CSV file to point to our version of image. This can be done by modifying following file:
 
 ```
 ~> vim opm-bundle/manifests/local-storage-operator.clusterserviceversion.yaml
@@ -26,15 +51,15 @@ and change image names in deployment field.
 
 *Note*: Currently opm-bundle/manifests folder has copied the CSV and CRDs. This obviously is problematic because now we have two versions of these resources. We plan to fix this in future.
 
-5. Now lets build a bundle image which can be used by index image. This can be done by:
+2. Now lets build a bundle image which can be used by index image. This can be done by:
 
 ```
 ~> cd opm-bundle
 ~> docker build -f ./bundle.Dockerfile -t quay.io/gnufied/local-storage-bundle:bundle1 .
 ```
 
-6. Tag and push image to quay.io (or a container registry of your choice). Make sure that images are publicly available.
-7. Now lets build index image which we can use from Openshift:
+3. Tag and push image to quay.io (or a container registry of your choice). Make sure that images are publicly available.
+4. Now lets build index image which we can use from Openshift:
 
 ```
 ~> opm index add --bundles quay.io/gnufied/local-storage-bundle:bundle1 --tag quay.io/gnufied/gnufied-index:1.0.0 --container-tool docker
@@ -42,21 +67,21 @@ and change image names in deployment field.
 
 If you are using podman then there is no need to specify container-tool option.
 
-8. Tag and push index image to quay.io (or a container registry of your choice). Make sure that images are publicly available.
+5. Tag and push index image to quay.io (or a container registry of your choice). Make sure that images are publicly available.
 
-9. Edit the catalog source template example `examples/olm/catalog-create-subscribe.yaml` to point to your index image:
+6. Edit the catalog source template example `examples/olm/catalog-create-subscribe.yaml` to point to your index image:
 
 ```
 ~> vim examples/olm/catalog-create-subscribe.yaml
 ```
 
-10. Create a catalogSource and subscribe to the source by applying `examples/olm/catalog-create-subscribe.yaml`.
+7. Create a catalogSource and subscribe to the source by applying `examples/olm/catalog-create-subscribe.yaml`.
 
 ```
 ~> oc create -f examples/olm/catalog-create-subscribe.yaml
 ```
 
-11. Switch to `openshift-local-storage` project and proceed with creating CR and start using the operator.
+8. Switch to `openshift-local-storage` project and proceed with creating CR and start using the operator.
 
 ```
 ~> oc project openshift-local-storage

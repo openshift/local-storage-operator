@@ -1,0 +1,99 @@
+#!/usr/bin/env ruby
+
+require 'yaml'
+require 'fileutils'
+require 'optparse'
+
+Options = Struct.new(:operator_image, :diskmaker_image, :bundle_image, :index_image, :command)
+
+class SyncBundle
+  DEFAULT_OPERATOR_IMAGE = "quay.io/openshift/origin-local-storage-operator:latest"
+  DEFAULT_DISKMAKER_IMAGE = "quay.io/openshift/origin-local-storage-diskmaker:latest"
+
+  def self.parse(options)
+    time = Time.now()
+    bundle_image = "quay.io/gnufied/local-storage-bundle:#{time.month}#{time.day}-#{time.hour}"
+    index_image = "quay.io/gnufied/gnufied-index:#{time.month}#{time.day}-#{time.hour}"
+    args = Options.new(DEFAULT_OPERATOR_IMAGE, DEFAULT_DISKMAKER_IMAGE, bundle_image, index_image)
+
+    opt_parser = OptionParser.new do |opts|
+      opts.banner = "Usage: sync_bundle.rb [options] <bundle|>"
+
+      opts.on("-oOPERATOR", "--operator=OPERATOR", "Operator Image(defaults to: #{DEFAULT_OPERATOR_IMAGE})") do |n|
+        args.operator_image = n
+      end
+
+      opts.on("-dDISKMAKER", "--diskmaker=DISKMAKER", "DiskMaker Image(defaults to: #{DEFAULT_DISKMAKER_IMAGE})") do |n|
+        args.diskmaker_image = n
+      end
+
+      opts.on("-bBUNDLE", "--bundle=BUNDLE", "Bundle Image(defaults to: quay.io/gnufied/local-storage-bundle:<month><date>-<hour>)") do |n|
+        args.bundle_image = n
+      end
+
+      opts.on("-iINDEX", "--index=INDEX", "Index Image(defaults to: quay.io/gnufied/gnufied-index:<month><date>-<hour>)") do |n|
+        args.index_image = n
+      end
+
+      opts.on("-h", "--help", "Prints this help") do
+        puts opts
+        exit
+      end
+    end
+    opt_parser.parse!(options)
+    args.command = options.pop
+    args
+  end
+
+  def initialize(args)
+    @default_options = args
+    @package = YAML.load(File.read("manifests/local-storage-operator.package.yaml"))
+  end
+
+  def sync_assets
+    current_channel = @package["channels"][0]["name"]
+    puts "current channel is #{current_channel}"
+    csv_file = "manifests/#{current_channel}/local-storage-operator.v#{current_channel}.0.clusterserviceversion.yaml"
+    crds = Dir["manifests/#{current_channel}/*.crd.yaml"]
+
+    csv_destination = "opm-bundle/manifests/local-storage-operator.clusterserviceversion.yaml"
+    FileUtils.cp(csv_file, csv_destination)
+
+    # only change CSV if images are changed
+    if @default_options.operator_image != DEFAULT_OPERATOR_IMAGE || @default_options.diskmaker_image != DEFAULT_DISKMAKER_IMAGE
+      updated_yaml = update_csv(csv_destination)
+      File.open(csv_destination, 'w') do |fl|
+        fl.write(YAML.dump(updated_yaml))
+      end
+    end
+    crds.each do |crd|
+      FileUtils.cp(crd, "opm-bundle/manifests")
+    end
+    if @default_options.command == "bundle"
+      generate_bundle()
+    end
+  end
+
+  def generate_bundle
+    FileUtils.cd("opm-bundle") do
+      system("docker build -f ./bundle.Dockerfile -t #{@default_options.bundle_image} .")
+      system("docker push #{@default_options.bundle_image}")
+      system("opm index add --bundles #{@default_options.bundle_image} --tag #{@default_options.index_image} --container-tool docker")
+    end
+  end
+
+  def update_csv(csv_file)
+    csv_content = YAML.load(File.open(csv_file))
+    envs = csv_content["spec"]["install"]["spec"]["deployments"][0]["spec"]["template"]["spec"]["containers"][0]["env"]
+    envs.each_with_index do |env, index|
+      if env["name"] == "DISKMAKER_IMAGE"
+        csv_content["spec"]["install"]["spec"]["deployments"][0]["spec"]["template"]["spec"]["containers"][0]["env"][index] = {"name" => "DISKMAKER_IMAGE", "value" => @default_options.diskmaker_image}
+      end
+    end
+    csv_content["spec"]["install"]["spec"]["deployments"][0]["spec"]["template"]["spec"]["containers"][0]["image"] = @default_options.operator_image
+    csv_content
+  end
+end
+
+args = SyncBundle.parse(ARGV)
+SyncBundle.new(args).sync_assets()

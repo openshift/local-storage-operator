@@ -49,6 +49,9 @@ diskmaker-container:
 operator-container:
 	docker build --no-cache -t $(OPERATOR_IMAGE) -f $(CURPATH)/Dockerfile .
 
+bundle:
+	./hack/sync_bundle
+
 .PHONY: operator-container
 
 clean:
