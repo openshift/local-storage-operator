@@ -3,13 +3,16 @@ package nodedaemon
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/go-logr/logr"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/selection"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -20,7 +23,10 @@ import (
 )
 
 const (
-	oldProvisionerName = "localvolumeset-local-provisioner"
+	oldProvisionerName     = "localvolumeset-local-provisioner"
+	oldLVDiskMakerPrefix   = "local-volume-diskmaker-"
+	oldLVProvisionerPrefix = "local-volume-provisioner-"
+	appLabelKey            = "app"
 	// ProvisionerName is the name of the local-static-provisioner daemonset
 	ProvisionerName = "local-provisioner"
 	// DiskMakerName is the name of the diskmaker-manager daemonset
@@ -91,16 +97,42 @@ func (r *DaemonReconciler) cleanupOldDaemonsets(namespace string) error {
 	if r.deletedStaticProvisioner {
 		return nil
 	}
+
+	// search for old localvolume daemons
+	dsList := &appsv1.DaemonSetList{}
+	err := r.client.List(context.TODO(), dsList, client.InNamespace(namespace))
+	if err != nil {
+		r.reqLogger.Error(err, "could not list daemonsets")
+		return err
+	}
+	appNameList := make([]string, 0)
+	for _, ds := range dsList.Items {
+		appLabel, found := ds.ObjectMeta.Labels[appLabelKey]
+		if !found {
+			continue
+		} else if strings.HasPrefix(appLabel, oldLVDiskMakerPrefix) || strings.HasPrefix(appLabel, oldLVProvisionerPrefix) {
+			// remember name to watch for pods to delete
+			appNameList = append(appNameList, appLabel)
+			// delete daemonset
+			err = r.client.Delete(context.TODO(), &ds)
+			if err != nil && !(errors.IsNotFound(err) || errors.IsGone(err)) {
+				r.reqLogger.Error(err, "could not delete daemonset: %q", ds.Name)
+				return err
+			}
+		}
+	}
+
+	// search for old localvolumeset daemons
 	provisioner := &appsv1.DaemonSet{}
-	err := r.client.Get(context.TODO(), types.NamespacedName{Name: oldProvisionerName, Namespace: namespace}, provisioner)
+	err = r.client.Get(context.TODO(), types.NamespacedName{Name: oldProvisionerName, Namespace: namespace}, provisioner)
 	if err == nil { // provisioner daemonset found
 		r.reqLogger.Info(fmt.Sprintf("old daemonset %q found, cleaning up", oldProvisionerName))
 		err = r.client.Delete(context.TODO(), provisioner)
-		if err != nil && !errors.IsGone(err) {
+		if err != nil && !(errors.IsNotFound(err) || errors.IsGone(err)) {
 			r.reqLogger.Error(err, fmt.Sprintf("could not delete daemonset %q", oldProvisionerName))
 			return err
 		}
-	} else if !errors.IsNotFound(err) { // unknown error
+	} else if !(errors.IsNotFound(err) || errors.IsGone(err)) { // unknown error
 		r.reqLogger.Error(err, fmt.Sprintf("could not fetch daemonset %q to clean it up", oldProvisionerName))
 		return err
 	}
@@ -115,7 +147,15 @@ func (r *DaemonReconciler) cleanupOldDaemonsets(namespace string) error {
 	}, func() (done bool, err error) {
 		podList := &corev1.PodList{}
 		allGone := false
-		err = r.client.List(context.TODO(), podList, client.MatchingLabels{"app": oldProvisionerName})
+		// search for any pods with label 'app' in appNameList
+		appNameList = append(appNameList, oldProvisionerName)
+		requirement, err := labels.NewRequirement(appLabelKey, selection.In, appNameList)
+		if err != nil {
+			r.reqLogger.Error(err, "failed to compose labelselector requirement %q in (%v)", appLabelKey, appNameList)
+			return false, err
+		}
+		selector := labels.NewSelector().Add(*requirement)
+		err = r.client.List(context.TODO(), podList, client.MatchingLabelsSelector{Selector: selector})
 		if err != nil && !errors.IsNotFound(err) {
 			return false, err
 		} else if len(podList.Items) == 0 {
