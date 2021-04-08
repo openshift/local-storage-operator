@@ -299,6 +299,8 @@ spec:
                 name: local-storage-operator
             template:
               metadata:
+                annotations:
+                  workload.openshift.io/management: '{"effect": "PreferredDuringScheduling"}'
                 labels:
                   name: local-storage-operator
               spec:
