@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	monitoringv1 "github.com/coreos/prometheus-operator/pkg/apis/monitoring/v1"
 	operatorv1 "github.com/openshift/api/operator/v1"
 	localv1alpha1 "github.com/openshift/local-storage-operator/pkg/apis/local/v1alpha1"
 	"github.com/stretchr/testify/assert"
@@ -120,6 +121,9 @@ func newFakeLocalVolumeDiscoveryReconciler(t *testing.T, objs ...runtime.Object)
 
 	err = corev1.AddToScheme(scheme)
 	assert.NoErrorf(t, err, "adding corev1 to scheme")
+
+	err = monitoringv1.AddToScheme(scheme)
+	assert.NoErrorf(t, err, "adding monitoringv1 to scheme")
 
 	err = appsv1.AddToScheme(scheme)
 	assert.NoErrorf(t, err, "adding appsv1 to scheme")

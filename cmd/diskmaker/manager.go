@@ -2,9 +2,12 @@ package main
 
 import (
 	"flag"
+	"os"
 	"strings"
 
+	monitoringv1 "github.com/coreos/prometheus-operator/pkg/apis/monitoring/v1"
 	"github.com/openshift/local-storage-operator/pkg/apis"
+	"github.com/openshift/local-storage-operator/pkg/localmetrics"
 	"github.com/operator-framework/operator-sdk/pkg/k8sutil"
 	"github.com/operator-framework/operator-sdk/pkg/log/zap"
 	"github.com/prometheus/common/log"
@@ -77,6 +80,15 @@ func startManager(cmd *cobra.Command, args []string) error {
 		log.Error(err, "failed to add to scheme")
 		return err
 	}
+
+	// setup monitoring
+	if err := monitoringv1.AddToScheme(mgr.GetScheme()); err != nil {
+		log.Error(err, "error registering prometheus monitoring objects")
+		os.Exit(1)
+	}
+
+	// configure local metrics for local volume discovery
+	localmetrics.ConfigureCustomMetrics(localmetrics.LVSMetricsList)
 
 	err = diskmakerController.AddToManager(mgr)
 	if err != nil {

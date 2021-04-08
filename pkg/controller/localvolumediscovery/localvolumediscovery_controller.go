@@ -10,6 +10,7 @@ import (
 	localv1alpha1 "github.com/openshift/local-storage-operator/pkg/apis/local/v1alpha1"
 	"github.com/openshift/local-storage-operator/pkg/common"
 	"github.com/openshift/local-storage-operator/pkg/controller/nodedaemon"
+	"github.com/openshift/local-storage-operator/pkg/localmetrics"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -35,6 +36,7 @@ var (
 
 const (
 	DiskMakerDiscovery = "diskmaker-discovery"
+	lvdMetrics         = "local-volume-discovery-metrics"
 )
 
 // Add creates a new LocalVolumeDiscovery Controller and adds it to the Manager. The Manager will set fields on the Controller
@@ -161,6 +163,14 @@ func (r *ReconcileLocalVolumeDiscovery) Reconcile(request reconcile.Request) (re
 	err = r.deleteOrphanDiscoveryResults(instance)
 	if err != nil {
 		reqLogger.Error(err, "failed to delete orphan discovery results")
+		return reconcile.Result{}, err
+	}
+
+	// enable metrics
+	lvdLabels := map[string]string{"app": DiskMakerDiscovery}
+	metricsExportor := localmetrics.NewExporter(r.client, lvdMetrics, instance.Namespace, getOwnerRefs(instance), lvdLabels)
+	if err := metricsExportor.EnableMetricsExporter(); err != nil {
+		reqLogger.Error(err, "failed to creates metrics service and servicemonitors", "object", instance.Name)
 		return reconcile.Result{}, err
 	}
 

@@ -6,6 +6,7 @@ import (
 	"flag"
 
 	"github.com/openshift/local-storage-operator/pkg/diskmaker"
+	"github.com/openshift/local-storage-operator/pkg/localmetrics"
 	"github.com/prometheus/common/log"
 	"github.com/spf13/cobra"
 	"k8s.io/klog"
@@ -31,6 +32,8 @@ func printVersion() {
 
 func startDiskMaker(cmd *cobra.Command, args []string) error {
 	printVersion()
+	// configure custom metrics for local volume
+	localmetrics.ConfigureCustomMetrics(localmetrics.LVMetricsList)
 	diskMaker, err := diskmaker.NewDiskMaker(configLocation, symlinkLocation)
 	if err != nil {
 		log.Error(err, "Failed to create DiskMaker")

@@ -14,6 +14,7 @@ import (
 	"github.com/openshift/local-storage-operator/pkg/diskmaker"
 	"github.com/openshift/local-storage-operator/pkg/diskmaker/controllers/lvset"
 	"github.com/openshift/local-storage-operator/pkg/internal"
+	"github.com/openshift/local-storage-operator/pkg/localmetrics"
 	"github.com/pkg/errors"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/kubernetes/scheme"
@@ -120,6 +121,9 @@ func (discovery *DeviceDiscovery) discoverDevices() error {
 
 	discoveredDisks := getDiscoverdDevices(validDevices)
 	klog.Infof("discovered devices: %+v", discoveredDisks)
+
+	// update discovered devices metric
+	localmetrics.SetDiscoveredDevicesMetrics(os.Getenv("MY_NODE_NAME"), len(discoveredDisks))
 
 	// Update discovered devices in the  LocalVolumeDiscoveryResult resource
 	if !reflect.DeepEqual(discovery.disks, discoveredDisks) {

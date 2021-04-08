@@ -19,6 +19,7 @@ import (
 	"github.com/openshift/local-storage-operator/pkg/common"
 	commontypes "github.com/openshift/local-storage-operator/pkg/common"
 	"github.com/openshift/local-storage-operator/pkg/diskmaker"
+	"github.com/openshift/local-storage-operator/pkg/localmetrics"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
@@ -56,6 +57,10 @@ const (
 	localVolumeFinalizer = "storage.openshift.com/local-volume-protection"
 
 	specHashAnnotation = "operator.openshift.io/spec-hash"
+)
+
+const (
+	localVolumeMetrics = "%s-local-diskmaker-metrics"
 )
 
 // ReconcileLocalVolume reconciles a LocalVolume object
@@ -112,7 +117,18 @@ func (r *ReconcileLocalVolume) Reconcile(request reconcile.Request) (reconcile.R
 		}
 		return reconcile.Result{Requeue: true}, err
 	}
+
 	r.syncLocalVolumeProvider(localStorageProvider)
+
+	// enable service and servicemonitor
+	exporterName := fmt.Sprintf(localVolumeMetrics, localStorageProvider.Name)
+	metricsExportor := localmetrics.NewExporter(r.client, exporterName, localStorageProvider.Namespace, getOwnerRefs(localStorageProvider),
+		diskMakerLabels(localStorageProvider.Name))
+	if err := metricsExportor.EnableMetricsExporter(); err != nil {
+		klog.Errorf("failed to creates metrics service and servicemonitors for object %q. %v", localStorageProvider.Name, err)
+		return reconcile.Result{}, err
+	}
+
 	return reconcile.Result{}, nil
 }
 
@@ -762,6 +778,19 @@ func addOwner(meta *metav1.ObjectMeta, cr *localv1.LocalVolume) {
 		{
 			APIVersion: localv1.SchemeGroupVersion.String(),
 			Kind:       localv1.LocalVolumeKind,
+			Name:       cr.Name,
+			UID:        cr.UID,
+			Controller: &trueVal,
+		},
+	}
+}
+
+func getOwnerRefs(cr *localv1.LocalVolume) []metav1.OwnerReference {
+	trueVal := true
+	return []metav1.OwnerReference{
+		{
+			APIVersion: localv1.SchemeGroupVersion.String(),
+			Kind:       "LocalVolume",
 			Name:       cr.Name,
 			UID:        cr.UID,
 			Controller: &trueVal,

@@ -11,12 +11,13 @@ import (
 
 const (
 	// LocalVolume events
-	ErrorRunningBlockList    = "ErrorRunningBlockList"
-	ErrorReadingBlockList    = "ErrorReadingBlockList"
-	ErrorListingDeviceID     = "ErrorListingDeviceID"
-	ErrorFindingMatchingDisk = "ErrorFindingMatchingDisk"
-	SymLinkedOnDeviceName    = "SymlinkedOnDeivceName"
-	ErrorProvisioningDisk    = "ErrorProvisioningDisk"
+	ErrorRunningBlockList      = "ErrorRunningBlockList"
+	ErrorReadingBlockList      = "ErrorReadingBlockList"
+	ErrorListingDeviceID       = "ErrorListingDeviceID"
+	ErrorFindingMatchingDisk   = "ErrorFindingMatchingDisk"
+	SymLinkedOnDeviceName      = "SymlinkedOnDeivceName"
+	ErrorProvisioningDisk      = "ErrorProvisioningDisk"
+	ErrorFindingOrphanSymlinks = "ErrorFindingOrphanSymlinks"
 
 	FoundMatchingDisk   = "FoundMatchingDisk"
 	DeviceSymlinkExists = "DeviceSymlinkExists"
