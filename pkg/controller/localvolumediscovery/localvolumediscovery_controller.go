@@ -17,6 +17,7 @@ import (
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	corev1helper "k8s.io/kubernetes/pkg/apis/core/v1/helper"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
@@ -172,6 +173,7 @@ func getDiskMakerDiscoveryDSMutateFn(request reconcile.Request,
 	envVars []corev1.EnvVar,
 	ownerRefs []metav1.OwnerReference,
 	nodeSelector *corev1.NodeSelector) func(*appsv1.DaemonSet) error {
+	maxUnavailable := intstr.FromString("10%")
 
 	return func(ds *appsv1.DaemonSet) error {
 		name := DiskMakerDiscovery
@@ -186,6 +188,14 @@ func getDiskMakerDiscoveryDSMutateFn(request reconcile.Request,
 		)
 		discoveryVolumes, discoveryVolumeMounts := getVolumesAndMounts()
 		ds.Spec.Template.Spec.Volumes = discoveryVolumes
+
+		// setting maxUnavailable as a percentage
+		ds.Spec.UpdateStrategy = appsv1.DaemonSetUpdateStrategy{
+			Type: appsv1.RollingUpdateDaemonSetStrategyType,
+			RollingUpdate: &appsv1.RollingUpdateDaemonSet{
+				MaxUnavailable: &maxUnavailable,
+			},
+		}
 		ds.Spec.Template.Spec.Containers[0].VolumeMounts = discoveryVolumeMounts
 		ds.Spec.Template.Spec.Containers[0].Env = append(ds.Spec.Template.Spec.Containers[0].Env, envVars...)
 		ds.Spec.Template.Spec.Containers[0].Image = common.GetDiskMakerImage()
