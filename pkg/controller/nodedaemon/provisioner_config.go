@@ -16,6 +16,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	localStaticProvisioner "sigs.k8s.io/sig-storage-local-static-provisioner/pkg/common"
 
+	v1 "github.com/openshift/local-storage-operator/pkg/apis/local/v1"
 	localv1alpha1 "github.com/openshift/local-storage-operator/pkg/apis/local/v1alpha1"
 	"github.com/openshift/local-storage-operator/pkg/common"
 )
@@ -23,6 +24,7 @@ import (
 func (r *DaemonReconciler) reconcileProvisionerConfigMap(
 	request reconcile.Request,
 	lvSets []localv1alpha1.LocalVolumeSet,
+	lvs []v1.LocalVolume,
 	ownerRefs []metav1.OwnerReference,
 ) (*corev1.ConfigMap, controllerutil.OperationResult, error) {
 	// object meta
@@ -45,6 +47,19 @@ func (r *DaemonReconciler) reconcileProvisionerConfigMap(
 			VolumeMode: string(lvSet.Spec.VolumeMode),
 		}
 		storageClassConfig[storageClassName] = mountConfig
+	}
+	for _, lv := range lvs {
+		for _, devices := range lv.Spec.StorageClassDevices {
+			storageClassName := devices.StorageClassName
+			symlinkDir := path.Join(common.GetLocalDiskLocationPath(), storageClassName)
+			mountConfig := localStaticProvisioner.MountConfig{
+				FsType:     devices.FSType,
+				HostDir:    symlinkDir,
+				MountDir:   symlinkDir,
+				VolumeMode: string(devices.VolumeMode),
+			}
+			storageClassConfig[storageClassName] = mountConfig
+		}
 	}
 	// create or update
 	opResult, err := controllerutil.CreateOrUpdate(context.TODO(), r.client, configMap, func() error {

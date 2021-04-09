@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/openshift/local-storage-operator/pkg/apis/local/v1alpha1"
+	"github.com/openshift/local-storage-operator/pkg/common"
 	"github.com/openshift/local-storage-operator/pkg/diskmaker"
 	"github.com/pkg/errors"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
@@ -21,7 +22,7 @@ import (
 func newDiscoveryResultInstance(nodeName, namespace, parentObjName, parentObjUID string) *v1alpha1.LocalVolumeDiscoveryResult {
 	truncatedNodeName := truncateNodeName(resultCRName, nodeName)
 	labels := map[string]string{}
-	labels[resultCRLabel] = nodeName
+	labels[common.DiscoveryNodeLabel] = nodeName
 	cr := &v1alpha1.LocalVolumeDiscoveryResult{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      truncatedNodeName,

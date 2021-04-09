@@ -23,6 +23,10 @@ const (
 	PVDeviceIDLabel = "storage.openshift.com/device-id"
 )
 
+// DeprecatedLabels: these labels were deprecated because the potential values weren't all compatible label values
+// they have been move to annotations
+var DeprecatedLabels = []string{PVDeviceNameLabel, PVDeviceIDLabel}
+
 // GetPVOwnerSelector returns selector for selecting pvs owned by given volume
 func GetPVOwnerSelector(lv *localv1.LocalVolume) labels.Selector {
 	pvOwnerLabels := labels.Set{

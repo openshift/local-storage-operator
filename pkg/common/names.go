@@ -5,6 +5,7 @@ import (
 	"os"
 
 	localv1 "github.com/openshift/local-storage-operator/pkg/apis/local/v1"
+	corev1 "k8s.io/api/core/v1"
 )
 
 const (
@@ -28,7 +29,11 @@ const (
 	LocalDiskLocationEnv = "LOCAL_DISK_LOCATION"
 
 	// ProvisionerConfigMapName is the name of the local-static-provisioner configmap
-	ProvisionerConfigMapName = "local-volumeset-provisioner"
+	ProvisionerConfigMapName = "local-provisioner"
+
+	// DiscoveryNodeLabelKey is the label key on the discovery result CR used to identify the node it belongs to.
+	// the value is the node's name
+	DiscoveryNodeLabel = "discovery-result-node"
 )
 
 // GetLocalProvisionerImage return the image to be used for provisioner daemonset
@@ -58,4 +63,10 @@ func GetLocalDiskLocationPath() string {
 // LocalVolumeKey returns key for the localvolume
 func LocalVolumeKey(lv *localv1.LocalVolume) string {
 	return fmt.Sprintf("%s/%s", lv.Namespace, lv.Name)
+}
+
+// GetProvisionedByValue is the the annotation that indicates which node a PV was originally provisioned on
+// the key is provCommon.AnnProvisionedBy ("pv.kubernetes.io/provisioned-by")
+func GetProvisionedByValue(node corev1.Node) string {
+	return fmt.Sprintf("local-volume-provisioner-%v-%v", node.Name, node.UID)
 }

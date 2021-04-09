@@ -25,7 +25,6 @@ const (
 	udevEventPeriod               = 5 * time.Second
 	probeInterval                 = 5 * time.Minute
 	resultCRName                  = "discovery-result-%s"
-	resultCRLabel                 = "discovery-result-node"
 )
 
 var supportedDeviceTypes = sets.NewString("disk", "part", "lvm")

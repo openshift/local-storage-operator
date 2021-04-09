@@ -1,6 +1,8 @@
 package common
 
 import (
+	"os"
+
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
@@ -43,4 +45,14 @@ func InitMapIfNil(m *map[string]string) {
 	}
 	*m = make(map[string]string)
 	return
+}
+
+// GetNodeNameEnvVar returns the node name from env vars
+func GetNodeNameEnvVar() string {
+	return os.Getenv("MY_NODE_NAME")
+}
+
+// GetWatchNameSpaceEnfVar returns the watch namespace
+func GetWatchNameSpaceEnfVar() string {
+	return os.Getenv("WATCH_NAMESPACE")
 }

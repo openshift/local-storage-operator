@@ -192,6 +192,8 @@ func MutateAggregatedSpec(
 				RequiredDuringSchedulingIgnoredDuringExecution: nodeSelector,
 			},
 		}
+	} else {
+		ds.Spec.Template.Spec.Affinity = nil
 	}
 
 	// fetch common volumes and mounts

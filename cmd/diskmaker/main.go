@@ -18,8 +18,8 @@ var managerCmd = &cobra.Command{
 }
 var lvDaemonCmd = &cobra.Command{
 	Use:   "lv-controller",
-	Short: "Used to start an instance of the controller for a specific LocalVolume CR",
-	RunE:  startDiskMaker,
+	Short: "Used to start the controller-runtime manager that owns the LocalVolume controller",
+	RunE:  startManager,
 }
 var discoveryDaemonCmd = &cobra.Command{
 	Use:   "discover",
