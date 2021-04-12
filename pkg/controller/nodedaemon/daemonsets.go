@@ -8,6 +8,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -61,6 +62,7 @@ func getDiskMakerDSMutateFn(
 	nodeSelector *corev1.NodeSelector,
 	dataHash string,
 ) func(*appsv1.DaemonSet) error {
+	maxUnavailable := intstr.FromString("10%")
 
 	return func(ds *appsv1.DaemonSet) error {
 		name := DiskMakerName
@@ -87,6 +89,13 @@ func getDiskMakerDSMutateFn(
 		ds.Spec.Template.Spec.Containers[0].Image = common.GetDiskMakerImage()
 		ds.Spec.Template.Spec.Containers[0].Args = []string{"lv-manager"}
 
+		// setting maxUnavailable as a percentage
+		ds.Spec.UpdateStrategy = appsv1.DaemonSetUpdateStrategy{
+			Type: appsv1.RollingUpdateDaemonSetStrategyType,
+			RollingUpdate: &appsv1.RollingUpdateDaemonSet{
+				MaxUnavailable: &maxUnavailable,
+			},
+		}
 		// to read /proc/1/mountinfo
 		ds.Spec.Template.Spec.HostPID = true
 
