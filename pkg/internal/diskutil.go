@@ -324,14 +324,21 @@ func GetDeviceFSMap() (map[string]string, error) {
 func GetPVCreationLock(device string, symlinkDirs ...string) (ExclusiveFileLock, bool, []string, error) {
 	lock := ExclusiveFileLock{Path: device}
 	locked, err := lock.Lock()
-	if err != nil || !locked {
-		return lock, false, []string{}, err
+	// If the device is busy, then we should continue and check for symlinks
+	if err != nil && err != unix.EBUSY {
+		return lock, locked, []string{}, err
 	}
-	existingLinkPaths, err := GetMatchingSymlinksInDirs(device, symlinkDirs...)
-	if err != nil || len(existingLinkPaths) > 0 {
-		return lock, false, existingLinkPaths, err
+	existingLinkPaths, symErr := GetMatchingSymlinksInDirs(device, symlinkDirs...)
+	// If symErr is not nil, there was an error fetching the symlinks
+	if symErr != nil {
+		return lock, locked, existingLinkPaths, symErr
+	} else if len(existingLinkPaths) == 0 && !locked {
+		// Alternatively, if we don't have any existing symlinks AND we can't get a lock,
+		// then the device is likely busy, and return the original error.
+		return lock, locked, existingLinkPaths, err
 	}
-	return lock, true, existingLinkPaths, nil
+
+	return lock, locked, existingLinkPaths, nil
 }
 
 // GetMatchingSymlinksInDirs returns all the files in dir that are the same file as path after evaluating symlinks
@@ -371,7 +378,7 @@ func (e *ExclusiveFileLock) Lock() (bool, error) {
 	if errno == unix.EBUSY {
 		e.locked = false
 		// device is in use
-		return false, nil
+		return false, errno
 	} else if errno != nil {
 		return false, errno
 	}
