@@ -185,6 +185,10 @@ func MutateAggregatedSpec(
 		ds.Spec.Template.ObjectMeta.Labels[key] = value
 	}
 
+	// add management workload annotations
+	initMapIfNil(&ds.Spec.Template.ObjectMeta.Annotations)
+	ds.Spec.Template.ObjectMeta.Annotations["workload.openshift.io/management"] = `{"effect": "PreferredDuringScheduling"}`
+
 	// ownerRefs
 	ds.ObjectMeta.OwnerReferences = ownerRefs
 
