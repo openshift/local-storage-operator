@@ -1,0 +1,112 @@
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  creationTimestamp: null
+  name: manager-role
+rules:
+- apiGroups:
+  - local.storage.openshift.io
+  resources:
+  - localvolumediscoveries
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - local.storage.openshift.io
+  resources:
+  - localvolumediscoveries/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - local.storage.openshift.io
+  resources:
+  - localvolumediscoveries/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - local.storage.openshift.io
+  resources:
+  - localvolumediscoveryresults
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - local.storage.openshift.io
+  resources:
+  - localvolumediscoveryresults/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - local.storage.openshift.io
+  resources:
+  - localvolumediscoveryresults/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - local.storage.openshift.io
+  resources:
+  - localvolumes
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - local.storage.openshift.io
+  resources:
+  - localvolumes/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - local.storage.openshift.io
+  resources:
+  - localvolumes/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - local.storage.openshift.io
+  resources:
+  - localvolumesets
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - local.storage.openshift.io
+  resources:
+  - localvolumesets/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - local.storage.openshift.io
+  resources:
+  - localvolumesets/status
+  verbs:
+  - get
+  - patch
+  - update

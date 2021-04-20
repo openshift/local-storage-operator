@@ -1,0 +1,7 @@
+apiVersion: local.storage.openshift.io/v1alpha1
+kind: LocalVolumeDiscovery
+metadata:
+  name: localvolumediscovery-sample
+spec:
+  # Add fields here
+  foo: bar

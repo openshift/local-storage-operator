@@ -1,0 +1,20 @@
+# permissions for end users to view localvolumes.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: localvolume-viewer-role
+rules:
+- apiGroups:
+  - local.storage.openshift.io
+  resources:
+  - localvolumes
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - local.storage.openshift.io
+  resources:
+  - localvolumes/status
+  verbs:
+  - get

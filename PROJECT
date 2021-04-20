@@ -1,0 +1,46 @@
+domain: storage.openshift.io
+layout:
+- go.kubebuilder.io/v3
+plugins:
+  manifests.sdk.operatorframework.io/v2: {}
+  scorecard.sdk.operatorframework.io/v2: {}
+projectName: local-storage-operator
+repo: github.com/openshift/local-storage-operator
+resources:
+- api:
+    crdVersion: v1
+    namespaced: true
+  controller: true
+  domain: storage.openshift.io
+  group: local
+  kind: LocalVolume
+  path: github.com/openshift/local-storage-operator/api/v1
+  version: v1
+- api:
+    crdVersion: v1
+    namespaced: true
+  controller: true
+  domain: storage.openshift.io
+  group: local
+  kind: LocalVolumeDiscovery
+  path: github.com/openshift/local-storage-operator/api/v1alpha1
+  version: v1alpha1
+- api:
+    crdVersion: v1
+    namespaced: true
+  controller: true
+  domain: storage.openshift.io
+  group: local
+  kind: LocalVolumeDiscoveryResult
+  path: github.com/openshift/local-storage-operator/api/v1alpha1
+  version: v1alpha1
+- api:
+    crdVersion: v1
+    namespaced: true
+  controller: true
+  domain: storage.openshift.io
+  group: local
+  kind: LocalVolumeSet
+  path: github.com/openshift/local-storage-operator/api/v1alpha1
+  version: v1alpha1
+version: "3"
