@@ -308,12 +308,12 @@ spec:
                 containers:
                   - name: local-storage-operator
                     image: quay.io/openshift/origin-local-storage-operator:latest
+                    imagePullPolicy: IfNotPresent
                     ports:
                     - containerPort: 60000
                       name: metrics
                     command:
                     - local-storage-operator
-                    imagePullPolicy: Always
                     env:
                       - name: WATCH_NAMESPACE
                         valueFrom:
