@@ -24,7 +24,7 @@ spec:
             name: metrics
           command:
           - local-storage-operator
-          imagePullPolicy: Always
+          imagePullPolicy: IfNotPresent
           env:
             - name: WATCH_NAMESPACE
               valueFrom:

@@ -87,6 +87,7 @@ func getDiskMakerDSMutateFn(
 		initMapIfNil(&ds.ObjectMeta.Annotations)
 		ds.ObjectMeta.Annotations[dataHashAnnotationKey] = dataHash
 		ds.Spec.Template.Spec.Containers[0].Image = common.GetDiskMakerImage()
+		ds.Spec.Template.Spec.Containers[0].ImagePullPolicy = corev1.PullIfNotPresent
 		ds.Spec.Template.Spec.Containers[0].Args = []string{"lv-manager"}
 
 		// setting maxUnavailable as a percentage
@@ -129,7 +130,7 @@ func getLocalProvisionerDSMutateFn(
 		initMapIfNil(&ds.ObjectMeta.Annotations)
 		ds.ObjectMeta.Annotations[dataHashAnnotationKey] = dataHash
 		ds.Spec.Template.Spec.Containers[0].Image = common.GetLocalProvisionerImage()
-
+		ds.Spec.Template.Spec.Containers[0].ImagePullPolicy = corev1.PullIfNotPresent
 		return nil
 	}
 }
