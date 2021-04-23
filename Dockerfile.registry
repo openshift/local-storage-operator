@@ -1,6 +1,6 @@
 FROM quay.io/operator-framework/upstream-registry-builder as builder
 
-COPY manifests manifests
+COPY config/manifests manifests
 RUN ./bin/initializer -o ./bundles.db
 
 FROM scratch

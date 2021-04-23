@@ -62,10 +62,6 @@ type LocalVolumeDiscoveryReconciler struct {
 	ReqLogger logr.Logger
 }
 
-//+kubebuilder:rbac:groups=local.storage.openshift.io,resources=localvolumediscoveries,verbs=get;list;watch;create;update;patch;delete
-//+kubebuilder:rbac:groups=local.storage.openshift.io,resources=localvolumediscoveries/status,verbs=get;update;patch
-//+kubebuilder:rbac:groups=local.storage.openshift.io,resources=localvolumediscoveries/finalizers,verbs=update
-
 // Reconcile reads that state of the cluster for a LocalVolumeDiscovery object and makes changes based on the state read
 // and what is in the LocalVolumeDiscovery.Spec
 // The Controller will requeue the Request to be processed again if the returned error is non-nil or

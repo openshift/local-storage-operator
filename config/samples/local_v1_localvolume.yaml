@@ -1,7 +1,12 @@
-apiVersion: local.storage.openshift.io/v1
-kind: LocalVolume
+apiVersion: "local.storage.openshift.io/v1"
+kind: "LocalVolume"
 metadata:
-  name: localvolume-sample
+  name: "example"
 spec:
-  # Add fields here
-  foo: bar
+  storageClassDevices:
+    - storageClassName: "foobar"
+      volumeMode: Filesystem
+      fsType: ext4
+      devicePaths:
+        - /dev/vde
+        - /dev/vdf

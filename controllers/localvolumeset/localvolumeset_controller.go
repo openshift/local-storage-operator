@@ -56,10 +56,6 @@ type LocalVolumeSetReconciler struct {
 	LvSetMap  *common.StorageClassOwnerMap
 }
 
-//+kubebuilder:rbac:groups=local.storage.openshift.io,resources=localvolumesets,verbs=get;list;watch;create;update;patch;delete
-//+kubebuilder:rbac:groups=local.storage.openshift.io,resources=localvolumesets/status,verbs=get;update;patch
-//+kubebuilder:rbac:groups=local.storage.openshift.io,resources=localvolumesets/finalizers,verbs=update
-
 // Reconcile reads that state of the cluster for a LocalVolumeSet object and makes changes based on the state read
 // and what is in the LocalVolumeSet.Spec
 // Note:

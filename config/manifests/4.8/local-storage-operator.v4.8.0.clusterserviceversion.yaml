@@ -151,6 +151,27 @@ spec:
       permissions:
         - rules:
           - apiGroups:
+            - ""
+            - coordination.k8s.io
+            resources:
+            - configmaps
+            - leases
+            verbs:
+            - get
+            - list
+            - watch
+            - create
+            - update
+            - patch
+            - delete
+          - apiGroups:
+            - ""
+            resources:
+            - events
+            verbs:
+            - create
+            - patch
+          - apiGroups:
             - local.storage.openshift.io
             resources:
             - "*"
@@ -322,17 +343,13 @@ spec:
                       name: metrics
                     command:
                     - local-storage-operator
+                    args:
+                    - --leader-elect
                     env:
                       - name: WATCH_NAMESPACE
                         valueFrom:
                           fieldRef:
                             fieldPath: metadata.namespace
-                      - name: POD_NAME
-                        valueFrom:
-                          fieldRef:
-                            fieldPath: metadata.name
-                      - name: OPERATOR_NAME
-                        value: "local-storage-operator"
                       - name: PROVISIONER_IMAGE
                         value: quay.io/openshift/origin-local-storage-static-provisioner:latest
                       - name: DISKMAKER_IMAGE

@@ -1,7 +1,14 @@
 apiVersion: local.storage.openshift.io/v1alpha1
 kind: LocalVolumeDiscovery
 metadata:
-  name: localvolumediscovery-sample
+  name: auto-discover-devices
 spec:
-  # Add fields here
-  foo: bar
+  nodeSelector:
+    nodeSelectorTerms:
+      - matchExpressions:
+          - key: kubernetes.io/hostname
+            operator: In
+            values:
+              - ip-10-0-142-242
+              - ip-10-0-159-246
+              - ip-10-0-164-157
