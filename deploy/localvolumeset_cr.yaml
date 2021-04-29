@@ -1,0 +1,10 @@
+apiVersion: "local.storage.openshift.io/v1alpha1"
+kind: "LocalVolumeSet"
+metadata:
+  name: "local-disks"
+spec:
+  storageClassName: "localblock-sc"
+  volumeMode: Block
+  deviceInclusionSpec:
+    deviceTypes:
+      - "disk"
