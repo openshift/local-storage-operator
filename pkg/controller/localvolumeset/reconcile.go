@@ -32,7 +32,7 @@ type LocalVolumeSetReconciler struct {
 	client    client.Client
 	scheme    *runtime.Scheme
 	reqLogger logr.Logger
-	lvSetMap  *lvSetMapStore
+	lvSetMap  *common.StorageClassOwnerMap
 }
 
 // Reconcile reads that state of the cluster for a LocalVolumeSet object and makes changes based on the state read
@@ -56,7 +56,7 @@ func (r *LocalVolumeSetReconciler) reconcile(request reconcile.Request) (reconci
 			// Request object not found, could have been deleted after reconcile request.
 			// Owned objects are automatically garbage collected. For additional cleanup logic use finalizers.
 			// Return and don't requeue
-			r.lvSetMap.deregisterLocalVolumeSet(lvSet.Spec.StorageClassName, request.NamespacedName)
+			r.lvSetMap.DeregisterStorageClassOwner(lvSet.Spec.StorageClassName, request.NamespacedName)
 			return reconcile.Result{}, nil
 		}
 		// Error reading the object - requeue the request.
@@ -65,7 +65,7 @@ func (r *LocalVolumeSetReconciler) reconcile(request reconcile.Request) (reconci
 	}
 
 	// store a one to many association from storageClass to LocalVolumeSet
-	r.lvSetMap.registerLocalVolumeSet(lvSet.Spec.StorageClassName, request.NamespacedName)
+	r.lvSetMap.RegisterStorageClassOwner(lvSet.Spec.StorageClassName, request.NamespacedName)
 
 	// The diskmaker daemonset, local-staic-provisioner daemonset and configmap are created in pkg/daemon
 	// this way, there can be one daemonset for all LocalVolumeSets

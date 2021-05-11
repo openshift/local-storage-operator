@@ -1,4 +1,4 @@
-package localvolumeset
+package common
 
 import (
 	"sync"
@@ -6,14 +6,15 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 )
 
-// store a one to many association from storageClass to LocalVolumeSet,
-// so that one PV event can fan out requests to all LocalVolumeSets.
-type lvSetMapStore struct {
+// StorageClassOwnerMap
+// store a one to many association from storageClass to storageclass owner (LocalVolume,LocalVolumeSet,etc),
+// so that one PV/SC event can fan out requests to all owners.
+type StorageClassOwnerMap struct {
 	storageClassMap map[string]map[types.NamespacedName]struct{}
 	mux             sync.Mutex
 }
 
-func (l *lvSetMapStore) getLocalVolumeSets(storageClass string) []types.NamespacedName {
+func (l *StorageClassOwnerMap) GetStorageClassOwners(storageClass string) []types.NamespacedName {
 	l.mux.Lock()
 	defer l.mux.Unlock()
 	if len(l.storageClassMap) < 1 {
@@ -33,7 +34,7 @@ func (l *lvSetMapStore) getLocalVolumeSets(storageClass string) []types.Namespac
 	return result
 }
 
-func (l *lvSetMapStore) registerLocalVolumeSet(storageClass string, name types.NamespacedName) {
+func (l *StorageClassOwnerMap) RegisterStorageClassOwner(storageClass string, name types.NamespacedName) {
 	l.mux.Lock()
 	defer l.mux.Unlock()
 	if len(l.storageClassMap) < 1 {
@@ -50,7 +51,7 @@ func (l *lvSetMapStore) registerLocalVolumeSet(storageClass string, name types.N
 	return
 }
 
-func (l *lvSetMapStore) deregisterLocalVolumeSet(storageClass string, name types.NamespacedName) {
+func (l *StorageClassOwnerMap) DeregisterStorageClassOwner(storageClass string, name types.NamespacedName) {
 	l.mux.Lock()
 	defer l.mux.Unlock()
 	if len(l.storageClassMap) < 1 {

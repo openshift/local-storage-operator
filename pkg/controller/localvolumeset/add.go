@@ -9,6 +9,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 
 	"sigs.k8s.io/controller-runtime/pkg/handler"
@@ -27,7 +28,7 @@ const (
 func AddLocalVolumeSetReconciler(mgr manager.Manager) error {
 
 	// an association from storageclass to localvolumesets
-	lvSetMap := &lvSetMapStore{}
+	lvSetMap := &common.StorageClassOwnerMap{}
 
 	r := &LocalVolumeSetReconciler{client: mgr.GetClient(), scheme: mgr.GetScheme(), lvSetMap: lvSetMap}
 	// Create a new controller
@@ -61,19 +62,54 @@ func AddLocalVolumeSetReconciler(mgr manager.Manager) error {
 		return err
 	}
 
-	// Watch for changes to secondary resource PersistentVolume and requeue the LocalVolumeSet
+	//  watch for storageclass, enqueue owner
 	err = c.Watch(&source.Kind{Type: &corev1.PersistentVolume{}}, &handler.EnqueueRequestsFromMapFunc{
 		ToRequests: handler.ToRequestsFunc(func(obj handler.MapObject) []reconcile.Request {
 			pv, ok := obj.Object.(*corev1.PersistentVolume)
 			if !ok {
 				return []reconcile.Request{}
 			}
-			names := lvSetMap.getLocalVolumeSets(pv.Spec.StorageClassName)
+
+			names := lvSetMap.GetStorageClassOwners(pv.Spec.StorageClassName)
 			reqs := make([]reconcile.Request, 0)
 			for _, name := range names {
 				reqs = append(reqs, reconcile.Request{NamespacedName: name})
 			}
 			return reqs
+		}),
+	})
+	if err != nil {
+		return err
+	}
+
+	// Watch for changes to owned resource PersistentVolume and enqueue the LocalVolumeSet
+	// so that the controller can update the status and finalizer(TODO) based on the owned PVs
+	err = c.Watch(&source.Kind{Type: &corev1.PersistentVolume{}}, &handler.EnqueueRequestsFromMapFunc{
+		ToRequests: handler.ToRequestsFunc(func(obj handler.MapObject) []reconcile.Request {
+
+			pv, ok := obj.Object.(*corev1.PersistentVolume)
+			if !ok {
+				return []reconcile.Request{}
+			}
+
+			// get owner
+			ownerName, found := pv.Labels[common.PVOwnerNameLabel]
+			if !found {
+				return []reconcile.Request{}
+			}
+			ownerNamespace, found := pv.Labels[common.PVOwnerNamespaceLabel]
+			if !found {
+				return []reconcile.Request{}
+			}
+
+			// skip LocalVolume owned PVs
+			ownerKind, found := pv.Labels[common.PVOwnerKindLabel]
+			if ownerKind != localv1alpha1.LocalVolumeSetKind || !found {
+				return []reconcile.Request{}
+			}
+			req := reconcile.Request{NamespacedName: types.NamespacedName{Name: ownerName, Namespace: ownerNamespace}}
+
+			return []reconcile.Request{req}
 		}),
 	})
 	if err != nil {

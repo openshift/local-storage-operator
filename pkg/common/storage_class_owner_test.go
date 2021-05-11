@@ -1,4 +1,4 @@
-package localvolumeset
+package common
 
 import (
 	"testing"
@@ -9,7 +9,7 @@ import (
 )
 
 func TestStorageClassMap(t *testing.T) {
-	m := &lvSetMapStore{}
+	m := &StorageClassOwnerMap{}
 	values := map[string][]types.NamespacedName{
 		"fast": []types.NamespacedName{
 			{Name: "fastdisks", Namespace: "local-storage"},
@@ -39,14 +39,14 @@ func TestStorageClassMap(t *testing.T) {
 	// register values
 	for storageClass, lvSets := range values {
 		for _, lvSet := range lvSets {
-			m.registerLocalVolumeSet(storageClass, lvSet)
+			m.RegisterStorageClassOwner(storageClass, lvSet)
 		}
 	}
 
 	// assert they are found
 	t.Log("asserting registered associations are found")
 	for storageClass, lvSets := range values {
-		foundLVSets := m.getLocalVolumeSets(storageClass)
+		foundLVSets := m.GetStorageClassOwners(storageClass)
 		for _, lvSet := range lvSets {
 			found := false
 			for _, foundLVSet := range foundLVSets {
@@ -62,14 +62,14 @@ func TestStorageClassMap(t *testing.T) {
 	// deregister some values
 	for storageClass, lvSets := range removeValues {
 		for _, lvSet := range lvSets {
-			m.deregisterLocalVolumeSet(storageClass, lvSet)
+			m.DeregisterStorageClassOwner(storageClass, lvSet)
 		}
 	}
 
 	// assert they are not found
 	t.Log("asserting deregistered associations are not found")
 	for storageClass, lvSets := range removeValues {
-		foundLVSets := m.getLocalVolumeSets(storageClass)
+		foundLVSets := m.GetStorageClassOwners(storageClass)
 		for _, lvSet := range lvSets {
 			found := false
 			for _, foundLVSet := range foundLVSets {

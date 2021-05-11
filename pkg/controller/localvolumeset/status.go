@@ -44,7 +44,7 @@ func (r *LocalVolumeSetReconciler) updateDaemonSetsCondition(request reconcile.R
 	err = r.client.Get(context.TODO(), request.NamespacedName, lvSet)
 	if err != nil {
 		if kerrors.IsNotFound(err) {
-			r.lvSetMap.deregisterLocalVolumeSet(lvSet.Spec.StorageClassName, request.NamespacedName)
+			r.lvSetMap.DeregisterStorageClassOwner(lvSet.Spec.StorageClassName, request.NamespacedName)
 			return nil
 		}
 		return fmt.Errorf("failed to get localvolumeset: %w", err)
@@ -68,7 +68,7 @@ func (r *LocalVolumeSetReconciler) updateTotalProvisionedDeviceCountStatus(reque
 	err := r.client.Get(context.TODO(), request.NamespacedName, lvSet)
 	if err != nil {
 		if kerrors.IsNotFound(err) {
-			r.lvSetMap.deregisterLocalVolumeSet(lvSet.Spec.StorageClassName, request.NamespacedName)
+			r.lvSetMap.DeregisterStorageClassOwner(lvSet.Spec.StorageClassName, request.NamespacedName)
 			return nil
 		}
 		return fmt.Errorf("failed to get localvolumeset: %w", err)
@@ -98,7 +98,7 @@ func (r *LocalVolumeSetReconciler) addAvailabilityConditions(request reconcile.R
 	err := r.client.Get(context.TODO(), request.NamespacedName, lvSet)
 	if err != nil {
 		if kerrors.IsNotFound(err) {
-			r.lvSetMap.deregisterLocalVolumeSet(lvSet.Spec.StorageClassName, request.NamespacedName)
+			r.lvSetMap.DeregisterStorageClassOwner(lvSet.Spec.StorageClassName, request.NamespacedName)
 			return result, err
 		}
 		return result, fmt.Errorf("failed to get localvolumeset: %w", err)
