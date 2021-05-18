@@ -3,7 +3,7 @@ package v1
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	"github.com/openshift/api/config/v1"
+	configv1 "github.com/openshift/api/config/v1"
 )
 
 // +genclient
@@ -31,6 +31,35 @@ type ConsoleSpec struct {
 	Customization ConsoleCustomization `json:"customization"`
 	// providers contains configuration for using specific service providers.
 	Providers ConsoleProviders `json:"providers"`
+	// route contains hostname and secret reference that contains the serving certificate.
+	// If a custom route is specified, a new route will be created with the
+	// provided hostname, under which console will be available.
+	// In case of custom hostname uses the default routing suffix of the cluster,
+	// the Secret specification for a serving certificate will not be needed.
+	// In case of custom hostname points to an arbitrary domain, manual DNS configurations steps are necessary.
+	// The default console route will be maintained to reserve the default hostname
+	// for console if the custom route is removed.
+	// If not specified, default route will be used.
+	// +optional
+	Route ConsoleConfigRoute `json:"route"`
+	// plugins defines a list of enabled console plugin names.
+	// +optional
+	Plugins []string `json:"plugins,omitempty"`
+}
+
+// ConsoleConfigRoute holds information on external route access to console.
+type ConsoleConfigRoute struct {
+	// hostname is the desired custom domain under which console will be available.
+	Hostname string `json:"hostname"`
+	// secret points to secret in the openshift-config namespace that contains custom
+	// certificate and key and needs to be created manually by the cluster admin.
+	// Referenced Secret is required to contain following key value pairs:
+	// - "tls.crt" - to specifies custom certificate
+	// - "tls.key" - to specifies private key of the custom certificate
+	// If the custom hostname uses the default routing suffix of the cluster,
+	// the Secret specification for a serving certificate will not be needed.
+	// +optional
+	Secret configv1.SecretNameReference `json:"secret"`
 }
 
 // ConsoleStatus defines the observed status of the Console.
@@ -63,6 +92,7 @@ type ConsoleCustomization struct {
 	// of the web console.  Providing documentationBaseURL will override the default
 	// documentation URL.
 	// Invalid value will prevent a console rollout.
+	// +kubebuilder:validation:Pattern=`^$|^((https):\/\/?)[^\s()<>]+(?:\([\w\d]+\)|([^[:punct:]\s]|\/?))\/$`
 	DocumentationBaseURL string `json:"documentationBaseURL,omitempty"`
 	// customProductName is the name that will be displayed in page titles, logo alt text, and the about dialog
 	// instead of the normal OpenShift product name.
@@ -78,10 +108,83 @@ type ConsoleCustomization struct {
 	// Dimensions: Max height of 68px and max width of 200px
 	// SVG format preferred
 	// +optional
-	CustomLogoFile v1.ConfigMapFileReference `json:"customLogoFile,omitempty"`
+	CustomLogoFile configv1.ConfigMapFileReference `json:"customLogoFile,omitempty"`
+	// developerCatalog allows to configure the shown developer catalog categories.
+	// +kubebuilder:validation:Optional
+	// +optional
+	DeveloperCatalog DeveloperConsoleCatalogCustomization `json:"developerCatalog,omitempty"`
+	// projectAccess allows customizing the available list of ClusterRoles in the Developer perspective
+	// Project access page which can be used by a project admin to specify roles to other users and
+	// restrict access within the project. If set, the list will replace the default ClusterRole options.
+	// +kubebuilder:validation:Optional
+	// +optional
+	ProjectAccess ProjectAccess `json:"projectAccess,omitempty"`
+	// quickStarts allows customization of available ConsoleQuickStart resources in console.
+	// +kubebuilder:validation:Optional
+	// +optional
+	QuickStarts QuickStarts `json:"quickStarts,omitempty"`
+}
+
+// ProjectAccess contains options for project access roles
+type ProjectAccess struct {
+	// availableClusterRoles is the list of ClusterRole names that are assignable to users
+	// through the project access tab.
+	// +kubebuilder:validation:Optional
+	// +optional
+	AvailableClusterRoles []string `json:"availableClusterRoles,omitempty"`
+}
+
+// DeveloperConsoleCatalogCustomization allow cluster admin to configure developer catalog.
+type DeveloperConsoleCatalogCustomization struct {
+	// categories which are shown in the developer catalog.
+	// +kubebuilder:validation:Optional
+	// +optional
+	Categories []DeveloperConsoleCatalogCategory `json:"categories,omitempty"`
+}
+
+// DeveloperConsoleCatalogCategoryMeta are the key identifiers of a developer catalog category.
+type DeveloperConsoleCatalogCategoryMeta struct {
+	// ID is an identifier used in the URL to enable deep linking in console.
+	// ID is required and must have 1-32 URL safe (A-Z, a-z, 0-9, - and _) characters.
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=32
+	// +kubebuilder:validation:Pattern=`^[A-Za-z0-9-_]+$`
+	// +required
+	ID string `json:"id"`
+	// label defines a category display label. It is required and must have 1-64 characters.
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=64
+	// +required
+	Label string `json:"label"`
+	// tags is a list of strings that will match the category. A selected category
+	// show all items which has at least one overlapping tag between category and item.
+	// +kubebuilder:validation:Optional
+	// +optional
+	Tags []string `json:"tags,omitempty"`
+}
+
+// DeveloperConsoleCatalogCategory for the developer console catalog.
+type DeveloperConsoleCatalogCategory struct {
+	// defines top level category ID, label and filter tags.
+	DeveloperConsoleCatalogCategoryMeta `json:",inline"`
+	// subcategories defines a list of child categories.
+	// +kubebuilder:validation:Optional
+	// +optional
+	Subcategories []DeveloperConsoleCatalogCategoryMeta `json:"subcategories,omitempty"`
+}
+
+// QuickStarts allow cluster admins to customize available ConsoleQuickStart resources.
+type QuickStarts struct {
+	// disabled is a list of ConsoleQuickStart resource names that are not shown to users.
+	// +kubebuilder:validation:Optional
+	// +optional
+	Disabled []string `json:"disabled,omitempty"`
 }
 
 // Brand is a specific supported brand within the console.
+// +kubebuilder:validation:Pattern=`^$|^(ocp|origin|okd|dedicated|online|azure)$`
 type Brand string
 
 const (
