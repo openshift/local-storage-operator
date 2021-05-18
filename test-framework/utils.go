@@ -5,15 +5,24 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
+	homedir "github.com/mitchellh/go-homedir"
+	"github.com/rogpeppe/go-internal/modfile"
 	log "github.com/sirupsen/logrus"
 	k8syaml "k8s.io/apimachinery/pkg/util/yaml"
 )
 
-const GoModEnv = "GO111MODULE"
+const (
+	GoModEnv  = "GO111MODULE"
+	goModFile = "go.mod"
+	GoPathEnv = "GOPATH"
+	SrcDir    = "src"
+)
 
 var validVendorCmds = map[string]struct{}{
 	"build":   struct{}{},
@@ -23,6 +32,14 @@ var validVendorCmds = map[string]struct{}{
 	"list":    struct{}{},
 	"run":     struct{}{},
 	"test":    struct{}{},
+}
+
+func getHomeDir() (string, error) {
+	hd, err := homedir.Dir()
+	if err != nil {
+		return "", err
+	}
+	return homedir.Expand(hd)
 }
 
 func ExecCmd(cmd *exec.Cmd) error {
@@ -75,6 +92,93 @@ func GoCmd(cmd string, opts GoCmdOptions) error {
 	c := exec.Command("go", bargs...)
 	opts.setCmdFields(c)
 	return ExecCmd(c)
+}
+
+// TODO(hasbro17): If this function is called in the subdir of
+// a module project it will fail to parse go.mod and return
+// the correct import path.
+// This needs to be fixed to return the pkg import path for any subdir
+// in order for `generate csv` to correctly form pkg imports
+// for API pkg paths that are not relative to the root dir.
+// This might not be fixable since there is no good way to
+// get the project root from inside the subdir of a module project.
+//
+// GetGoPkg returns the current directory's import path by parsing it from
+// wd if this project's repository path is rooted under $GOPATH/src, or
+// from go.mod the project uses Go modules to manage dependencies.
+// If the project has a go.mod then wd must be the project root.
+//
+// Example: "github.com/example-inc/app-operator"
+func GetGoPkg() string {
+	// Default to reading from go.mod, as it should usually have the (correct)
+	// package path, and no further processing need be done on it if so.
+	if _, err := os.Stat(goModFile); err != nil && !os.IsNotExist(err) {
+		log.Fatalf("Failed to read go.mod: %v", err)
+	} else if err == nil {
+		b, err := ioutil.ReadFile(goModFile)
+		if err != nil {
+			log.Fatalf("Read go.mod: %v", err)
+		}
+		mf, err := modfile.Parse(goModFile, b, nil)
+		if err != nil {
+			log.Fatalf("Parse go.mod: %v", err)
+		}
+		if mf.Module != nil && mf.Module.Mod.Path != "" {
+			return mf.Module.Mod.Path
+		}
+	}
+
+	// Then try parsing package path from $GOPATH (set env or default).
+	goPath, ok := os.LookupEnv(GoPathEnv)
+	if !ok || goPath == "" {
+		hd, err := getHomeDir()
+		if err != nil {
+			log.Fatal(err)
+		}
+		goPath = filepath.Join(hd, "go", "src")
+	} else {
+		// MustSetWdGopath is necessary here because the user has set GOPATH,
+		// which could be a path list.
+		goPath = MustSetWdGopath(goPath)
+	}
+	if !strings.HasPrefix(MustGetwd(), goPath) {
+		log.Fatal("Could not determine project repository path: $GOPATH not set, wd in default $HOME/go/src," +
+			" or wd does not contain a go.mod")
+	}
+	return parseGoPkg(goPath)
+}
+
+// MustSetWdGopath sets GOPATH to the first element of the path list in
+// currentGopath that prefixes the wd, then returns the set path.
+// If GOPATH cannot be set, MustSetWdGopath exits.
+func MustSetWdGopath(currentGopath string) string {
+	var (
+		newGopath   string
+		cwdInGopath bool
+		wd          = MustGetwd()
+	)
+	for _, newGopath = range filepath.SplitList(currentGopath) {
+		if strings.HasPrefix(filepath.Dir(wd), newGopath) {
+			cwdInGopath = true
+			break
+		}
+	}
+	if !cwdInGopath {
+		log.Fatalf("Project not in $GOPATH")
+	}
+	if err := os.Setenv(GoPathEnv, newGopath); err != nil {
+		log.Fatal(err)
+	}
+	return newGopath
+}
+
+func parseGoPkg(gopath string) string {
+	goSrc := filepath.Join(gopath, SrcDir)
+	wd := MustGetwd()
+	pathedPkg := strings.Replace(wd, goSrc, "", 1)
+	// Make sure package only contains the "/" separator and no others, and
+	// trim any leading/trailing "/".
+	return strings.Trim(filepath.ToSlash(pathedPkg), "/")
 }
 
 func (opts GoCmdOptions) getGeneralArgsWithCmd(cmd string) ([]string, error) {
@@ -171,9 +275,8 @@ type Scanner struct {
 
 const maxExecutiveEmpties = 100
 
-func NewYAMLScanner(b []byte) *Scanner {
-	r := bufio.NewReader(bytes.NewBuffer(b))
-	return &Scanner{reader: k8syaml.NewYAMLReader(r)}
+func NewYAMLScanner(r io.Reader) *Scanner {
+	return &Scanner{reader: k8syaml.NewYAMLReader(bufio.NewReader(r))}
 }
 
 func (s *Scanner) Scan() bool {

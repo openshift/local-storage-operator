@@ -9,11 +9,11 @@ import (
 	"testing"
 	"time"
 
-	localapisv1 "github.com/openshift/local-storage-operator/pkg/apis"
-	localv1 "github.com/openshift/local-storage-operator/pkg/apis/local/v1"
-	localv1alpha1 "github.com/openshift/local-storage-operator/pkg/apis/local/v1alpha1"
-	framework "github.com/operator-framework/operator-sdk/pkg/test"
-	"github.com/operator-framework/operator-sdk/pkg/test/e2eutil"
+	"github.com/openshift/local-storage-operator/api"
+	localv1 "github.com/openshift/local-storage-operator/api/v1"
+	localv1alpha1 "github.com/openshift/local-storage-operator/api/v1alpha1"
+	framework "github.com/openshift/local-storage-operator/test-framework"
+	"github.com/openshift/local-storage-operator/test-framework/e2eutil"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -27,7 +27,7 @@ var (
 	// testmap is a map from test-name to test-wrapper.
 	// test-wrapper returns a func that can be run with t.Run(func(*testing.T), but
 	// has access to a framework.Context and cleanupFuncs via closure.
-	testMap = map[string]func(*framework.Context, *[]cleanupFn) func(*testing.T){
+	testMap = map[string]func(*framework.TestCtx, *[]cleanupFn) func(*testing.T){
 		"LocalVolumeDiscovery": LocalVolumeDiscoveryTest,
 		"LocalVolume":          LocalVolumeTest,
 		"LocalVolumeSet":       LocalVolumeSetTest,
@@ -45,18 +45,34 @@ func TestLocalStorage(t *testing.T) {
 
 	// register CRD schemes
 	localVolumeDiscoveryList := &localv1alpha1.LocalVolumeDiscoveryList{}
-	err := framework.AddToFrameworkScheme(localapisv1.AddToScheme, localVolumeDiscoveryList)
+	err := framework.AddToFrameworkScheme(api.AddToScheme, localVolumeDiscoveryList)
+	if err != nil {
+		t.Fatalf("error adding local volume discovery list : %v", err)
+	}
+	err = framework.AddToFrameworkScheme(localv1.AddToScheme, localVolumeDiscoveryList)
+	if err != nil {
+		t.Fatalf("error adding local volume discovery list : %v", err)
+	}
+	err = framework.AddToFrameworkScheme(localv1alpha1.AddToScheme, localVolumeDiscoveryList)
 	if err != nil {
 		t.Fatalf("error adding local volume discovery list : %v", err)
 	}
 
 	localVolumeList := &localv1.LocalVolumeList{}
-	err = framework.AddToFrameworkScheme(localapisv1.AddToScheme, localVolumeList)
+	err = framework.AddToFrameworkScheme(localv1.AddToScheme, localVolumeList)
+	if err != nil {
+		t.Fatalf("error adding local volume list : %v", err)
+	}
+	err = framework.AddToFrameworkScheme(localv1alpha1.AddToScheme, localVolumeList)
 	if err != nil {
 		t.Fatalf("error adding local volume list : %v", err)
 	}
 	localVolumeSetList := &localv1alpha1.LocalVolumeSetList{}
-	err = framework.AddToFrameworkScheme(localapisv1.AddToScheme, localVolumeSetList)
+	err = framework.AddToFrameworkScheme(localv1.AddToScheme, localVolumeSetList)
+	if err != nil {
+		t.Fatalf("error adding local volume set list : %v", err)
+	}
+	err = framework.AddToFrameworkScheme(localv1alpha1.AddToScheme, localVolumeSetList)
 	if err != nil {
 		t.Fatalf("error adding local volume set list : %v", err)
 	}

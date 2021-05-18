@@ -3,6 +3,7 @@ module github.com/openshift/local-storage-operator
 go 1.16
 
 require (
+	github.com/aws/aws-sdk-go v1.35.24
 	github.com/ghodss/yaml v1.0.0
 	github.com/go-logr/logr v0.4.0
 	github.com/google/go-cmp v0.5.5 // indirect
@@ -10,30 +11,35 @@ require (
 	github.com/onsi/ginkgo v1.15.0
 	github.com/onsi/gomega v1.10.5
 	github.com/openshift/api v0.0.0-20210412212256-79bd8cfbbd59
-	github.com/openshift/client-go v3.9.0+incompatible
+	github.com/openshift/client-go v0.0.0-20210331195552-cf6c2669e01f
+	//	github.com/openshift/client-go v3.9.0+incompatible
 	github.com/openshift/library-go v0.0.0-20210419120351-ed14b5b9c873
+	github.com/pborman/uuid v1.2.0
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/common v0.21.0
+	github.com/sirupsen/logrus v1.7.0
 	github.com/spf13/cobra v1.1.1
 	github.com/stretchr/testify v1.6.1
 	golang.org/x/net v0.0.0-20210410081132-afb366fc7cd1 // indirect
 	golang.org/x/sys v0.0.0-20210330210617-4fbd30eecc44
 	k8s.io/api v0.21.0
-	k8s.io/apimachinery v0.21.0
-	k8s.io/client-go v0.21.0
+	k8s.io/apiextensions-apiserver v0.21.0
+	k8s.io/apimachinery v0.22.0-alpha.0.0.20210417144234-8daf28983e6e
+	k8s.io/client-go v1.5.2
+	//	k8s.io/client-go v12.0.0+incompatible
 	k8s.io/component-helpers v0.21.0
 	k8s.io/klog v1.0.0
 	k8s.io/kubernetes v1.21.0 // indirect
 	k8s.io/utils v0.0.0-20210305010621-2afb4311ab10
 	sigs.k8s.io/controller-runtime v0.9.0-alpha.1.0.20210421233541-d5d255154adb
 	sigs.k8s.io/sig-storage-local-static-provisioner v0.0.0-20210414025242-c96e27d784e2
-	sigs.k8s.io/structured-merge-diff/v4 v4.1.1 // indirect
 )
 
 replace (
 	k8s.io/api => k8s.io/api v0.21.0
 	k8s.io/apiextensions-apiserver => k8s.io/apiextensions-apiserver v0.21.0
-	k8s.io/apimachinery => k8s.io/apimachinery v0.21.0
+	//	k8s.io/apimachinery => k8s.io/apimachinery v0.21.0
+	k8s.io/apimachinery => k8s.io/apimachinery v0.22.0-alpha.0.0.20210417144234-8daf28983e6e
 	k8s.io/apiserver => k8s.io/apiserver v0.21.0
 	k8s.io/cli-runtime => k8s.io/cli-runtime v0.21.0
 	k8s.io/client-go => k8s.io/client-go v0.21.0

@@ -21,6 +21,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/util/retry"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	dynclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -31,11 +32,11 @@ type frameworkClient struct {
 var _ FrameworkClient = &frameworkClient{}
 
 type FrameworkClient interface {
-	Get(gCtx goctx.Context, key dynclient.ObjectKey, obj dynclient.Object) error
-	List(gCtx goctx.Context, list dynclient.ObjectList, opts ...dynclient.ListOption) error
-	Create(gCtx goctx.Context, obj dynclient.Object, cleanupOptions *CleanupOptions) error
-	Delete(gCtx goctx.Context, obj dynclient.Object, opts ...dynclient.DeleteOption) error
-	Update(gCtx goctx.Context, obj dynclient.Object) error
+	Get(gCtx goctx.Context, key dynclient.ObjectKey, obj client.Object) error
+	List(gCtx goctx.Context, list client.ObjectList, opts ...dynclient.ListOption) error
+	Create(gCtx goctx.Context, obj client.Object, cleanupOptions *CleanupOptions) error
+	Delete(gCtx goctx.Context, obj client.Object, opts ...dynclient.DeleteOption) error
+	Update(gCtx goctx.Context, obj client.Object) error
 }
 
 func retryOnAnyError(err error) bool {
@@ -45,9 +46,8 @@ func retryOnAnyError(err error) bool {
 // Create uses the dynamic client to create an object and then adds a
 // cleanup function to delete it when Cleanup is called. In addition to
 // the standard controller-runtime client options
-func (f *frameworkClient) Create(gCtx goctx.Context, obj dynclient.Object, cleanupOptions *CleanupOptions) error {
-	//		objCopy := obj.DeepCopyObject()
-	obj.DeepCopyObject()
+func (f *frameworkClient) Create(gCtx goctx.Context, obj client.Object, cleanupOptions *CleanupOptions) error {
+	objCopy := obj.DeepCopyObject()
 	err := f.Client.Create(gCtx, obj)
 	if err != nil {
 		return err
@@ -56,10 +56,12 @@ func (f *frameworkClient) Create(gCtx goctx.Context, obj dynclient.Object, clean
 	if cleanupOptions == nil || cleanupOptions.TestContext == nil {
 		return nil
 	}
+
 	key := dynclient.ObjectKeyFromObject(obj)
 	// this function fails silently if t is nil
 	if cleanupOptions.TestContext.t != nil {
-		cleanupOptions.TestContext.t.Logf("resource type %+v with namespace/name (%+v) created\n", obj.GetObjectKind().GroupVersionKind().Kind, key)
+		cleanupOptions.TestContext.t.Logf("resource type %+v with namespace/name (%+v) created\n",
+			objCopy.GetObjectKind().GroupVersionKind().Kind, key)
 	}
 	cleanupOptions.TestContext.AddCleanupFn(func() error {
 		err = retry.OnError(retry.DefaultRetry, retryOnAnyError, func() error {
@@ -79,14 +81,17 @@ func (f *frameworkClient) Create(gCtx goctx.Context, obj dynclient.Object, clean
 				if err != nil {
 					if apierrors.IsNotFound(err) {
 						if cleanupOptions.TestContext.t != nil {
-							cleanupOptions.TestContext.t.Logf("resource type %+v with namespace/name (%+v) successfully deleted\n", obj.GetObjectKind().GroupVersionKind().Kind, key)
+							cleanupOptions.TestContext.t.Logf("resource type %+v with namespace/name (%+v)"+
+								" successfully deleted\n", objCopy.GetObjectKind().GroupVersionKind().Kind, key)
 						}
 						return true, nil
 					}
-					return false, fmt.Errorf("error encountered during deletion of resource type %v with namespace/name (%+v): %w", obj.GetObjectKind().GroupVersionKind().Kind, key, err)
+					return false, fmt.Errorf("error encountered during deletion of resource type %v with"+
+						" namespace/name (%+v): %v", objCopy.GetObjectKind().GroupVersionKind().Kind, key, err)
 				}
 				if cleanupOptions.TestContext.t != nil {
-					cleanupOptions.TestContext.t.Logf("waiting for deletion of resource type %+v with namespace/name (%+v)\n", obj.GetObjectKind().GroupVersionKind().Kind, key)
+					cleanupOptions.TestContext.t.Logf("waiting for deletion of resource type %+v with"+
+						" namespace/name (%+v)\n", objCopy.GetObjectKind().GroupVersionKind().Kind, key)
 				}
 				return false, nil
 			})
@@ -96,18 +101,18 @@ func (f *frameworkClient) Create(gCtx goctx.Context, obj dynclient.Object, clean
 	return nil
 }
 
-func (f *frameworkClient) Get(gCtx goctx.Context, key dynclient.ObjectKey, obj dynclient.Object) error {
+func (f *frameworkClient) Get(gCtx goctx.Context, key dynclient.ObjectKey, obj client.Object) error {
 	return f.Client.Get(gCtx, key, obj)
 }
 
-func (f *frameworkClient) List(gCtx goctx.Context, list dynclient.ObjectList, opts ...dynclient.ListOption) error {
+func (f *frameworkClient) List(gCtx goctx.Context, list client.ObjectList, opts ...dynclient.ListOption) error {
 	return f.Client.List(gCtx, list, opts...)
 }
 
-func (f *frameworkClient) Delete(gCtx goctx.Context, obj dynclient.Object, opts ...dynclient.DeleteOption) error {
+func (f *frameworkClient) Delete(gCtx goctx.Context, obj client.Object, opts ...dynclient.DeleteOption) error {
 	return f.Client.Delete(gCtx, obj, opts...)
 }
 
-func (f *frameworkClient) Update(gCtx goctx.Context, obj dynclient.Object) error {
+func (f *frameworkClient) Update(gCtx goctx.Context, obj client.Object) error {
 	return f.Client.Update(gCtx, obj)
 }

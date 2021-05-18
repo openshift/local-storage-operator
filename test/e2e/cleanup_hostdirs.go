@@ -7,9 +7,9 @@ import (
 	"time"
 
 	"github.com/onsi/gomega"
-	"github.com/openshift/local-storage-operator/pkg/common"
+	"github.com/openshift/local-storage-operator/common"
 
-	framework "github.com/operator-framework/operator-sdk/pkg/test"
+	framework "github.com/openshift/local-storage-operator/test-framework"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -17,7 +17,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 )
 
-func cleanupSymlinkDir(t *testing.T, ctx *framework.Context, nodeEnv []nodeDisks) error {
+func cleanupSymlinkDir(t *testing.T, ctx *framework.TestCtx, nodeEnv []nodeDisks) error {
 	t.Logf("cleaning up hostdirs")
 	f := framework.Global
 	matcher := gomega.NewWithT(t)
