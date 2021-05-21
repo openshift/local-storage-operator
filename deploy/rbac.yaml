@@ -59,6 +59,9 @@ rules:
   - list
   - watch
   - create
+  - update
+  - patch
+  - delete
 - apiGroups:
   - apps
   resourceNames:
