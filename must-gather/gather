@@ -9,11 +9,11 @@ for I in $(/usr/bin/oc get crd | grep local.storage.openshift.io | awk '{print $
 done
 
 lsoNamespace=$(/usr/bin/oc get subscription --all-namespaces | grep ${subscriptionName} | awk '{print $1}')
-for I in $(/usr/bin/oc get pod -n ${lsoNamespace} | tail -n +2 | awk '{print $1}'); do
+for I in $(oc get pod -n openshift-local-storage -o custom-columns=NAME:.metadata.name --no-headers); do
   pods+=($I)
 done
 
-object_collection_path=must-gather/namespaces/${lsoNamespace}
+object_collection_path=must-gather/namespaces/${lsoNamespace}/pods
 mkdir -p ${object_collection_path}
 
 for pod in ${pods[@]}; do
