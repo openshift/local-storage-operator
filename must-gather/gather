@@ -1,9 +1,23 @@
 #!/bin/bash
 
 resources=()
+pods=()
+subscriptionName="local-storage-operator"
 
 for I in $(/usr/bin/oc get crd | grep local.storage.openshift.io | awk '{print $1}'); do
   resources+=($I)
+done
+
+lsoNamespace=$(/usr/bin/oc get subscription --all-namespaces | grep ${subscriptionName} | awk '{print $1}')
+for I in $(/usr/bin/oc get pod -n ${lsoNamespace} | tail -n +2 | awk '{print $1}'); do
+  pods+=($I)
+done
+
+object_collection_path=must-gather/namespaces/${lsoNamespace}
+mkdir -p ${object_collection_path}
+
+for pod in ${pods[@]}; do
+  /usr/bin/oc logs ${pod} -n ${lsoNamespace}> ${object_collection_path}/${pod}.log
 done
 
 for resource in ${resources[@]}; do
