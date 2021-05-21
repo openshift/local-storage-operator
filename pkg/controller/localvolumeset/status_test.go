@@ -7,6 +7,7 @@ import (
 
 	operatorv1 "github.com/openshift/api/operator/v1"
 	localv1alpha1 "github.com/openshift/local-storage-operator/pkg/apis/local/v1alpha1"
+	"github.com/openshift/local-storage-operator/pkg/common"
 	"github.com/openshift/local-storage-operator/pkg/controller/nodedaemon"
 	"github.com/stretchr/testify/assert"
 	appsv1 "k8s.io/api/apps/v1"
@@ -37,7 +38,7 @@ func newFakeLocalVolumeSetReconciler(t *testing.T, objs ...runtime.Object) *Loca
 	return &LocalVolumeSetReconciler{
 		client:   client,
 		scheme:   scheme,
-		lvSetMap: &lvSetMapStore{},
+		lvSetMap: &common.StorageClassOwnerMap{},
 	}
 }
 

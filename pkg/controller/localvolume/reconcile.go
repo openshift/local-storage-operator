@@ -11,7 +11,6 @@ import (
 	"k8s.io/klog"
 
 	operatorv1 "github.com/openshift/api/operator/v1"
-	secv1client "github.com/openshift/client-go/security/clientset/versioned/typed/security/v1"
 	localv1 "github.com/openshift/local-storage-operator/pkg/apis/local/v1"
 	commontypes "github.com/openshift/local-storage-operator/pkg/common"
 	"github.com/openshift/local-storage-operator/pkg/controller/nodedaemon"
@@ -21,78 +20,13 @@ import (
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
-	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/controller"
-	"sigs.k8s.io/controller-runtime/pkg/handler"
-	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
-	"sigs.k8s.io/controller-runtime/pkg/source"
 )
 
-type localDiskData map[string]map[string]string
-
-const (
-	componentName       = "local-storage-operator"
-	localDiskLocation   = "/mnt/local-storage"
-	ownerNamespaceLabel = "local.storage.openshift.io/owner-namespace"
-	ownerNameLabel      = "local.storage.openshift.io/owner-name"
-
-	localVolumeFinalizer = "storage.openshift.com/local-volume-protection"
-)
-
-// ReconcileLocalVolume reconciles a LocalVolume object
-type ReconcileLocalVolume struct {
-	// This client, initialized using mgr.Client() above, is a split client
-	// that reads objects from the cache and writes to the apiserver
-	client            client.Client
-	secClient         secv1client.SecurityV1Interface
-	scheme            *runtime.Scheme
-	apiClient         apiUpdater
-	controllerVersion string
-
-	localStorageNameSpace string
-	localDiskLocation     string
-	provisonerConfigName  string
-	diskMakerConfigName   string
-}
-
-// Add creates a LocalVolume Controller and adds it to the Manager. The Manager will set fields on the Controller
-// and Start it when the Manager is Started.
-func Add(mgr manager.Manager) error {
-	return add(mgr, newReconciler(mgr))
-}
-
-func add(mgr manager.Manager, r reconcile.Reconciler) error {
-	// create a new controller
-	c, err := controller.New("localvolume-controller", mgr, controller.Options{Reconciler: r})
-	if err != nil {
-		return err
-	}
-	err = c.Watch(&source.Kind{Type: &localv1.LocalVolume{}}, &handler.EnqueueRequestForObject{})
-	if err != nil {
-		return err
-	}
-
-	err = c.Watch(&source.Kind{Type: &appsv1.DaemonSet{}}, &handler.EnqueueRequestForOwner{OwnerType: &localv1.LocalVolume{}})
-	if err != nil {
-		return err
-	}
-	err = c.Watch(&source.Kind{Type: &corev1.PersistentVolume{}}, &handler.EnqueueRequestForOwner{OwnerType: &localv1.LocalVolume{}})
-	if err != nil {
-		return err
-	}
-	return nil
-
-}
-
-func newReconciler(mgr manager.Manager) reconcile.Reconciler {
-	return &ReconcileLocalVolume{
-		localDiskLocation: localDiskLocation,
-		client:            mgr.GetClient(),
-		apiClient:         newAPIUpdater(mgr),
-		secClient:         secv1client.NewForConfigOrDie(mgr.GetConfig()),
-		scheme:            mgr.GetScheme(),
+func (r *ReconcileLocalVolume) deregisterLVFromStorageClass(lv localv1.LocalVolume) {
+	// store a one to many association from storageClass to LocalVolumeSet
+	for _, storageClassDeviceSet := range lv.Spec.StorageClassDevices {
+		r.lvMap.DeregisterStorageClassOwner(storageClassDeviceSet.StorageClassName, types.NamespacedName{Name: lv.Name, Namespace: lv.Namespace})
 	}
 }
 
@@ -103,12 +37,18 @@ func (r *ReconcileLocalVolume) Reconcile(request reconcile.Request) (reconcile.R
 	err := r.client.Get(context.TODO(), request.NamespacedName, localStorageProvider)
 	if err != nil {
 		if errors.IsNotFound(err) {
+			r.deregisterLVFromStorageClass(*localStorageProvider)
 			// Requested object not found, could have been deleted after reconcile request.
 			klog.Info("requested LocalVolume CR is not found, could have been deleted after the reconcile request")
 			return reconcile.Result{}, nil
 		}
 		return reconcile.Result{Requeue: true}, err
 	}
+	// store a one to many association from storageClass to LocalVolumeSet
+	for _, storageClassDeviceSet := range localStorageProvider.Spec.StorageClassDevices {
+		r.lvMap.RegisterStorageClassOwner(storageClassDeviceSet.StorageClassName, request.NamespacedName)
+	}
+
 	r.syncLocalVolumeProvider(localStorageProvider)
 	return reconcile.Result{}, nil
 }

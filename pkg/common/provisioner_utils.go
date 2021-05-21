@@ -153,7 +153,8 @@ func CreateLocalPV(
 		labels[key] = value
 	}
 	annotations := map[string]string{
-		PVDeviceNameLabel: deviceName,
+		PVDeviceNameLabel:           deviceName,
+		provCommon.AnnProvisionedBy: runtimeConfig.Name,
 	}
 	if idExists {
 		annotations[PVDeviceIDLabel] = filepath.Base(symLinkPath)

@@ -12,22 +12,29 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/runtime"
 )
 
 // name is only for logging
-func eventuallyDelete(t *testing.T, obj runtime.Object, name string) {
+func eventuallyDelete(t *testing.T, objs ...runtime.Object) {
 	f := framework.Global
-	kind := obj.GetObjectKind().GroupVersionKind().Kind
 	matcher := gomega.NewWithT(t)
-	matcher.Eventually(func() error {
-		t.Logf("deleting %v %q", kind, name)
-		err := f.Client.Delete(context.TODO(), obj)
-		if errors.IsNotFound(err) {
-			return nil
+	for _, obj := range objs {
+		accessor, err := meta.Accessor(obj)
+		if err != nil {
+			t.Fatalf("deletion failed, cannot get accessor for object: %+v, obj: %+v", err, obj)
 		}
-		return err
-	}, time.Minute*5, time.Second*5).ShouldNot(gomega.HaveOccurred(), "deleting %v %q", kind, name)
+		name := accessor.GetName()
+		matcher.Eventually(func() error {
+			t.Logf("deleting %q", name)
+			err := f.Client.Delete(context.TODO(), obj)
+			if errors.IsNotFound(err) {
+				return nil
+			}
+			return err
+		}, time.Minute*5, time.Second*5).ShouldNot(gomega.HaveOccurred(), "deleting %q", name)
+	}
 
 }
 

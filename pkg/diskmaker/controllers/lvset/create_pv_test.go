@@ -204,6 +204,7 @@ func TestCreatePV(t *testing.T) {
 		r, testConfig := newFakeLocalVolumeSetReconciler(t, &tc.lvset, &tc.node, &tc.sc)
 		r.nodeName = tc.node.Name
 		testConfig.runtimeConfig.Node = &tc.node
+		testConfig.runtimeConfig.Name = common.GetProvisionedByValue(tc.node)
 		testConfig.runtimeConfig.DiscoveryMap[tc.sc.Name] = provCommon.MountConfig{VolumeMode: tc.desiredVolMode}
 
 		fakeMap := map[string]string{
@@ -248,6 +249,11 @@ func TestCreatePV(t *testing.T) {
 		}
 		pv := &corev1.PersistentVolume{}
 		err = r.client.Get(context.TODO(), types.NamespacedName{Name: common.GeneratePVName(filepath.Base(tc.symlinkpath), tc.node.GetName(), tc.sc.GetName())}, pv)
+
+		// provisioned-by annotation accurate
+		actualProvName, found := pv.ObjectMeta.Annotations[provCommon.AnnProvisionedBy]
+		assert.True(t, found)
+		assert.Equal(t, testConfig.runtimeConfig.Name, actualProvName)
 
 		// capacity accurate
 		pvCapacity, found := pv.Spec.Capacity["storage"]

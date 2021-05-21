@@ -51,7 +51,8 @@ func cleanupSymlinkDir(t *testing.T, ctx *framework.Context, nodeEnv []nodeDisks
 					return err
 				}
 				if cleanupJob.CreationTimestamp.Before(&started) {
-					eventuallyDelete(t, &cleanupJob, fmt.Sprintf("existing %v", cleanupJob.GetName()))
+					cleanupJob.TypeMeta.Kind = "Job"
+					eventuallyDelete(t, &cleanupJob)
 					return err
 				}
 			}
@@ -79,8 +80,8 @@ func cleanupSymlinkDir(t *testing.T, ctx *framework.Context, nodeEnv []nodeDisks
 			t.Logf("job completions: %d", completions)
 			return completions
 		}, time.Minute*2, time.Second*5).Should(gomega.BeNumerically(">=", 1), "waiting cleanup job to complete: %q", cleanupJob.GetName())
-
-		eventuallyDelete(t, &cleanupJob, cleanupJob.GetName())
+		cleanupJob.TypeMeta.Kind = "Job"
+		eventuallyDelete(t, &cleanupJob)
 	}
 
 	return nil

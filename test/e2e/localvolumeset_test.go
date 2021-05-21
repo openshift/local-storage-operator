@@ -10,6 +10,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	provCommon "sigs.k8s.io/sig-storage-local-static-provisioner/pkg/common"
 
 	framework "github.com/operator-framework/operator-sdk/pkg/test"
 
@@ -280,7 +281,11 @@ func LocalVolumeSetTest(ctx *framework.Context, cleanupFuncs *[]cleanupFn) func(
 		err = f.Client.Create(context.TODO(), twentyToFiftyFilesystem, &framework.CleanupOptions{TestContext: ctx})
 		matcher.Expect(err).NotTo(gomega.HaveOccurred(), "create localvolumeset")
 
-		eventuallyFindPVs(t, f, twentyToFiftyFilesystem.Spec.StorageClassName, 2)
+		pvs := eventuallyFindPVs(t, f, twentyToFiftyFilesystem.Spec.StorageClassName, 2)
+
+		// verify pv annotation
+		t.Logf("looking for %q annotation on pvs", provCommon.AnnProvisionedBy)
+		verifyProvisionerAnnotation(t, pvs, nodeList.Items)
 
 		// expand twentyToFiftyFilesystem to all remaining devices by setting nil nodeSelector, maxDevices, and deviceInclusionSpec
 		// devices total: 15
@@ -328,8 +333,8 @@ func cleanupLVSetResources(t *testing.T, lvsets []*localv1alpha1.LocalVolumeSet)
 		matcher := gomega.NewWithT(t)
 		sc := &storagev1.StorageClass{ObjectMeta: metav1.ObjectMeta{Name: lvset.Spec.StorageClassName}}
 
-		eventuallyDelete(t, lvset, lvset.GetName())
-		eventuallyDelete(t, sc, sc.GetName())
+		eventuallyDelete(t, lvset)
+		eventuallyDelete(t, sc)
 		pvList := &corev1.PersistentVolumeList{}
 		t.Logf("listing pvs for lvset: %q", lvset.GetName())
 		matcher.Eventually(func() error {
@@ -340,7 +345,7 @@ func cleanupLVSetResources(t *testing.T, lvsets []*localv1alpha1.LocalVolumeSet)
 			t.Logf("Deleting %d PVs", len(pvList.Items))
 			for _, pv := range pvList.Items {
 				if pv.Spec.StorageClassName == lvset.Spec.StorageClassName {
-					eventuallyDelete(t, &pv, pv.GetName())
+					eventuallyDelete(t, &pv)
 				}
 			}
 			return nil

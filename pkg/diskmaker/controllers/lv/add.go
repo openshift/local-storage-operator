@@ -1,8 +1,6 @@
 package lv
 
 import (
-	"time"
-
 	"github.com/openshift/local-storage-operator/pkg/apis"
 	localv1 "github.com/openshift/local-storage-operator/pkg/apis/local/v1"
 	"github.com/openshift/local-storage-operator/pkg/common"
@@ -66,7 +64,6 @@ func Add(mgr manager.Manager, cleanupTracker *provDeleter.CleanupStatusTracker, 
 		deleter:         provDeleter.NewDeleter(runtimeConfig, cleanupTracker),
 	}
 	// Create a new controller
-	//	apis.AddToScheme(r.scheme)
 	c, err := controller.New(ComponentName, mgr, controller.Options{Reconciler: r})
 	if err != nil {
 		return err
@@ -129,7 +126,7 @@ func handlePVChange(runtimeConfig *provCommon.RuntimeConfig, pv *corev1.Persiste
 	if !found {
 		return
 	}
-	ownerNamespace, found := pv.Labels[common.PVOwnerNameLabel]
+	ownerNamespace, found := pv.Labels[common.PVOwnerNamespaceLabel]
 	if !found {
 		return
 	}
@@ -138,14 +135,7 @@ func handlePVChange(runtimeConfig *provCommon.RuntimeConfig, pv *corev1.Persiste
 		return
 	}
 
-	if isDelete {
-		// delayed reconcile so that the cleanup tracker has time to mark the PV cleaned up
-		time.Sleep(time.Second * 10)
-		q.Add(reconcile.Request{NamespacedName: types.NamespacedName{Name: ownerName, Namespace: ownerNamespace}})
-	} else {
-		q.Add(reconcile.Request{NamespacedName: types.NamespacedName{Name: ownerName, Namespace: ownerNamespace}})
-	}
-
+	q.Add(reconcile.Request{NamespacedName: types.NamespacedName{Name: ownerName, Namespace: ownerNamespace}})
 }
 
 type ReconcileLocalVolume struct {
