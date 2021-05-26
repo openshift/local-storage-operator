@@ -124,6 +124,77 @@ func (d *DiskMaker) Run(stop <-chan struct{}) {
 	}
 }
 
+func (d *DiskMaker) createSymLink(deviceNameLocation DiskLocation, symLinkDirPath string) {
+
+	var symLinkSource, symLinkTarget string
+	var isSymLinkedByDeviceName bool
+	if deviceNameLocation.diskID != "" {
+		symLinkSource = deviceNameLocation.diskID
+		symLinkTarget = getSymlinkTarget(deviceNameLocation.diskID, symLinkDirPath)
+	} else {
+		symLinkSource = deviceNameLocation.diskNamePath
+		symLinkTarget = getSymlinkTarget(deviceNameLocation.diskNamePath, symLinkDirPath)
+		isSymLinkedByDeviceName = true
+	}
+
+	// get PV creation lock which checks for existing symlinks to this device
+	pvLock, pvLocked, existingSymlinks, err := internal.GetPVCreationLock(
+		symLinkSource,
+		d.symlinkLocation,
+	)
+
+	unlockFunc := func() {
+		err := pvLock.Unlock()
+		if err != nil {
+			klog.Errorf("failed to unlock device: %+v", err)
+		}
+	}
+
+	defer unlockFunc()
+
+	if len(existingSymlinks) > 0 { // already claimed, fail silently
+		return
+	} else if err != nil || !pvLocked { // locking failed for some other reasion
+		klog.Errorf("not symlinking, could not get lock: %v", err)
+		return
+	}
+
+	err = os.MkdirAll(symLinkDirPath, 0755)
+	if err != nil {
+		msg := fmt.Sprintf("error creating symlink dir %s: %v", symLinkDirPath, err)
+		e := NewEvent(ErrorFindingMatchingDisk, msg, symLinkTarget)
+		d.eventSync.Report(e, d.localVolume)
+		klog.Errorf(msg)
+		return
+	}
+
+	if fileExists(symLinkTarget) {
+		klog.V(4).Infof("symlink %s already exists", symLinkTarget)
+		return
+	}
+
+	err = os.Symlink(symLinkSource, symLinkTarget)
+	if err != nil {
+		msg := fmt.Sprintf("error creating symlink %s: %v", symLinkTarget, err)
+		e := NewEvent(ErrorFindingMatchingDisk, msg, symLinkSource)
+		d.eventSync.Report(e, d.localVolume)
+		klog.Errorf(msg)
+		return
+	}
+
+	if isSymLinkedByDeviceName {
+		msg := fmt.Sprintf("created symlink on device name %s with no disk/by-id. device name might not persist on reboot", symLinkSource)
+		e := NewEvent(SymLinkedOnDeviceName, msg, symLinkSource)
+		d.eventSync.Report(e, d.localVolume)
+		klog.Warningf(msg)
+		return
+	}
+
+	successMsg := fmt.Sprintf("found matching disk %s with id %s", deviceNameLocation.diskNamePath, deviceNameLocation.diskID)
+	e := NewSuccessEvent(FoundMatchingDisk, successMsg, deviceNameLocation.diskNamePath)
+	d.eventSync.Report(e, d.localVolume)
+}
+
 func (d *DiskMaker) symLinkDisks(diskConfig *DiskConfig) {
 	// run command lsblk --all --noheadings --pairs --output "KNAME,PKNAME,TYPE,MOUNTPOINT"
 	// the reason we are using KNAME instead of NAME is because for lvm disks(and may be others)
@@ -192,69 +263,8 @@ func (d *DiskMaker) symLinkDisks(diskConfig *DiskConfig) {
 
 	for storageClass, deviceArray := range deviceMap {
 		for _, deviceNameLocation := range deviceArray {
-			//
 			symLinkDirPath := path.Join(d.symlinkLocation, storageClass)
-			baseDeviceName := filepath.Base(deviceNameLocation.diskNamePath)
-			symLinkPath := path.Join(symLinkDirPath, baseDeviceName)
-
-			// get PV creation lock which checks for existing symlinks to this device
-			pvLock, pvLocked, existingSymlinks, err := internal.GetPVCreationLock(
-				deviceNameLocation.diskNamePath,
-				d.symlinkLocation,
-			)
-			unlockFunc := func() {
-				err := pvLock.Unlock()
-				if err != nil {
-					klog.Errorf("failed to unlock device: %+v", err)
-				}
-			}
-			defer unlockFunc()
-			if len(existingSymlinks) > 0 { // already claimed, fail silently
-				e := NewEvent(DeviceSymlinkExists, "this device is already matched by another LocalVolume or LocalVolumeSet", symLinkPath)
-				d.eventSync.Report(e, d.localVolume)
-				unlockFunc()
-				continue
-			} else if err != nil || !pvLocked { // locking failed for some other reasion
-				klog.Errorf("not symlinking, could not get lock: %v", err)
-				unlockFunc()
-				continue
-			}
-
-			err = os.MkdirAll(symLinkDirPath, 0755)
-			if err != nil {
-				msg := fmt.Sprintf("error creating symlink dir %s: %v", symLinkDirPath, err)
-				e := NewEvent(ErrorFindingMatchingDisk, msg, symLinkPath)
-				d.eventSync.Report(e, d.localVolume)
-				unlockFunc()
-				klog.Errorf(msg)
-				continue
-			}
-
-			if fileExists(symLinkPath) {
-				unlockFunc()
-				klog.V(4).Infof("symlink %s already exists", symLinkPath)
-				continue
-			}
-
-			var symLinkErr error
-			if deviceNameLocation.diskID != "" {
-				klog.V(3).Infof("symlinking to %s to %s", deviceNameLocation.diskID, symLinkPath)
-				symLinkErr = os.Symlink(deviceNameLocation.diskID, symLinkPath)
-			} else {
-				klog.V(3).Infof("symlinking to %s to %s", deviceNameLocation.diskNamePath, symLinkPath)
-				symLinkErr = os.Symlink(deviceNameLocation.diskNamePath, symLinkPath)
-			}
-			if symLinkErr != nil {
-				msg := fmt.Sprintf("error creating symlink %s: %v", symLinkPath, symLinkErr)
-				e := NewEvent(ErrorFindingMatchingDisk, msg, deviceNameLocation.diskNamePath)
-				d.eventSync.Report(e, d.localVolume)
-				klog.Errorf(msg)
-			}
-			// unlock before proceeding
-			unlockFunc()
-			successMsg := fmt.Sprintf("found matching disk %s", baseDeviceName)
-			e := NewSuccessEvent(FoundMatchingDisk, successMsg, deviceNameLocation.diskNamePath)
-			d.eventSync.Report(e, d.localVolume)
+			d.createSymLink(deviceNameLocation, symLinkDirPath)
 		}
 	}
 
@@ -386,4 +396,9 @@ func fileExists(filename string) bool {
 		return false
 	}
 	return true
+}
+
+func getSymlinkTarget(device, symLinkDirPath string) string {
+	baseDeviceName := filepath.Base(device)
+	return path.Join(symLinkDirPath, baseDeviceName)
 }
