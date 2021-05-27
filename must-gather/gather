@@ -9,7 +9,7 @@ for I in $(/usr/bin/oc get crd | grep local.storage.openshift.io | awk '{print $
 done
 
 lsoNamespace=$(/usr/bin/oc get subscription --all-namespaces | grep ${subscriptionName} | awk '{print $1}')
-for I in $(oc get pod -n openshift-local-storage -o custom-columns=NAME:.metadata.name --no-headers); do
+for I in $(oc get pod -n ${lsoNamespace} -o custom-columns=NAME:.metadata.name --no-headers); do
   pods+=($I)
 done
 
