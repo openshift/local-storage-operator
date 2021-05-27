@@ -28,15 +28,7 @@ const (
 type apiUpdater interface {
 	syncStatus(oldInstance, newInstance *localv1.LocalVolume) error
 	updateLocalVolume(lv *localv1.LocalVolume) error
-	applyServiceAccount(serviceAccount *corev1.ServiceAccount) (*corev1.ServiceAccount, bool, error)
-	applyConfigMap(configmap *corev1.ConfigMap) (*corev1.ConfigMap, bool, error)
-	applyClusterRole(clusterRole *rbacv1.ClusterRole) (*rbacv1.ClusterRole, bool, error)
-	applyClusterRoleBinding(roleBinding *rbacv1.ClusterRoleBinding) (*rbacv1.ClusterRoleBinding, bool, error)
-	applyRole(role *rbacv1.Role) (*rbacv1.Role, bool, error)
-	applyRoleBinding(roleBinding *rbacv1.RoleBinding) (*rbacv1.RoleBinding, bool, error)
 	applyStorageClass(ctx context.Context, required *storagev1.StorageClass) (*storagev1.StorageClass, bool, error)
-	applyDaemonSet(ds *appsv1.DaemonSet, expectedGeneration int64, forceRollout bool) (*appsv1.DaemonSet, bool, error)
-	getDaemonSet(namespace, dsName string) (*appsv1.DaemonSet, error)
 	listStorageClasses(listOptions metav1.ListOptions) (*storagev1.StorageClassList, error)
 	listPersistentVolumes(listOptions metav1.ListOptions) (*corev1.PersistentVolumeList, error)
 	recordEvent(lv *localv1.LocalVolume, eventType, reason, messageFmt string, args ...interface{})
@@ -93,43 +85,8 @@ func (s *sdkAPIUpdater) syncStatus(oldInstance, newInstance *localv1.LocalVolume
 	return nil
 }
 
-func (s *sdkAPIUpdater) applyServiceAccount(sa *corev1.ServiceAccount) (*corev1.ServiceAccount, bool, error) {
-	return resourceapply.ApplyServiceAccount(s.clientset.CoreV1(), events.NewInMemoryRecorder(componentName), sa)
-}
-
-func (s *sdkAPIUpdater) applyConfigMap(configmap *corev1.ConfigMap) (*corev1.ConfigMap, bool, error) {
-	return resourceapply.ApplyConfigMap(s.clientset.CoreV1(), events.NewInMemoryRecorder(componentName), configmap)
-}
-
-func (s *sdkAPIUpdater) applyRole(role *rbacv1.Role) (*rbacv1.Role, bool, error) {
-	return resourceapply.ApplyRole(s.clientset.RbacV1(), events.NewInMemoryRecorder(componentName), role)
-}
-
-func (s *sdkAPIUpdater) applyRoleBinding(roleBinding *rbacv1.RoleBinding) (*rbacv1.RoleBinding, bool, error) {
-	return resourceapply.ApplyRoleBinding(s.clientset.RbacV1(), events.NewInMemoryRecorder(componentName), roleBinding)
-}
-
-func (s *sdkAPIUpdater) applyClusterRole(clusterRole *rbacv1.ClusterRole) (*rbacv1.ClusterRole, bool, error) {
-	return resourceapply.ApplyClusterRole(s.clientset.RbacV1(), events.NewInMemoryRecorder(componentName), clusterRole)
-}
-
-func (s *sdkAPIUpdater) applyClusterRoleBinding(roleBinding *rbacv1.ClusterRoleBinding) (*rbacv1.ClusterRoleBinding, bool, error) {
-	return resourceapply.ApplyClusterRoleBinding(s.clientset.RbacV1(), events.NewInMemoryRecorder(componentName), roleBinding)
-}
-
 func (s *sdkAPIUpdater) applyStorageClass(ctx context.Context, sc *storagev1.StorageClass) (*storagev1.StorageClass, bool, error) {
 	return applyStorageClass(ctx, s.clientset.StorageV1(), sc)
-}
-
-func (s *sdkAPIUpdater) applyDaemonSet(ds *appsv1.DaemonSet, expectedGeneration int64, forceRollout bool) (*appsv1.DaemonSet, bool, error) {
-	if forceRollout {
-		klog.Infof("Rolling out DaemonSet: %s/%s", ds.Name, ds.Namespace)
-	}
-	return resourceapply.ApplyDaemonSetWithForce(s.clientset.AppsV1(), events.NewInMemoryRecorder(componentName), ds, expectedGeneration, forceRollout)
-}
-
-func (s *sdkAPIUpdater) getDaemonSet(namespace, dsName string) (*appsv1.DaemonSet, error) {
-	return s.clientset.AppsV1().DaemonSets(namespace).Get(goctx.Background(), dsName, metav1.GetOptions{})
 }
 
 func (s *sdkAPIUpdater) listStorageClasses(listOptions metav1.ListOptions) (*storagev1.StorageClassList, error) {
