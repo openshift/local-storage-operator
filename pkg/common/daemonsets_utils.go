@@ -8,6 +8,10 @@ import (
 	corev1helper "k8s.io/kubernetes/pkg/apis/core/v1/helper"
 )
 
+const (
+	PriorityClassName = "openshift-user-critical"
+)
+
 func NodeSelectorMatchesNodeLabels(node *corev1.Node, nodeSelector *corev1.NodeSelector) (bool, error) {
 	if nodeSelector == nil {
 		return true, nil

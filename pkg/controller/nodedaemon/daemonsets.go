@@ -131,6 +131,7 @@ func getLocalProvisionerDSMutateFn(
 		ds.ObjectMeta.Annotations[dataHashAnnotationKey] = dataHash
 		ds.Spec.Template.Spec.Containers[0].Image = common.GetLocalProvisionerImage()
 		ds.Spec.Template.Spec.Containers[0].ImagePullPolicy = corev1.PullIfNotPresent
+
 		return nil
 	}
 }
@@ -195,6 +196,9 @@ func MutateAggregatedSpec(
 
 	// service account
 	ds.Spec.Template.Spec.ServiceAccountName = common.ProvisionerServiceAccount
+
+	// priority class
+	ds.Spec.Template.Spec.PriorityClassName = common.PriorityClassName
 
 	// tolerations
 	ds.Spec.Template.Spec.Tolerations = tolerations
