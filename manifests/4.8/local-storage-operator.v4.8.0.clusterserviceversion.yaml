@@ -312,6 +312,7 @@ spec:
                   name: local-storage-operator
               spec:
                 serviceAccountName: local-storage-operator
+                priorityClassName: openshift-user-critical
                 containers:
                   - name: local-storage-operator
                     image: quay.io/openshift/origin-local-storage-operator:latest
