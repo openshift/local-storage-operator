@@ -91,11 +91,14 @@ func TestLocalStorage(t *testing.T) {
 		stopChan := make(chan os.Signal)
 		signal.Notify(stopChan, os.Interrupt, syscall.SIGTERM)
 		go func() {
-			// block until interrupt recieved
-			<-stopChan
-			fmt.Println("\r- Interrupt recieved, cleaning up")
-			runCleanup()
-			os.Exit(1)
+			t.Log("listening for interrupt")
+			for range stopChan {
+				// block until interrupt recieved
+				fmt.Println("\r- Interrupt recieved, cleaning up")
+				t.Logf("running %d cleanup functions.", len(cleanupFuncs))
+				runCleanup()
+				os.Exit(1)
+			}
 
 		}()
 		// add context cleanup to cleanup funcs
@@ -116,6 +119,9 @@ func TestLocalStorage(t *testing.T) {
 		errs := runCleanup()
 		for _, err := range errs {
 			assert.NoErrorf(t, err, "expected cleanup step to succeed")
+		}
+		if t.Failed() {
+			t.Logf("============= Failed: %q =============================== ", testName)
 		}
 	}
 
@@ -139,7 +145,6 @@ func getCleanupRunner(t *testing.T, cleanupFuncs *[]cleanupFn) func() []error {
 			started = true
 			errs := make([]error, 0)
 			funcs := *cleanupFuncs
-			t.Logf("running %d cleanup functions.", len(funcs))
 			// run in reverse
 			for i := range funcs {
 				f := funcs[len(funcs)-(i+1)]
