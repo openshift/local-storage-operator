@@ -374,7 +374,7 @@ func LocalVolumeSetTest(ctx *framework.TestCtx, cleanupFuncs *[]cleanupFn) func(
 			eventuallyDelete(t, false, consumingObjectList...)
 			return nil
 		})
-		for _, pv := range fsPVs[:1] {
+		for _, pv := range fsPVs {
 			pvc, job, pod := consumePV(t, ctx, pv)
 			consumingObjectList = append(consumingObjectList, job, pvc, pod)
 		}
@@ -387,7 +387,7 @@ func LocalVolumeSetTest(ctx *framework.TestCtx, cleanupFuncs *[]cleanupFn) func(
 		t.Log("TEST: consumed block PVs are deleted and recreated upon release")
 		// record consuming objects for cleanup
 		consumingObjectList = make([]client.Object, 0)
-		for _, pv := range twentyToFiftyBlockPVs[:1] {
+		for _, pv := range twentyToFiftyBlockPVs {
 			pvc, job, pod := consumePV(t, ctx, pv)
 			consumingObjectList = append(consumingObjectList, job, pvc, pod)
 		}
@@ -425,7 +425,7 @@ func LocalVolumeSetTest(ctx *framework.TestCtx, cleanupFuncs *[]cleanupFn) func(
 			}
 			finalizers = twentyToFifty.GetFinalizers()
 			return len(finalizers) > 0
-		}, time.Second*15, time.Second*3).Should(gomega.BeTrue(), "checking finalizer exists with bound PVs")
+		}, time.Second*30, time.Second*5).Should(gomega.BeTrue(), "checking finalizer exists with bound PVs")
 		t.Logf("finalizers not removed with bound PVs: %q", finalizers)
 		// release PV
 		t.Logf("releasing pvs")
