@@ -2,11 +2,13 @@ package e2e
 
 import (
 	"context"
+	goctx "context"
 	"fmt"
 	"testing"
 	"time"
 
 	"github.com/onsi/gomega"
+	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -227,6 +229,12 @@ func LocalVolumeSetTest(ctx *framework.TestCtx, cleanupFuncs *[]cleanupFn) func(
 		}, time.Minute, time.Second*2).ShouldNot(gomega.HaveOccurred(), "updating lvset")
 
 		// look for 3 PVs
+		twentyToFiftyBlockPVs := eventuallyFindPVs(t, f, twentyToFifty.Spec.StorageClassName, 3)
+		// verify deletion
+		for _, pv := range twentyToFiftyBlockPVs {
+			eventuallyDelete(t, false, &pv)
+		}
+		// verify that block PVs come back after deletion
 		eventuallyFindPVs(t, f, twentyToFifty.Spec.StorageClassName, 3)
 
 		t.Logf("creating localvolumeset %q", tenToThirty.GetName())
@@ -280,11 +288,7 @@ func LocalVolumeSetTest(ctx *framework.TestCtx, cleanupFuncs *[]cleanupFn) func(
 		err = f.Client.Create(context.TODO(), twentyToFiftyFilesystem, &framework.CleanupOptions{TestContext: ctx})
 		matcher.Expect(err).NotTo(gomega.HaveOccurred(), "create localvolumeset")
 
-		pvs := eventuallyFindPVs(t, f, twentyToFiftyFilesystem.Spec.StorageClassName, 2)
-
-		// verify pv annotation
-		t.Logf("looking for %q annotation on pvs", provCommon.AnnProvisionedBy)
-		verifyProvisionerAnnotation(t, pvs, nodeList.Items)
+		eventuallyFindPVs(t, f, twentyToFiftyFilesystem.Spec.StorageClassName, 2)
 
 		// expand twentyToFiftyFilesystem to all remaining devices by setting nil nodeSelector, maxDevices, and deviceInclusionSpec
 		// devices total: 15
@@ -318,7 +322,98 @@ func LocalVolumeSetTest(ctx *framework.TestCtx, cleanupFuncs *[]cleanupFn) func(
 			}
 			return nil
 		}, time.Minute, time.Second*2).ShouldNot(gomega.HaveOccurred(), "updating lvset")
-		eventuallyFindPVs(t, f, twentyToFiftyFilesystem.Spec.StorageClassName, 9)
+		fsPVs := eventuallyFindPVs(t, f, twentyToFiftyFilesystem.Spec.StorageClassName, 9)
+
+		// verify pv annotation
+		t.Logf("looking for %q annotation on pvs", provCommon.AnnProvisionedBy)
+		verifyProvisionerAnnotation(t, fsPVs, nodeList.Items)
+
+		// verify deletion
+		t.Log("verify that filesystem PVs come back after deletion")
+		for _, pv := range fsPVs {
+			eventuallyDelete(t, false, &pv)
+		}
+		fsPVs = eventuallyFindPVs(t, f, twentyToFiftyFilesystem.Spec.StorageClassName, 9)
+
+		// verify consumed PVs come back after release
+		// filesystem PVs
+		t.Log("TEST: that consumed filesystem PVs are deleted and recreated upon release")
+		// record consuming objects for cleanup
+		consumingObjectList := make([]client.Object, 0)
+		addToCleanupFuncs(cleanupFuncs, "pv-consumer", func(t *testing.T) error {
+			eventuallyDelete(t, false, consumingObjectList...)
+			return nil
+		})
+		for _, pv := range fsPVs {
+			pvc, job, pod := consumePV(t, ctx, pv)
+			consumingObjectList = append(consumingObjectList, job, pvc, pod)
+		}
+		// release pvs
+		eventuallyDelete(t, false, consumingObjectList...)
+		// verify that PVs eventually come back
+		eventuallyFindAvailablePVs(t, f, twentyToFiftyFilesystem.Spec.StorageClassName, fsPVs)
+
+		// block PVs from lvset twentyToFifty
+		t.Log("TEST: consumed block PVs are deleted and recreated upon release")
+		// record consuming objects for cleanup
+		consumingObjectList = make([]client.Object, 0)
+		for _, pv := range twentyToFiftyBlockPVs {
+			pvc, job, pod := consumePV(t, ctx, pv)
+			consumingObjectList = append(consumingObjectList, job, pvc, pod)
+		}
+		// release pvs
+		eventuallyDelete(t, false, consumingObjectList...)
+		// verify that PVs eventually come back
+		twentyToFiftyBlockPVs = eventuallyFindAvailablePVs(t, f, twentyToFifty.Spec.StorageClassName, twentyToFiftyBlockPVs)
+
+		// verify localVolumeset deletion
+		t.Log("TEST: localvolumeset deletion does not occur with bound PVs")
+
+		// consume one PV
+		consumingObjectList = make([]client.Object, 0)
+		for _, pv := range twentyToFiftyBlockPVs[:1] {
+			pvc, job, pod := consumePV(t, ctx, pv)
+			consumingObjectList = append(consumingObjectList, job, pvc, pod)
+		}
+
+		matcher.Eventually(func() error {
+			t.Logf("deleting LocalVolumeSet %q", twentyToFifty.Name)
+			return f.Client.Delete(context.TODO(), twentyToFifty)
+		}, time.Minute*5, time.Second*5).ShouldNot(gomega.HaveOccurred(), "deleting LocalVolumeSet %q", twentyToFifty.Name)
+
+		var finalizers []string
+		// verify finalizer not removed with while bound pvs exists
+		matcher.Consistently(func() bool {
+			t.Logf("verifying finalizer still exists because of bound PVs")
+			err := f.Client.Get(goctx.TODO(), types.NamespacedName{Name: twentyToFifty.Name, Namespace: f.OperatorNamespace}, twentyToFifty)
+			if err != nil && (errors.IsGone(err) || errors.IsNotFound(err)) {
+				t.Fatalf("FAIL: LocalVolumeSet deleted with bound PVs: %+v", err)
+				return false
+			} else if err != nil {
+				t.Logf("error getting LocalVolumeSet: %+v", err)
+				return false
+			}
+			finalizers = twentyToFifty.GetFinalizers()
+			return len(finalizers) > 0
+		}, time.Second*30, time.Second*5).Should(gomega.BeTrue(), "checking finalizer exists with bound PVs")
+		t.Logf("finalizers not removed with bound PVs: %q", finalizers)
+		// release PV
+		t.Logf("releasing pvs")
+		eventuallyDelete(t, false, consumingObjectList...)
+		// verify LocalVolumeSet deletion
+		matcher.Eventually(func() bool {
+			t.Log("verifying LocalVolumeSet deletion")
+			err := f.Client.Get(goctx.TODO(), types.NamespacedName{Name: twentyToFifty.Name, Namespace: f.OperatorNamespace}, twentyToFifty)
+			if err != nil && (errors.IsGone(err) || errors.IsNotFound(err)) {
+				t.Logf("LocalVolumeSet deleted: %+v", err)
+				return true
+			} else if err != nil {
+				t.Logf("error getting LocalVolumeSet: %+v", err)
+				return false
+			}
+			t.Logf("LocalVolumeSet found: %q with finalizers: %+v", twentyToFifty.Name, twentyToFifty.ObjectMeta.Finalizers)
+			return false
+		}).Should(gomega.BeTrue(), "verifying LocalVolumeSet has been deleted", twentyToFifty.Name)
 
 	}
 
@@ -332,8 +427,8 @@ func cleanupLVSetResources(t *testing.T, lvsets []*localv1alpha1.LocalVolumeSet)
 		matcher := gomega.NewWithT(t)
 		sc := &storagev1.StorageClass{ObjectMeta: metav1.ObjectMeta{Name: lvset.Spec.StorageClassName}}
 
-		eventuallyDelete(t, lvset)
-		eventuallyDelete(t, sc)
+		eventuallyDelete(t, true, lvset)
+		eventuallyDelete(t, false, sc)
 		pvList := &corev1.PersistentVolumeList{}
 		t.Logf("listing pvs for lvset: %q", lvset.GetName())
 		matcher.Eventually(func() error {
@@ -344,8 +439,7 @@ func cleanupLVSetResources(t *testing.T, lvsets []*localv1alpha1.LocalVolumeSet)
 			t.Logf("Deleting %d PVs", len(pvList.Items))
 			for _, pv := range pvList.Items {
 				if pv.Spec.StorageClassName == lvset.Spec.StorageClassName {
-					eventuallyDelete(t, &pv)
-
+					eventuallyDelete(t, false, &pv)
 				}
 			}
 			return nil

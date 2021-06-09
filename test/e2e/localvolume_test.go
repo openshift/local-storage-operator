@@ -18,7 +18,6 @@ import (
 	commontypes "github.com/openshift/local-storage-operator/common"
 	"github.com/openshift/local-storage-operator/controllers/nodedaemon"
 	framework "github.com/openshift/local-storage-operator/test-framework"
-	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	v1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
@@ -26,8 +25,6 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
-	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/apimachinery/pkg/selection"
 	"k8s.io/apimachinery/pkg/types"
 	utilnet "k8s.io/apimachinery/pkg/util/net"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -40,7 +37,6 @@ import (
 var (
 	awsEBSNitroRegex  = "^[cmr]5.*|t3|z1d"
 	labelInstanceType = "beta.kubernetes.io/instance-type"
-	pvConsumerLabel   = "pv-consumer"
 )
 
 func LocalVolumeTest(ctx *framework.TestCtx, cleanupFuncs *[]cleanupFn) func(*testing.T) {
@@ -165,7 +161,7 @@ func LocalVolumeTest(ctx *framework.TestCtx, cleanupFuncs *[]cleanupFn) func(*te
 
 		// verify deletion
 		for _, pv := range pvs {
-			eventuallyDelete(t, &pv)
+			eventuallyDelete(t, false, &pv)
 		}
 		// verify that PVs come back after deletion
 		pvs = eventuallyFindPVs(t, f, localVolume.Spec.StorageClassDevices[0].StorageClassName, 1)
@@ -177,37 +173,16 @@ func LocalVolumeTest(ctx *framework.TestCtx, cleanupFuncs *[]cleanupFn) func(*te
 			consumingObjectList = append(consumingObjectList, job, pvc, pod)
 		}
 		// release pvs
-		eventuallyDelete(t, consumingObjectList...)
+		eventuallyDelete(t, false, consumingObjectList...)
 
 		// verify that PVs eventually come back
-		matcher.Eventually(func() bool {
-
-			newPVs := eventuallyFindPVs(t, f, localVolume.Spec.StorageClassDevices[0].StorageClassName, 1)
-			for _, pv := range pvs {
-				pvFound := false
-				for _, newPV := range newPVs {
-					if pv.Name == newPV.Name {
-						if newPV.Status.Phase == corev1.VolumeAvailable {
-							pvFound = true
-						} else {
-							t.Logf("PV is in phase %q, waiting for it to be in phase %q", newPV.Status.Phase, corev1.VolumeAvailable)
-						}
-						break
-					}
-				}
-				// expect to find each pv
-				if !pvFound {
-					return false
-				}
-			}
-			return true
-		}, time.Minute*5, time.Second*5).Should(gomega.BeTrue(), "waiting for PVs to become available again")
+		eventuallyFindAvailablePVs(t, f, localVolume.Spec.StorageClassDevices[0].StorageClassName, pvs)
 
 		// consume one PV
 		consumingObjectList = make([]client.Object, 0)
 
 		addToCleanupFuncs(cleanupFuncs, "pv-consumer", func(t *testing.T) error {
-			eventuallyDelete(t, consumingObjectList...)
+			eventuallyDelete(t, false, consumingObjectList...)
 			return nil
 		})
 		for _, pv := range pvs[:1] {
@@ -217,7 +192,7 @@ func LocalVolumeTest(ctx *framework.TestCtx, cleanupFuncs *[]cleanupFn) func(*te
 		// attempt localVolume deletion
 		matcher.Eventually(func() error {
 			t.Logf("deleting LocalVolume %q", localVolume.Name)
-			return f.Client.Delete(context.TODO(), localVolume, dynclient.PropagationPolicy(metav1.DeletePropagationBackground))
+			return f.Client.Delete(context.TODO(), localVolume, client.PropagationPolicy(metav1.DeletePropagationBackground))
 		}, time.Minute*5, time.Second*5).ShouldNot(gomega.HaveOccurred(), "deleting LocalVolume %q", localVolume.Name)
 
 		// verify finalizer not removed with while bound pvs exists
@@ -235,7 +210,7 @@ func LocalVolumeTest(ctx *framework.TestCtx, cleanupFuncs *[]cleanupFn) func(*te
 		}, time.Second*30, time.Second*5).Should(gomega.BeTrue(), "checking finalizer exists with bound PVs")
 		// release PV
 		t.Logf("releasing pvs")
-		eventuallyDelete(t, consumingObjectList...)
+		eventuallyDelete(t, false, consumingObjectList...)
 		// verify localVolume deletion
 		matcher.Eventually(func() bool {
 			t.Log("verifying LocalVolume deletion")
@@ -253,149 +228,6 @@ func LocalVolumeTest(ctx *framework.TestCtx, cleanupFuncs *[]cleanupFn) func(*te
 
 	}
 
-}
-
-func consumePV(t *testing.T, ctx *framework.Context, pv corev1.PersistentVolume) (*corev1.PersistentVolumeClaim, *batchv1.Job, *corev1.Pod) {
-	matcher := gomega.NewWithT(t)
-	f := framework.Global
-	name := fmt.Sprintf("%s-consumer", pv.ObjectMeta.Name)
-	pvc := &corev1.PersistentVolumeClaim{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
-			Namespace: f.OperatorNamespace,
-		},
-		Spec: corev1.PersistentVolumeClaimSpec{
-			VolumeMode:       pv.Spec.VolumeMode,
-			StorageClassName: &pv.Spec.StorageClassName,
-			AccessModes:      []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
-			Resources: corev1.ResourceRequirements{
-				Requests: corev1.ResourceList{
-					corev1.ResourceStorage: pv.Spec.Capacity[corev1.ResourceStorage],
-				},
-			},
-		},
-	}
-	job := &batchv1.Job{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
-			Namespace: f.OperatorNamespace,
-			Labels: map[string]string{
-				"app":     pvConsumerLabel,
-				"pv-name": pv.Name,
-			},
-		},
-		Spec: batchv1.JobSpec{
-			Template: corev1.PodTemplateSpec{
-				ObjectMeta: metav1.ObjectMeta{
-					Labels: map[string]string{
-						"app":     pvConsumerLabel,
-						"pv-name": pv.Name,
-					},
-				},
-				Spec: corev1.PodSpec{
-					RestartPolicy: corev1.RestartPolicyNever,
-					Containers: []corev1.Container{
-						{
-							Name:  "busybox",
-							Image: "gcr.io/google_containers/busybox",
-							VolumeMounts: []corev1.VolumeMount{
-								{
-									MountPath: "/data",
-									Name:      "volume-to-debug",
-								},
-							},
-							Command: []string{"/bin/sh", "-c"},
-							Args: []string{
-								"dd if=/dev/random of=/tmp/random.img bs=512 count=1",     // create a new file named random.img
-								"md5VAR1=$(md5sum /tmp/random.img | awk '{ print $1 }')",  // calculate md5sum of random.img
-								"cp /tmp/random.img /data/random.img",                     // copy random.img file to pvc mountpoint
-								"md5VAR2=$(md5sum /data/random.img | awk '{ print $1 }')", // recalculate md5sum of file random.img stored in pvc
-								"if [[ \"$md5VAR1\" != \"$md5VAR2\" ]];then exit 1; fi",   // verifies that the md5sum hasn't changed
-							},
-						},
-					},
-					Volumes: []corev1.Volume{
-						{
-							Name: "volume-to-debug",
-							VolumeSource: corev1.VolumeSource{
-								PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
-									ClaimName: pvc.Name,
-								},
-							},
-						},
-					},
-				},
-			},
-		},
-	}
-
-	// create pvc
-	matcher.Eventually(func() error {
-		t.Logf("creating pvc: %q", pvc.Name)
-		return f.Client.Create(goctx.TODO(), pvc, &framework.CleanupOptions{TestContext: ctx})
-	}, time.Minute, time.Second*2).ShouldNot(gomega.HaveOccurred(), "creating pvc")
-
-	// recording a time before the job was created
-	toRound := time.Now()
-	// rounding down to the same granularity as the timestamp
-	timeStarted := time.Date(toRound.Year(), toRound.Month(), toRound.Day(), toRound.Hour(), toRound.Minute(), 0, 0, toRound.Location())
-
-	// create consuming job
-	matcher.Eventually(func() error {
-		t.Logf("creating job: %q", job.Name)
-		return f.Client.Create(goctx.TODO(), job, &framework.CleanupOptions{TestContext: ctx})
-	}, time.Minute, time.Second*2).ShouldNot(gomega.HaveOccurred(), "creating job")
-
-	// wait for job to complete
-	matcher.Eventually(func() int32 {
-		t.Log("waiting for job to complete")
-		err := f.Client.Get(goctx.TODO(), types.NamespacedName{Name: job.Name, Namespace: job.Namespace}, job)
-		if err != nil {
-			t.Logf("error fetching job: %+v", err)
-			return 0
-		}
-		t.Logf("job completions: %d", job.Status.Succeeded)
-		return job.Status.Succeeded
-	}, time.Minute*5, time.Second*2).Should(gomega.BeNumerically(">=", 1), "waiting for job to complete")
-
-	// return pods because they have to be deleted before pv is released
-	podList := &corev1.PodList{}
-	var matchingPod corev1.Pod
-	matcher.Eventually(func() error {
-		t.Logf("looking for the completed pod")
-		appLabelReq, err := labels.NewRequirement("app", selection.Equals, []string{pvConsumerLabel})
-		if err != nil {
-			t.Logf("failed to compose labelselector 'app' requirement: %+v", err)
-			return err
-		}
-		pvNameReq, err := labels.NewRequirement("pv-name", selection.Equals, []string{pv.Name})
-		if err != nil {
-			t.Logf("failed to compose labelselector 'pv-name' requirement: %+v", err)
-			return err
-		}
-		selector := labels.NewSelector().Add(*appLabelReq).Add(*pvNameReq)
-		err = f.Client.List(goctx.TODO(), podList, dynclient.MatchingLabelsSelector{Selector: selector})
-		if err != nil {
-			t.Logf("failed to list pods: %+v", err)
-			return err
-		}
-		podNameList := make([]string, 0)
-		for _, pod := range podList.Items {
-			podNameList = append(podNameList, pod.Name)
-			if pod.CreationTimestamp.After(timeStarted) {
-				matchingPod = pod
-				return nil
-			} else {
-				t.Logf("pod is old: %q created at %v before e2e started at %v, skipping", pod.Name, timeStarted, pod.CreationTimestamp)
-			}
-		}
-		t.Logf("could not find pod created by this e2e in podList: %+v", podNameList)
-		return fmt.Errorf("could not find pod")
-
-	}).ShouldNot(gomega.HaveOccurred(), "fetching consuming pod")
-
-	matchingPod.TypeMeta.Kind = "Pod"
-	return pvc, job, &matchingPod
 }
 
 func verifyProvisionerAnnotation(t *testing.T, pvs []corev1.PersistentVolume, nodeList []corev1.Node) {
@@ -428,12 +260,13 @@ func verifyProvisionerAnnotation(t *testing.T, pvs []corev1.PersistentVolume, no
 }
 
 func cleanupLVResources(t *testing.T, f *framework.Framework, localVolume *localv1.LocalVolume) error {
-	err := deleteResource(localVolume, localVolume.Name, localVolume.Namespace, f.Client)
-	if err != nil {
-		t.Fatalf("error deleting localvolume: %v", err)
+	// cleanup lv force-removing the finalizer if necessary
+	eventuallyDelete(t, true, localVolume)
+	sc := &storagev1.StorageClass{
+		TypeMeta:   metav1.TypeMeta{Kind: localv1.LocalVolumeKind},
+		ObjectMeta: metav1.ObjectMeta{Name: localVolume.Spec.StorageClassDevices[0].StorageClassName},
 	}
-	sc := &storagev1.StorageClass{ObjectMeta: metav1.ObjectMeta{Name: localVolume.Spec.StorageClassDevices[0].StorageClassName}}
-	eventuallyDelete(t, sc)
+	eventuallyDelete(t, false, sc)
 	pvList := &corev1.PersistentVolumeList{}
 	matcher := gomega.NewWithT(t)
 	matcher.Eventually(func() error {
@@ -443,7 +276,8 @@ func cleanupLVResources(t *testing.T, f *framework.Framework, localVolume *local
 		}
 		t.Logf("Deleting %d PVs", len(pvList.Items))
 		for _, pv := range pvList.Items {
-			eventuallyDelete(t, &pv)
+			// pv.TypeMeta.Kind = kind
+			eventuallyDelete(t, false, &pv)
 		}
 		return nil
 	}, time.Minute*3, time.Second*2).ShouldNot(gomega.HaveOccurred(), "cleaning up pvs for lv: %q", localVolume.GetName())
