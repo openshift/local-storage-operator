@@ -52,7 +52,9 @@ func eventuallyDelete(t *testing.T, removeFinalizers bool, objs ...client.Object
 			if len(finalizers) > 0 {
 				t.Logf("object has finalizers: %+v", finalizers)
 			}
+			propPolicy := dynclient.PropagationPolicy(metav1.DeletePropagationBackground)
 			if removeFinalizers {
+				propPolicy = dynclient.PropagationPolicy(metav1.DeletePropagationForeground)
 				accessor.SetFinalizers([]string{})
 				err = f.Client.Update(context.TODO(), obj)
 				if errors.IsNotFound(err) || errors.IsGone(err) {
@@ -72,7 +74,7 @@ func eventuallyDelete(t *testing.T, removeFinalizers bool, objs ...client.Object
 				}
 
 			}
-			err = f.Client.Delete(context.TODO(), obj)
+			err = f.Client.Delete(context.TODO(), obj, propPolicy)
 			if errors.IsNotFound(err) || errors.IsGone(err) {
 				t.Logf("object already deleted: %s", err)
 				return nil
@@ -236,7 +238,7 @@ func consumePV(t *testing.T, ctx *framework.Context, pv corev1.PersistentVolume)
 		}
 		t.Logf("job completions: %d", job.Status.Succeeded)
 		return job.Status.Succeeded
-	}, time.Minute*5, time.Second*2).Should(gomega.BeNumerically(">=", 1), "waiting for job to complete")
+	}, time.Minute*5, time.Second*4).Should(gomega.BeNumerically(">=", 1), "waiting for job to complete")
 
 	// return pods because they have to be deleted before pv is released
 	podList := &corev1.PodList{}
