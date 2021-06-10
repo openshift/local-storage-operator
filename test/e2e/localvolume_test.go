@@ -102,8 +102,7 @@ func LocalVolumeTest(ctx *framework.TestCtx, cleanupFuncs *[]cleanupFn) func(*te
 
 		// create and attach volumes
 		t.Log("creating and attaching disks")
-		err = createAndAttachAWSVolumes(t, ec2Client, ctx, namespace, nodeEnv)
-		matcher.Expect(err).NotTo(gomega.HaveOccurred(), "createAndAttachAWSVolumes: %+v", nodeEnv)
+		createAndAttachAWSVolumes(t, ec2Client, ctx, namespace, nodeEnv)
 
 		// get the device paths and IDs
 		nodeEnv = populateDeviceInfo(t, ctx, nodeEnv)
@@ -207,7 +206,7 @@ func LocalVolumeTest(ctx *framework.TestCtx, cleanupFuncs *[]cleanupFn) func(*te
 				return false
 			}
 			return len(localVolume.ObjectMeta.Finalizers) > 0
-		}, time.Second*30, time.Second*5).Should(gomega.BeTrue(), "checking finalizer exists with bound PVs")
+		}, time.Second*15, time.Second*3).Should(gomega.BeTrue(), "checking finalizer exists with bound PVs")
 		// release PV
 		t.Logf("releasing pvs")
 		eventuallyDelete(t, false, consumingObjectList...)

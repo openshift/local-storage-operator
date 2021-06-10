@@ -103,20 +103,59 @@ func LocalVolumeSetTest(ctx *framework.TestCtx, cleanupFuncs *[]cleanupFn) func(
 			return cleanupAWSDisks(t, ec2Client)
 		})
 
-		// create and attach volumes
-		t.Log("creating and attaching disks")
-		//	for _, nodeDisks := range nodeEnv {
-		err = createAndAttachAWSVolumes(t, ec2Client, ctx, namespace, nodeEnv)
-		matcher.Expect(err).NotTo(gomega.HaveOccurred(), "createAndAttachAWSVolumes: %+v", nodeEnv)
-		//	}
+		// setup lvset vars
 		tenGi := resource.MustParse("10G")
 		twentyGi := resource.MustParse("20G")
 		thirtyGi := resource.MustParse("30G")
 		fiftyGi := resource.MustParse("50G")
+		hundredTi := resource.MustParse("100Ti")
 		two := int32(2)
 		three := int32(3)
 
 		lvSets := []*localv1alpha1.LocalVolumeSet{}
+
+		// add pv and storageclass cleanup
+		addToCleanupFuncs(
+			cleanupFuncs,
+			"cleanupLVSetResources",
+			func(t *testing.T) error {
+				return cleanupLVSetResources(t, &lvSets)
+			},
+		)
+
+		// creating a noOpLVSet to pre-pull diskmaker images on all nodes and speed up the test.
+		// having the diskmaker-manager running will also kickstart measuring the age of the disks
+		// this speeds things up as PVs are only created 1m after first observing the disk.
+		noOpLVSet := &localv1alpha1.LocalVolumeSet{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "noop",
+				Namespace: namespace,
+			},
+			Spec: localv1alpha1.LocalVolumeSetSpec{
+				StorageClassName: "noop",
+				DeviceInclusionSpec: &localv1alpha1.DeviceInclusionSpec{
+					DeviceTypes: []localv1alpha1.DeviceType{localv1alpha1.RawDisk},
+					MinSize:     &hundredTi, // don't match any disks
+				},
+			},
+		}
+		lvSets = append(lvSets, noOpLVSet)
+		t.Logf("creating noop localvolumeset %q", noOpLVSet.GetName())
+		err = f.Client.Create(context.TODO(), noOpLVSet, &framework.CleanupOptions{TestContext: ctx})
+		matcher.Expect(err).NotTo(gomega.HaveOccurred(), "create localvolumeset")
+
+		// create and attach volumes
+		t.Log("creating and attaching disks")
+		createAndAttachAWSVolumes(t, ec2Client, ctx, namespace, nodeEnv)
+
+		// create block and fs on two nodes parallely
+		// do cleanup job verification
+		// do overlap verification on both nodes
+		// do finalizer verification
+		// delete
+
+		// for block and fs
+		// basic match
 
 		// start the lvset with a size range of twenty to fifty on the first node
 		// should match amd claim 2 of node0: 20, 30, 40
@@ -185,15 +224,6 @@ func LocalVolumeSetTest(ctx *framework.TestCtx, cleanupFuncs *[]cleanupFn) func(
 			tenToThirty,
 			twentyToFiftyFilesystem,
 		}
-
-		// add pv and storageclass cleanup
-		addToCleanupFuncs(
-			cleanupFuncs,
-			"cleanupLVSetResources",
-			func(t *testing.T) error {
-				return cleanupLVSetResources(t, lvSets)
-			},
-		)
 
 		t.Logf("creating localvolumeset %q", twentyToFifty.GetName())
 		err = f.Client.Create(context.TODO(), twentyToFifty, &framework.CleanupOptions{TestContext: ctx})
@@ -344,7 +374,7 @@ func LocalVolumeSetTest(ctx *framework.TestCtx, cleanupFuncs *[]cleanupFn) func(
 			eventuallyDelete(t, false, consumingObjectList...)
 			return nil
 		})
-		for _, pv := range fsPVs {
+		for _, pv := range fsPVs[:1] {
 			pvc, job, pod := consumePV(t, ctx, pv)
 			consumingObjectList = append(consumingObjectList, job, pvc, pod)
 		}
@@ -357,7 +387,7 @@ func LocalVolumeSetTest(ctx *framework.TestCtx, cleanupFuncs *[]cleanupFn) func(
 		t.Log("TEST: consumed block PVs are deleted and recreated upon release")
 		// record consuming objects for cleanup
 		consumingObjectList = make([]client.Object, 0)
-		for _, pv := range twentyToFiftyBlockPVs {
+		for _, pv := range twentyToFiftyBlockPVs[:1] {
 			pvc, job, pod := consumePV(t, ctx, pv)
 			consumingObjectList = append(consumingObjectList, job, pvc, pod)
 		}
@@ -395,7 +425,7 @@ func LocalVolumeSetTest(ctx *framework.TestCtx, cleanupFuncs *[]cleanupFn) func(
 			}
 			finalizers = twentyToFifty.GetFinalizers()
 			return len(finalizers) > 0
-		}, time.Second*30, time.Second*5).Should(gomega.BeTrue(), "checking finalizer exists with bound PVs")
+		}, time.Second*15, time.Second*3).Should(gomega.BeTrue(), "checking finalizer exists with bound PVs")
 		t.Logf("finalizers not removed with bound PVs: %q", finalizers)
 		// release PV
 		t.Logf("releasing pvs")
@@ -419,9 +449,8 @@ func LocalVolumeSetTest(ctx *framework.TestCtx, cleanupFuncs *[]cleanupFn) func(
 
 }
 
-func cleanupLVSetResources(t *testing.T, lvsets []*localv1alpha1.LocalVolumeSet) error {
-	for _, lvset := range lvsets {
-
+func cleanupLVSetResources(t *testing.T, lvsets *[]*localv1alpha1.LocalVolumeSet) error {
+	for _, lvset := range *lvsets {
 		t.Logf("cleaning up pvs and storageclasses: %q", lvset.GetName())
 		f := framework.Global
 		matcher := gomega.NewWithT(t)

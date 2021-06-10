@@ -32,6 +32,8 @@ var (
 		"LocalVolume":          LocalVolumeTest,
 		"LocalVolumeSet":       LocalVolumeSetTest,
 	}
+	// this is to order the tests to make them more efficient (e.g. discover will cause all images to be pulled on the nodes)
+	testNames = []string{"LocalVolumeDiscovery", "LocalVolumeSet", "LocalVolume"}
 )
 
 func TestMain(m *testing.M) {
@@ -78,7 +80,8 @@ func TestLocalStorage(t *testing.T) {
 	}
 
 	// Run tests with setup and teardown
-	for testName, testWrapper := range testMap {
+	for _, testName := range testNames {
+		testWrapper := testMap[testName]
 		context := framework.NewTestCtx(t)
 
 		// a list of functions that will be run at the end of every test suite
