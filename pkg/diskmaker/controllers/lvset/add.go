@@ -2,7 +2,6 @@ package lvset
 
 import (
 	"fmt"
-	"time"
 
 	localv1alpha1 "github.com/openshift/local-storage-operator/pkg/apis/local/v1alpha1"
 	"github.com/openshift/local-storage-operator/pkg/common"
@@ -146,15 +145,11 @@ func handlePVChange(runtimeConfig *provCommon.RuntimeConfig, pv *corev1.Persiste
 	if !found {
 		return
 	}
-	ownerNamespace, found := pv.Labels[common.PVOwnerNameLabel]
+	ownerNamespace, found := pv.Labels[common.PVOwnerNamespaceLabel]
 	if !found {
 		return
 	}
 	q.Add(reconcile.Request{NamespacedName: types.NamespacedName{Name: ownerName, Namespace: ownerNamespace}})
-	if isDelete {
-		time.Sleep(time.Second * 10)
-		q.Add(reconcile.Request{NamespacedName: types.NamespacedName{Name: ownerName, Namespace: ownerNamespace}})
-	}
 }
 
 // blank assignment to verify that ReconcileLocalVolumeSet implements reconcile.Reconciler
