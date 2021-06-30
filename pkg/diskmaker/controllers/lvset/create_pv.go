@@ -17,6 +17,10 @@ import (
 	provCommon "sigs.k8s.io/sig-storage-local-static-provisioner/pkg/common"
 )
 
+// DeprecatedLabels: these labels were deprecated because the potential values weren't all compatible label values
+// they have been move to annotations
+var DeprecatedLabels = []string{common.PVDeviceNameLabel, common.PVDeviceIDLabel}
+
 func (r *ReconcileLocalVolumeSet) createPV(
 	obj *localv1alpha1.LocalVolumeSet,
 	devLogger logr.Logger,
@@ -107,12 +111,15 @@ func (r *ReconcileLocalVolumeSet) createPV(
 	labels := map[string]string{
 		corev1.LabelHostname:         hostname,
 		common.PVOwnerKindLabel:      obj.Kind,
-		common.PVOwnerNamespaceLabel: obj.GetNamespace(),
-		common.PVOwnerNameLabel:      obj.GetName(),
-		common.PVDeviceNameLabel:     deviceName,
+		common.PVOwnerNamespaceLabel: obj.Namespace,
+		common.PVOwnerNameLabel:      obj.Name,
+	}
+	annotations := map[string]string{
+		common.PVDeviceNameLabel:    deviceName,
+		provCommon.AnnProvisionedBy: r.runtimeConfig.Name,
 	}
 	if idExists {
-		labels[common.PVDeviceIDLabel] = filepath.Base(symLinkPath)
+		annotations[common.PVDeviceIDLabel] = filepath.Base(symLinkPath)
 	}
 
 	var reclaimPolicy corev1.PersistentVolumeReclaimPolicy
@@ -164,12 +171,25 @@ func (r *ReconcileLocalVolumeSet) createPV(
 			r.runtimeConfig.Recorder.Eventf(existingPV, corev1.EventTypeWarning, provCommon.EventVolumeFailedDelete, err.Error())
 		}
 
-		// replace labels if and only if they don't already exist
 		common.InitMapIfNil(&existingPV.ObjectMeta.Labels)
+		// remove deprecated labels
+		for _, key := range DeprecatedLabels {
+			delete(existingPV.Labels, key)
+		}
 		for labelKey := range labels {
+			// replace labels if and only if they don't already exist
 			_, found := existingPV.ObjectMeta.Labels[labelKey]
 			if !found {
 				existingPV.ObjectMeta.Labels[labelKey] = labels[labelKey]
+			}
+		}
+
+		common.InitMapIfNil(&existingPV.ObjectMeta.Annotations)
+		for annKey := range annotations {
+			// replace annotations if and only if they don't already exist
+			_, found := existingPV.ObjectMeta.Annotations[annKey]
+			if !found {
+				existingPV.ObjectMeta.Annotations[annKey] = annotations[annKey]
 			}
 		}
 
