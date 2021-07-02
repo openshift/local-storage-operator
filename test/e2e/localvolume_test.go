@@ -13,11 +13,11 @@ import (
 
 	"github.com/onsi/gomega"
 	operatorv1 "github.com/openshift/api/operator/v1"
-	localv1 "github.com/openshift/local-storage-operator/pkg/apis/local/v1"
-	"github.com/openshift/local-storage-operator/pkg/common"
-	commontypes "github.com/openshift/local-storage-operator/pkg/common"
-	"github.com/openshift/local-storage-operator/pkg/controller/nodedaemon"
-	framework "github.com/operator-framework/operator-sdk/pkg/test"
+	localv1 "github.com/openshift/local-storage-operator/api/v1"
+	"github.com/openshift/local-storage-operator/common"
+	commontypes "github.com/openshift/local-storage-operator/common"
+	"github.com/openshift/local-storage-operator/controllers/nodedaemon"
+	framework "github.com/openshift/local-storage-operator/test-framework"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	v1 "k8s.io/api/core/v1"
@@ -27,7 +27,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/selection"
 	"k8s.io/apimachinery/pkg/types"
 	utilnet "k8s.io/apimachinery/pkg/util/net"
@@ -44,7 +43,7 @@ var (
 	pvConsumerLabel   = "pv-consumer"
 )
 
-func LocalVolumeTest(ctx *framework.Context, cleanupFuncs *[]cleanupFn) func(*testing.T) {
+func LocalVolumeTest(ctx *framework.TestCtx, cleanupFuncs *[]cleanupFn) func(*testing.T) {
 	return func(t *testing.T) {
 		f := framework.Global
 		namespace, err := ctx.GetNamespace()
@@ -141,6 +140,7 @@ func LocalVolumeTest(ctx *framework.Context, cleanupFuncs *[]cleanupFn) func(*te
 			t.Fatalf("error verifying localvolume cr: %v", err)
 		}
 
+		//	time.Sleep(10 * time.Minute)
 		err = checkLocalVolumeStatus(t, localVolume)
 		if err != nil {
 			t.Fatalf("error checking localvolume condition: %v", err)
@@ -171,7 +171,7 @@ func LocalVolumeTest(ctx *framework.Context, cleanupFuncs *[]cleanupFn) func(*te
 		pvs = eventuallyFindPVs(t, f, localVolume.Spec.StorageClassDevices[0].StorageClassName, 1)
 
 		// consume pvs
-		consumingObjectList := make([]runtime.Object, 0)
+		consumingObjectList := make([]client.Object, 0)
 		for _, pv := range pvs {
 			pvc, job, pod := consumePV(t, ctx, pv)
 			consumingObjectList = append(consumingObjectList, job, pvc, pod)
@@ -204,7 +204,7 @@ func LocalVolumeTest(ctx *framework.Context, cleanupFuncs *[]cleanupFn) func(*te
 		}, time.Minute*5, time.Second*5).Should(gomega.BeTrue(), "waiting for PVs to become available again")
 
 		// consume one PV
-		consumingObjectList = make([]runtime.Object, 0)
+		consumingObjectList = make([]client.Object, 0)
 
 		addToCleanupFuncs(cleanupFuncs, "pv-consumer", func(t *testing.T) error {
 			eventuallyDelete(t, consumingObjectList...)
@@ -223,7 +223,7 @@ func LocalVolumeTest(ctx *framework.Context, cleanupFuncs *[]cleanupFn) func(*te
 		// verify finalizer not removed with while bound pvs exists
 		matcher.Consistently(func() bool {
 			t.Logf("verifying finalizer still exists")
-			err := f.Client.Get(goctx.TODO(), types.NamespacedName{Name: localVolume.Name, Namespace: f.Namespace}, localVolume)
+			err := f.Client.Get(goctx.TODO(), types.NamespacedName{Name: localVolume.Name, Namespace: f.OperatorNamespace}, localVolume)
 			if err != nil && (errors.IsGone(err) || errors.IsNotFound(err)) {
 				t.Fatalf("LocalVolume deleted with bound PVs")
 				return false
@@ -239,7 +239,7 @@ func LocalVolumeTest(ctx *framework.Context, cleanupFuncs *[]cleanupFn) func(*te
 		// verify localVolume deletion
 		matcher.Eventually(func() bool {
 			t.Log("verifying LocalVolume deletion")
-			err := f.Client.Get(goctx.TODO(), types.NamespacedName{Name: localVolume.Name, Namespace: f.Namespace}, localVolume)
+			err := f.Client.Get(goctx.TODO(), types.NamespacedName{Name: localVolume.Name, Namespace: f.OperatorNamespace}, localVolume)
 			if err != nil && (errors.IsGone(err) || errors.IsNotFound(err)) {
 				t.Logf("LocalVolume deleted: %+v", err)
 				return true
@@ -250,6 +250,7 @@ func LocalVolumeTest(ctx *framework.Context, cleanupFuncs *[]cleanupFn) func(*te
 			t.Logf("LocalVolume found: %q with finalizers: %+v", localVolume.Name, localVolume.ObjectMeta.Finalizers)
 			return false
 		}).Should(gomega.BeTrue(), "verifying LocalVolume has been deleted", localVolume.Name)
+
 	}
 
 }
@@ -261,7 +262,7 @@ func consumePV(t *testing.T, ctx *framework.Context, pv corev1.PersistentVolume)
 	pvc := &corev1.PersistentVolumeClaim{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
-			Namespace: f.Namespace,
+			Namespace: f.OperatorNamespace,
 		},
 		Spec: corev1.PersistentVolumeClaimSpec{
 			VolumeMode:       pv.Spec.VolumeMode,
@@ -277,7 +278,7 @@ func consumePV(t *testing.T, ctx *framework.Context, pv corev1.PersistentVolume)
 	job := &batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
-			Namespace: f.Namespace,
+			Namespace: f.OperatorNamespace,
 			Labels: map[string]string{
 				"app":     pvConsumerLabel,
 				"pv-name": pv.Name,
@@ -431,10 +432,7 @@ func cleanupLVResources(t *testing.T, f *framework.Framework, localVolume *local
 	if err != nil {
 		t.Fatalf("error deleting localvolume: %v", err)
 	}
-	sc := &storagev1.StorageClass{
-		TypeMeta:   metav1.TypeMeta{Kind: localv1.LocalVolumeKind},
-		ObjectMeta: metav1.ObjectMeta{Name: localVolume.Spec.StorageClassDevices[0].StorageClassName},
-	}
+	sc := &storagev1.StorageClass{ObjectMeta: metav1.ObjectMeta{Name: localVolume.Spec.StorageClassDevices[0].StorageClassName}}
 	eventuallyDelete(t, sc)
 	pvList := &corev1.PersistentVolumeList{}
 	matcher := gomega.NewWithT(t)
@@ -443,10 +441,8 @@ func cleanupLVResources(t *testing.T, f *framework.Framework, localVolume *local
 		if err != nil {
 			return err
 		}
-		// kind := pvList.TypeMeta.Kind
 		t.Logf("Deleting %d PVs", len(pvList.Items))
 		for _, pv := range pvList.Items {
-			// pv.TypeMeta.Kind = kind
 			eventuallyDelete(t, &pv)
 		}
 		return nil
@@ -478,7 +474,7 @@ func verifyLocalVolume(t *testing.T, lv *localv1.LocalVolume, client framework.F
 func verifyDaemonSetTolerations(kubeclient kubernetes.Interface, daemonSetName, namespace string, tolerations []v1.Toleration) error {
 	dsTolerations := []v1.Toleration{}
 	err := wait.Poll(retryInterval, timeout, func() (done bool, err error) {
-		daemonset, err := kubeclient.AppsV1().DaemonSets(namespace).Get(daemonSetName, metav1.GetOptions{})
+		daemonset, err := kubeclient.AppsV1().DaemonSets(namespace).Get(goctx.TODO(), daemonSetName, metav1.GetOptions{})
 		if err != nil {
 			if apierrors.IsNotFound(err) {
 				return false, nil
@@ -499,7 +495,7 @@ func verifyDaemonSetTolerations(kubeclient kubernetes.Interface, daemonSetName, 
 
 func verifyStorageClassDeletion(scName string, kubeclient kubernetes.Interface) error {
 	waitError := wait.Poll(retryInterval, timeout, func() (done bool, err error) {
-		_, err = kubeclient.StorageV1().StorageClasses().Get(scName, metav1.GetOptions{})
+		_, err = kubeclient.StorageV1().StorageClasses().Get(goctx.TODO(), scName, metav1.GetOptions{})
 		if err != nil {
 			if apierrors.IsNotFound(err) {
 				return true, nil
@@ -530,7 +526,7 @@ func checkLocalVolumeStatus(t *testing.T, lv *localv1.LocalVolume) error {
 }
 
 func deleteCreatedPV(t *testing.T, kubeClient kubernetes.Interface, lv *localv1.LocalVolume) error {
-	err := kubeClient.CoreV1().PersistentVolumes().DeleteCollection(nil, metav1.ListOptions{LabelSelector: commontypes.GetPVOwnerSelector(lv).String()})
+	err := kubeClient.CoreV1().PersistentVolumes().DeleteCollection(goctx.TODO(), metav1.DeleteOptions{}, metav1.ListOptions{LabelSelector: commontypes.GetPVOwnerSelector(lv).String()})
 	if err == nil {
 		t.Log("PV deletion successful")
 	}
@@ -539,7 +535,7 @@ func deleteCreatedPV(t *testing.T, kubeClient kubernetes.Interface, lv *localv1.
 
 func waitForCreatedPV(kubeClient kubernetes.Interface, lv *localv1.LocalVolume) error {
 	waitErr := wait.PollImmediate(retryInterval, timeout, func() (bool, error) {
-		pvs, err := kubeClient.CoreV1().PersistentVolumes().List(metav1.ListOptions{LabelSelector: commontypes.GetPVOwnerSelector(lv).String()})
+		pvs, err := kubeClient.CoreV1().PersistentVolumes().List(goctx.TODO(), metav1.ListOptions{LabelSelector: commontypes.GetPVOwnerSelector(lv).String()})
 		if err != nil {
 			if isRetryableAPIError(err) {
 				return false, nil
@@ -555,7 +551,7 @@ func waitForCreatedPV(kubeClient kubernetes.Interface, lv *localv1.LocalVolume) 
 }
 
 func selectNode(t *testing.T, kubeClient kubernetes.Interface) v1.Node {
-	nodes, err := kubeClient.CoreV1().Nodes().List(metav1.ListOptions{LabelSelector: "node-role.kubernetes.io/worker"})
+	nodes, err := kubeClient.CoreV1().Nodes().List(goctx.TODO(), metav1.ListOptions{LabelSelector: "node-role.kubernetes.io/worker"})
 	var dummyNode v1.Node
 	if err != nil {
 		t.Fatalf("error finding worker node with %v", err)
@@ -615,7 +611,7 @@ func waitListSchedulableNodes(c kubernetes.Interface) (*v1.NodeList, error) {
 	var nodes *v1.NodeList
 	var err error
 	if wait.PollImmediate(retryInterval, timeout, func() (bool, error) {
-		nodes, err = c.CoreV1().Nodes().List(metav1.ListOptions{FieldSelector: fields.Set{
+		nodes, err = c.CoreV1().Nodes().List(goctx.TODO(), metav1.ListOptions{FieldSelector: fields.Set{
 			"spec.unschedulable": "false",
 		}.AsSelector().String()})
 		if err != nil {
@@ -635,7 +631,7 @@ func waitForDaemonSet(t *testing.T, kubeclient kubernetes.Interface, namespace, 
 	nodeCount := 1
 	var err error
 	err = wait.Poll(retryInterval, timeout, func() (done bool, err error) {
-		daemonset, err := kubeclient.AppsV1().DaemonSets(namespace).Get(name, metav1.GetOptions{})
+		daemonset, err := kubeclient.AppsV1().DaemonSets(namespace).Get(goctx.TODO(), name, metav1.GetOptions{})
 		if err != nil {
 			if apierrors.IsNotFound(err) {
 				t.Logf("Waiting for availability of %s daemonset\n", name)
@@ -661,9 +657,9 @@ func waitForNodeTaintUpdate(t *testing.T, kubeclient kubernetes.Interface, node 
 	var newNode *v1.Node
 	name := node.Name
 	err = wait.Poll(retryInterval, timeout, func() (done bool, err error) {
-		newNode, err = kubeclient.CoreV1().Nodes().Get(name, metav1.GetOptions{})
+		newNode, err = kubeclient.CoreV1().Nodes().Get(goctx.TODO(), name, metav1.GetOptions{})
 		newNode.Spec.Taints = node.Spec.Taints
-		newNode, err = kubeclient.CoreV1().Nodes().Update(newNode)
+		newNode, err = kubeclient.CoreV1().Nodes().Update(goctx.TODO(), newNode, metav1.UpdateOptions{})
 		if err != nil {
 			t.Logf("Failed to update node %v successfully : %v", name, err)
 			return false, nil
@@ -681,7 +677,7 @@ func getFakeLocalVolume(selectedNode v1.Node, selectedDisk, namespace string) *l
 	localVolume := &localv1.LocalVolume{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "LocalVolume",
-			APIVersion: localv1.SchemeGroupVersion.String(),
+			APIVersion: localv1.GroupVersion.String(),
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "test-local-disk",
@@ -716,7 +712,7 @@ func getFakeLocalVolume(selectedNode v1.Node, selectedDisk, namespace string) *l
 	return localVolume
 }
 
-func deleteResource(obj runtime.Object, namespace, name string, client framework.FrameworkClient) error {
+func deleteResource(obj client.Object, namespace, name string, client framework.FrameworkClient) error {
 	err := client.Delete(goctx.TODO(), obj)
 	if err != nil {
 		if apierrors.IsNotFound(err) {

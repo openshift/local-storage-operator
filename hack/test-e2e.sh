@@ -18,17 +18,25 @@ fi
 
 KUBECONFIG=${KUBECONFIG:-$HOME/.kube/config}
 repo_dir="$(dirname $0)/.."
-cat ${repo_dir}/deploy/sa.yaml >> ${manifest}
-cat ${repo_dir}/deploy/rbac.yaml >> ${manifest}
-cat ${repo_dir}/deploy/operator.yaml >> ${manifest}
-cat ${repo_dir}/deploy/localvolume_crd.yaml >> ${global_manifest}
-cat ${repo_dir}/deploy/localvolumeset_crd.yaml >> ${global_manifest}
-cat ${repo_dir}/deploy/localvolumediscovery_crd.yaml >> ${global_manifest}
-cat ${repo_dir}/deploy/localvolumediscoveryresult_crd.yaml >> ${global_manifest}
+cat ${repo_dir}/config/rbac/leader_election_role.yaml >> ${manifest}
+cat ${repo_dir}/config/rbac/leader_election_role_binding.yaml >> ${manifest}
+cat ${repo_dir}/config/rbac/diskmaker/role.yaml >> ${manifest}
+cat ${repo_dir}/config/rbac/diskmaker/role_binding.yaml >> ${manifest}
+cat ${repo_dir}/config/rbac/diskmaker/service_account.yaml >> ${manifest}
+cat ${repo_dir}/config/rbac/role.yaml >> ${manifest}
+cat ${repo_dir}/config/rbac/role_binding.yaml >> ${manifest}
+cat ${repo_dir}/config/rbac/service_account.yaml >> ${manifest}
+cat ${repo_dir}/config/manager/manager.yaml >> ${manifest}
+#cat ${repo_dir}/deploy/operator.yaml >> ${manifest}
+cat ${repo_dir}/config/crd/bases/local.storage.openshift.io_localvolumes.yaml >> ${global_manifest}
+cat ${repo_dir}/config/crd/bases/local.storage.openshift.io_localvolumesets.yaml >> ${global_manifest}
+cat ${repo_dir}/config/crd/bases/local.storage.openshift.io_localvolumediscoveries.yaml >> ${global_manifest}
+cat ${repo_dir}/config/crd/bases/local.storage.openshift.io_localvolumediscoveryresults.yaml >> ${global_manifest}
 
 sed -i "s,quay.io/openshift/origin-local-storage-operator,${IMAGE_LOCAL_STORAGE_OPERATOR}," ${manifest}
 sed -i "s,quay.io/openshift/origin-local-storage-diskmaker,${IMAGE_LOCAL_DISKMAKER}," ${manifest}
-export TEST_NAMESPACE=${TEST_NAMESPACE:-default}
+export TEST_WATCH_NAMESPACE=${TEST_OPERATOR_NAMESPACE:-default}
+export TEST_OPERATOR_NAMESPACE=${TEST_OPERATOR_NAMESPACE:-default}
 export TEST_LOCAL_DISK=${TEST_LOCAL_DISK:-""}
 
 export \
@@ -42,4 +50,4 @@ go test -timeout 0 ./test/e2e/... \
   -namespacedMan ${manifest} \
   -v \
   -parallel=1 \
-  -singleNamespace
+  #-singleNamespace

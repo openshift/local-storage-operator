@@ -24,7 +24,7 @@ type MyOperatorResourceStatus struct {
 	OperatorStatus `json:",inline"`
 }
 
-// +kubebuilder:validation:Pattern=^(Managed|Unmanaged|Force|Removed)$
+// +kubebuilder:validation:Pattern=`^(Managed|Unmanaged|Force|Removed)$`
 type ManagementState string
 
 var (
@@ -51,13 +51,21 @@ type OperatorSpec struct {
 
 	// logLevel is an intent based logging for an overall component.  It does not give fine grained control, but it is a
 	// simple way to manage coarse grained logging choices that operators have to interpret for their operands.
+	//
+	// Valid values are: "Normal", "Debug", "Trace", "TraceAll".
+	// Defaults to "Normal".
 	// +optional
-	LogLevel LogLevel `json:"logLevel"`
+	// +kubebuilder:default=Normal
+	LogLevel LogLevel `json:"logLevel,omitempty"`
 
 	// operatorLogLevel is an intent based logging for the operator itself.  It does not give fine grained control, but it is a
 	// simple way to manage coarse grained logging choices that operators have to interpret for themselves.
+	//
+	// Valid values are: "Normal", "Debug", "Trace", "TraceAll".
+	// Defaults to "Normal".
 	// +optional
-	OperatorLogLevel LogLevel `json:"operatorLogLevel"`
+	// +kubebuilder:default=Normal
+	OperatorLogLevel LogLevel `json:"operatorLogLevel,omitempty"`
 
 	// unsupportedConfigOverrides holds a sparse config that will override any previously set options.  It only needs to be the fields to override
 	// it will end up overlaying in the following order:
@@ -66,15 +74,18 @@ type OperatorSpec struct {
 	// 3. unsupportedConfigOverrides
 	// +optional
 	// +nullable
+	// +kubebuilder:pruning:PreserveUnknownFields
 	UnsupportedConfigOverrides runtime.RawExtension `json:"unsupportedConfigOverrides"`
 
 	// observedConfig holds a sparse config that controller has observed from the cluster state.  It exists in spec because
 	// it is an input to the level for the operator
 	// +optional
 	// +nullable
+	// +kubebuilder:pruning:PreserveUnknownFields
 	ObservedConfig runtime.RawExtension `json:"observedConfig"`
 }
 
+// +kubebuilder:validation:Enum="";Normal;Debug;Trace;TraceAll
 type LogLevel string
 
 var (
@@ -204,9 +215,13 @@ type NodeStatus struct {
 	CurrentRevision int32 `json:"currentRevision"`
 	// targetRevision is the generation of the deployment we're trying to apply
 	TargetRevision int32 `json:"targetRevision,omitempty"`
+
 	// lastFailedRevision is the generation of the deployment we tried and failed to deploy.
 	LastFailedRevision int32 `json:"lastFailedRevision,omitempty"`
-
+	// lastFailedTime is the time the last failed revision failed the last time.
+	LastFailedTime *metav1.Time `json:"lastFailedTime,omitempty"`
+	// lastFailedCount is how often the last failed revision failed.
+	LastFailedCount int `json:"lastFailedCount,omitempty"`
 	// lastFailedRevisionErrors is a list of the errors during the failed deployment referenced in lastFailedRevision
 	LastFailedRevisionErrors []string `json:"lastFailedRevisionErrors,omitempty"`
 }

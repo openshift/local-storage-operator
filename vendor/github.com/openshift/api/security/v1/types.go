@@ -20,11 +20,18 @@ var AllowAllCapabilities corev1.Capability = "*"
 // That exposure is deprecated and will be removed in a future release - users
 // should instead use the security.openshift.io group to manage
 // SecurityContextConstraints.
+// +kubebuilder:printcolumn:name="Priv",type=string,JSONPath=`.allowPrivilegedContainer`,description="Determines if a container can request to be run as privileged"
+// +kubebuilder:printcolumn:name="Caps",type=string,JSONPath=`.allowedCapabilities`,description="A list of capabilities that can be requested to add to the container"
+// +kubebuilder:printcolumn:name="SELinux",type=string,JSONPath=`.seLinuxContext.type`,description="Strategy that will dictate what labels will be set in the SecurityContext"
+// +kubebuilder:printcolumn:name="RunAsUser",type=string,JSONPath=`.runAsUser.type`,description="Strategy that will dictate what RunAsUser is used in the SecurityContext"
+// +kubebuilder:printcolumn:name="FSGroup",type=string,JSONPath=`.fsGroup.type`,description="Strategy that will dictate what fs group is used by the SecurityContext"
+// +kubebuilder:printcolumn:name="SupGroup",type=string,JSONPath=`.supplementalGroups.type`,description="Strategy that will dictate what supplemental groups are used by the SecurityContext"
+// +kubebuilder:printcolumn:name="Priority",type=string,JSONPath=`.priority`,description="Sort order of SCCs"
+// +kubebuilder:printcolumn:name="ReadOnlyRootFS",type=string,JSONPath=`.readOnlyRootFilesystem`,description="Force containers to run with a read only root file system"
+// +kubebuilder:printcolumn:name="Volumes",type=string,JSONPath=`.volumes`,description="White list of allowed volume plugins"
 // +kubebuilder:singular=securitycontextconstraint
 type SecurityContextConstraints struct {
-	metav1.TypeMeta `json:",inline"`
-	// Standard object's metadata.
-	// More info: http://releases.k8s.io/HEAD/docs/devel/api-conventions.md#metadata
+	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
 
 	// Priority influences the sort order of SCCs when evaluating which SCCs to try first for
@@ -176,6 +183,7 @@ var (
 	FSScaleIO                   FSType = "scaleIO"
 	FSStorageOS                 FSType = "storageOS"
 	FSTypeCSI                   FSType = "csi"
+	FSTypeEphemeral             FSType = "ephemeral"
 	FSTypeAll                   FSType = "*"
 	FSTypeNone                  FSType = "none"
 )
@@ -281,8 +289,6 @@ const (
 // SecurityContextConstraintsList is a list of SecurityContextConstraints objects
 type SecurityContextConstraintsList struct {
 	metav1.TypeMeta `json:",inline"`
-
-	// More info: http://releases.k8s.io/HEAD/docs/devel/api-conventions.md#metadata
 	metav1.ListMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
 
 	// List of security context constraints.
@@ -406,10 +412,7 @@ type ServiceAccountPodSecurityPolicyReviewStatus struct {
 
 // RangeAllocation is used so we can easily expose a RangeAllocation typed for security group
 type RangeAllocation struct {
-	metav1.TypeMeta `json:",inline"`
-	// Standard object's metadata.
-	// More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#metadata
-	// +optional
+	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
 
 	// range is a string representing a unique label for a range of uids, "1000000000-2000000000/10000".
@@ -425,8 +428,6 @@ type RangeAllocation struct {
 // RangeAllocationList is a list of RangeAllocations objects
 type RangeAllocationList struct {
 	metav1.TypeMeta `json:",inline"`
-
-	// More info: http://releases.k8s.io/HEAD/docs/devel/api-conventions.md#metadata
 	metav1.ListMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
 
 	// List of RangeAllocations.

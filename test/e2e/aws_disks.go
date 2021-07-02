@@ -14,9 +14,9 @@ import (
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/onsi/gomega"
-	localv1alpha1 "github.com/openshift/local-storage-operator/pkg/apis/local/v1alpha1"
-	"github.com/openshift/local-storage-operator/pkg/common"
-	framework "github.com/operator-framework/operator-sdk/pkg/test"
+	localv1alpha1 "github.com/openshift/local-storage-operator/api/v1alpha1"
+	"github.com/openshift/local-storage-operator/common"
+	framework "github.com/openshift/local-storage-operator/test-framework"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -47,7 +47,7 @@ type disk struct {
 // discover devices on the node and associate available onces with nodeEnv entries
 // might mutate nodeEnv, but the return value should be used
 // not specific to any platform
-func populateDeviceInfo(t *testing.T, ctx *framework.Context, nodeEnv []nodeDisks) []nodeDisks {
+func populateDeviceInfo(t *testing.T, ctx *framework.TestCtx, nodeEnv []nodeDisks) []nodeDisks {
 	f := framework.Global
 	namespace, err := ctx.GetNamespace()
 	if err != nil {
@@ -60,7 +60,7 @@ func populateDeviceInfo(t *testing.T, ctx *framework.Context, nodeEnv []nodeDisk
 	localVolumeDiscovery := &localv1alpha1.LocalVolumeDiscovery{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "LocalVolumeDiscovery",
-			APIVersion: localv1alpha1.SchemeGroupVersion.String(),
+			APIVersion: localv1alpha1.GroupVersion.String(),
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "auto-discover-devices",
@@ -138,7 +138,7 @@ func populateDeviceInfo(t *testing.T, ctx *framework.Context, nodeEnv []nodeDisk
 // this assumes that the device spaces /dev/sd[h-z] are available on the node
 // do not provide more than 20 disksizes
 // do not use more than once per node
-func createAndAttachAWSVolumes(t *testing.T, ec2Client *ec2.EC2, ctx *framework.Context, namespace string, nodeEnv []nodeDisks) error {
+func createAndAttachAWSVolumes(t *testing.T, ec2Client *ec2.EC2, ctx *framework.TestCtx, namespace string, nodeEnv []nodeDisks) error {
 	var err error
 
 	for _, nodeEntry := range nodeEnv {

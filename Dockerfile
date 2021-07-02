@@ -5,7 +5,7 @@ RUN make build-operator
 
 FROM registry.ci.openshift.org/ocp/4.8:base
 COPY --from=builder /go/src/github.com/openshift/local-storage-operator/_output/bin/local-storage-operator /usr/bin/
-COPY manifests /manifests
+COPY config/manifests /manifests
 ENTRYPOINT ["/usr/bin/local-storage-operator"]
 LABEL com.redhat.delivery.appregistry=true
 LABEL io.k8s.display-name="OpenShift local-storage-operator" \

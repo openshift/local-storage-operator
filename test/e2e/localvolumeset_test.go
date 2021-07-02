@@ -10,22 +10,21 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	provCommon "sigs.k8s.io/sig-storage-local-static-provisioner/pkg/common"
 
-	framework "github.com/operator-framework/operator-sdk/pkg/test"
-
-	localv1 "github.com/openshift/local-storage-operator/pkg/apis/local/v1"
-	localv1alpha1 "github.com/openshift/local-storage-operator/pkg/apis/local/v1alpha1"
+	localv1 "github.com/openshift/local-storage-operator/api/v1"
+	localv1alpha1 "github.com/openshift/local-storage-operator/api/v1alpha1"
+	framework "github.com/openshift/local-storage-operator/test-framework"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	provCommon "sigs.k8s.io/sig-storage-local-static-provisioner/pkg/common"
 )
 
 const (
 	labelNodeRoleWorker = "node-role.kubernetes.io/worker"
 )
 
-func LocalVolumeSetTest(ctx *framework.Context, cleanupFuncs *[]cleanupFn) func(*testing.T) {
+func LocalVolumeSetTest(ctx *framework.TestCtx, cleanupFuncs *[]cleanupFn) func(*testing.T) {
 	return func(t *testing.T) {
 
 		f := framework.Global
@@ -346,6 +345,7 @@ func cleanupLVSetResources(t *testing.T, lvsets []*localv1alpha1.LocalVolumeSet)
 			for _, pv := range pvList.Items {
 				if pv.Spec.StorageClassName == lvset.Spec.StorageClassName {
 					eventuallyDelete(t, &pv)
+
 				}
 			}
 			return nil

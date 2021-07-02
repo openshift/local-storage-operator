@@ -17,6 +17,7 @@ limitations under the License.
 package common
 
 import (
+	"context"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -25,7 +26,7 @@ import (
 	"strings"
 
 	"github.com/ghodss/yaml"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 	"sigs.k8s.io/sig-storage-local-static-provisioner/pkg/cache"
 	"sigs.k8s.io/sig-storage-local-static-provisioner/pkg/util"
 
@@ -39,7 +40,7 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/tools/record"
-	"k8s.io/kubernetes/pkg/util/mount"
+	"k8s.io/utils/mount"
 )
 
 const (
@@ -81,6 +82,9 @@ const (
 
 	// DefaultVolumeMode is the default volume mode of created PV object.
 	DefaultVolumeMode = "Filesystem"
+
+	// DefaultNamePattern is the default name pattern of in PV discovery.
+	DefaultNamePattern = "*"
 )
 
 // UserConfig stores all the user-defined parameters to the provisioner
@@ -127,6 +131,9 @@ type MountConfig struct {
 	// and desire volume mode is Filesystem.
 	// Must be a filesystem type supported by the host operating system.
 	FsType string `json:"fsType" yaml:"fsType"`
+	// NamePattern name pattern check
+	// only discover file name matching pattern("*" by default)
+	NamePattern string `json:"namePattern" yaml:"namePattern"`
 }
 
 // RuntimeConfig stores all the objects that the provisioner needs to run
@@ -264,7 +271,7 @@ func GetContainerPath(pv *v1.PersistentVolume, config MountConfig) (string, erro
 
 // GetVolumeConfigFromConfigMap gets volume configuration from given configmap.
 func GetVolumeConfigFromConfigMap(client *kubernetes.Clientset, namespace, name string, provisionerConfig *ProvisionerConfiguration) error {
-	configMap, err := client.CoreV1().ConfigMaps(namespace).Get(name, metav1.GetOptions{})
+	configMap, err := client.CoreV1().ConfigMaps(namespace).Get(context.TODO(), name, metav1.GetOptions{})
 	if err != nil {
 		return err
 	}
@@ -325,19 +332,24 @@ func ConfigMapDataToVolumeConfig(data map[string]string, provisionerConfig *Prov
 		if config.VolumeMode == "" {
 			config.VolumeMode = DefaultVolumeMode
 		}
+
+		if config.NamePattern == "" {
+			config.NamePattern = DefaultNamePattern
+		}
 		volumeMode := v1.PersistentVolumeMode(config.VolumeMode)
 		if volumeMode != v1.PersistentVolumeBlock && volumeMode != v1.PersistentVolumeFilesystem {
 			return fmt.Errorf("unsupported volume mode %s", config.VolumeMode)
 		}
 
 		provisionerConfig.StorageClassConfig[class] = config
-		klog.Infof("StorageClass %q configured with MountDir %q, HostDir %q, VolumeMode %q, FsType %q, BlockCleanerCommand %q",
+		klog.Infof("StorageClass %q configured with MountDir %q, HostDir %q, VolumeMode %q, FsType %q, BlockCleanerCommand %q, NamePattern %q",
 			class,
 			config.MountDir,
 			config.HostDir,
 			config.VolumeMode,
 			config.FsType,
-			config.BlockCleanerCommand)
+			config.BlockCleanerCommand,
+			config.NamePattern)
 	}
 	return nil
 }

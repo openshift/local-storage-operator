@@ -19,9 +19,10 @@ type Network struct {
 	Status NetworkStatus `json:"status,omitempty"`
 }
 
-// NetworkStatus is currently unused. Instead, status
-// is reported in the Network.config.openshift.io object.
+// NetworkStatus is detailed operator status, which is distilled
+// up to the Network clusteroperator object.
 type NetworkStatus struct {
+	OperatorStatus `json:",inline"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
@@ -35,6 +36,8 @@ type NetworkList struct {
 
 // NetworkSpec is the top-level network configuration object.
 type NetworkSpec struct {
+	OperatorSpec `json:",inline"`
+
 	// clusterNetwork is the IP address pool to use for pod IPs.
 	// Some network providers, e.g. OpenShift SDN, support multiple ClusterNetworks.
 	// Others only support one. This is equivalent to the cluster-cidr.
@@ -57,6 +60,16 @@ type NetworkSpec struct {
 	// 'false' and multiple network support is enabled.
 	DisableMultiNetwork *bool `json:"disableMultiNetwork,omitempty"`
 
+	// useMultiNetworkPolicy enables a controller which allows for
+	// MultiNetworkPolicy objects to be used on additional networks as
+	// created by Multus CNI. MultiNetworkPolicy are similar to NetworkPolicy
+	// objects, but NetworkPolicy objects only apply to the primary interface.
+	// With MultiNetworkPolicy, you can control the traffic that a pod can receive
+	// over the secondary interfaces. If unset, this property defaults to 'false'
+	// and MultiNetworkPolicy objects are ignored. If 'disableMultiNetwork' is
+	// 'true' then the value of this field is ignored.
+	UseMultiNetworkPolicy *bool `json:"useMultiNetworkPolicy,omitempty"`
+
 	// deployKubeProxy specifies whether or not a standalone kube-proxy should
 	// be deployed by the operator. Some network providers include kube-proxy
 	// or similar functionality. If unset, the plugin will attempt to select
@@ -65,18 +78,49 @@ type NetworkSpec struct {
 	// +optional
 	DeployKubeProxy *bool `json:"deployKubeProxy,omitempty"`
 
+	// disableNetworkDiagnostics specifies whether or not PodNetworkConnectivityCheck
+	// CRs from a test pod to every node, apiserver and LB should be disabled or not.
+	// If unset, this property defaults to 'false' and network diagnostics is enabled.
+	// Setting this to 'true' would reduce the additional load of the pods performing the checks.
+	// +optional
+	// +kubebuilder:default:=false
+	DisableNetworkDiagnostics bool `json:"disableNetworkDiagnostics"`
+
 	// kubeProxyConfig lets us configure desired proxy configuration.
 	// If not specified, sensible defaults will be chosen by OpenShift directly.
 	// Not consumed by all network providers - currently only openshift-sdn.
 	KubeProxyConfig *ProxyConfig `json:"kubeProxyConfig,omitempty"`
+
+	// exportNetworkFlows enables and configures the export of network flow metadata from the pod network
+	// by using protocols NetFlow, SFlow or IPFIX. Currently only supported on OVN-Kubernetes plugin.
+	// If unset, flows will not be exported to any collector.
+	// +optional
+	// +kubebuilder:validation:MinProperties=1
+	ExportNetworkFlows *ExportNetworkFlows `json:"exportNetworkFlows,omitempty"`
+
+	// migration enables and configures the cluster network migration.
+	// Setting this to the target network type to allow changing the default network.
+	// If unset, the operation of changing cluster default network plugin will be rejected.
+	// +optional
+	Migration *NetworkMigration `json:"migration,omitempty"`
+}
+
+// NetworkMigration represents the cluster network configuration.
+type NetworkMigration struct {
+	// networkType is the target type of network migration
+	// The supported values are OpenShiftSDN, OVNKubernetes
+	NetworkType NetworkType `json:"networkType"`
 }
 
 // ClusterNetworkEntry is a subnet from which to allocate PodIPs. A network of size
-// HostPrefix (in CIDR notation) will be allocated when nodes join the cluster.
+// HostPrefix (in CIDR notation) will be allocated when nodes join the cluster. If
+// the HostPrefix field is not used by the plugin, it can be left unset.
 // Not all network providers support multiple ClusterNetworks
 type ClusterNetworkEntry struct {
-	CIDR       string `json:"cidr"`
-	HostPrefix uint32 `json:"hostPrefix"`
+	CIDR string `json:"cidr"`
+	// +kubebuilder:validation:Minimum=0
+	// +optional
+	HostPrefix uint32 `json:"hostPrefix,omitempty"`
 }
 
 // DefaultNetworkDefinition represents a single network plugin's configuration.
@@ -117,6 +161,7 @@ type SimpleMacvlanConfig struct {
 
 	// mtu is the mtu to use for the macvlan interface. if unset, host's
 	// kernel will select the value.
+	// +kubebuilder:validation:Minimum=0
 	// +optional
 	MTU uint32 `json:"mtu,omitempty"`
 }
@@ -209,11 +254,13 @@ type OpenShiftSDNConfig struct {
 	Mode SDNMode `json:"mode"`
 
 	// vxlanPort is the port to use for all vxlan packets. The default is 4789.
+	// +kubebuilder:validation:Minimum=0
 	// +optional
 	VXLANPort *uint32 `json:"vxlanPort,omitempty"`
 
 	// mtu is the mtu to use for the tunnel interface. Defaults to 1450 if unset.
 	// This must be 50 bytes smaller than the machine's uplink.
+	// +kubebuilder:validation:Minimum=0
 	// +optional
 	MTU *uint32 `json:"mtu,omitempty"`
 
@@ -230,10 +277,12 @@ type OpenShiftSDNConfig struct {
 // KuryrConfig configures the Kuryr-Kubernetes SDN
 type KuryrConfig struct {
 	// The port kuryr-daemon will listen for readiness and liveness requests.
+	// +kubebuilder:validation:Minimum=0
 	// +optional
 	DaemonProbesPort *uint32 `json:"daemonProbesPort,omitempty"`
 
 	// The port kuryr-controller will listen for readiness and liveness requests.
+	// +kubebuilder:validation:Minimum=0
 	// +optional
 	ControllerProbesPort *uint32 `json:"controllerProbesPort,omitempty"`
 
@@ -250,15 +299,157 @@ type KuryrConfig struct {
 	// size by 1.
 	// +optional
 	OpenStackServiceNetwork string `json:"openStackServiceNetwork,omitempty"`
+
+	// enablePortPoolsPrepopulation when true will make Kuryr prepopulate each newly created port
+	// pool with a minimum number of ports. Kuryr uses Neutron port pooling to fight the fact
+	// that it takes a significant amount of time to create one. Instead of creating it when
+	// pod is being deployed, Kuryr keeps a number of ports ready to be attached to pods. By
+	// default port prepopulation is disabled.
+	// +optional
+	EnablePortPoolsPrepopulation bool `json:"enablePortPoolsPrepopulation,omitempty"`
+
+	// poolMaxPorts sets a maximum number of free ports that are being kept in a port pool.
+	// If the number of ports exceeds this setting, free ports will get deleted. Setting 0
+	// will disable this upper bound, effectively preventing pools from shrinking and this
+	// is the default value. For more information about port pools see
+	// enablePortPoolsPrepopulation setting.
+	// +kubebuilder:validation:Minimum=0
+	// +optional
+	PoolMaxPorts uint `json:"poolMaxPorts,omitempty"`
+
+	// poolMinPorts sets a minimum number of free ports that should be kept in a port pool.
+	// If the number of ports is lower than this setting, new ports will get created and
+	// added to pool. The default is 1. For more information about port pools see
+	// enablePortPoolsPrepopulation setting.
+	// +kubebuilder:validation:Minimum=1
+	// +optional
+	PoolMinPorts uint `json:"poolMinPorts,omitempty"`
+
+	// poolBatchPorts sets a number of ports that should be created in a single batch request
+	// to extend the port pool. The default is 3. For more information about port pools see
+	// enablePortPoolsPrepopulation setting.
+	// +kubebuilder:validation:Minimum=0
+	// +optional
+	PoolBatchPorts *uint `json:"poolBatchPorts,omitempty"`
+
+	// mtu is the MTU that Kuryr should use when creating pod networks in Neutron.
+	// The value has to be lower or equal to the MTU of the nodes network and Neutron has
+	// to allow creation of tenant networks with such MTU. If unset Pod networks will be
+	// created with the same MTU as the nodes network has.
+	// +kubebuilder:validation:Minimum=0
+	// +optional
+	MTU *uint32 `json:"mtu,omitempty"`
 }
 
-// ovnKubernetesConfig is the proposed configuration parameters for networks
+// ovnKubernetesConfig contains the configuration parameters for networks
 // using the ovn-kubernetes network project
 type OVNKubernetesConfig struct {
 	// mtu is the MTU to use for the tunnel interface. This must be 100
 	// bytes smaller than the uplink mtu.
 	// Default is 1400
+	// +kubebuilder:validation:Minimum=0
+	// +optional
 	MTU *uint32 `json:"mtu,omitempty"`
+	// geneve port is the UDP port to be used by geneve encapulation.
+	// Default is 6081
+	// +kubebuilder:validation:Minimum=1
+	// +optional
+	GenevePort *uint32 `json:"genevePort,omitempty"`
+	// HybridOverlayConfig configures an additional overlay network for peers that are
+	// not using OVN.
+	// +optional
+	HybridOverlayConfig *HybridOverlayConfig `json:"hybridOverlayConfig,omitempty"`
+	// ipsecConfig enables and configures IPsec for pods on the pod network within the
+	// cluster.
+	// +optional
+	IPsecConfig *IPsecConfig `json:"ipsecConfig,omitempty"`
+	// policyAuditConfig is the configuration for network policy audit events. If unset,
+	// reported defaults are used.
+	// +optional
+	PolicyAuditConfig *PolicyAuditConfig `json:"policyAuditConfig,omitempty"`
+}
+
+type HybridOverlayConfig struct {
+	// HybridClusterNetwork defines a network space given to nodes on an additional overlay network.
+	HybridClusterNetwork []ClusterNetworkEntry `json:"hybridClusterNetwork"`
+	// HybridOverlayVXLANPort defines the VXLAN port number to be used by the additional overlay network.
+	// Default is 4789
+	// +optional
+	HybridOverlayVXLANPort *uint32 `json:"hybridOverlayVXLANPort,omitempty"`
+}
+
+type IPsecConfig struct {
+}
+
+type ExportNetworkFlows struct {
+	// netFlow defines the NetFlow configuration.
+	// +optional
+	NetFlow *NetFlowConfig `json:"netFlow,omitempty"`
+	// sFlow defines the SFlow configuration.
+	// +optional
+	SFlow *SFlowConfig `json:"sFlow,omitempty"`
+	// ipfix defines IPFIX configuration.
+	// +optional
+	IPFIX *IPFIXConfig `json:"ipfix,omitempty"`
+}
+
+type NetFlowConfig struct {
+	// netFlow defines the NetFlow collectors that will consume the flow data exported from OVS.
+	// It is a list of strings formatted as ip:port
+	// +kubebuilder:validation:MinItems=1
+	Collectors []IPPort `json:"collectors,omitempty"`
+}
+
+type SFlowConfig struct {
+	// sFlowCollectors is list of strings formatted as ip:port
+	// +kubebuilder:validation:MinItems=1
+	Collectors []IPPort `json:"collectors,omitempty"`
+}
+
+type IPFIXConfig struct {
+	// ipfixCollectors is list of strings formatted as ip:port
+	// +kubebuilder:validation:MinItems=1
+	Collectors []IPPort `json:"collectors,omitempty"`
+}
+
+// +kubebuilder:validation:Pattern=`^(([0-9]|[0-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[0-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5]):[0-9]+$`
+type IPPort string
+
+type PolicyAuditConfig struct {
+	// rateLimit is the approximate maximum number of messages to generate per-second per-node. If
+	// unset the default of 20 msg/sec is used.
+	// +kubebuilder:default=20
+	// +kubebuilder:validation:Minimum=1
+	// +optional
+	RateLimit *uint32 `json:"rateLimit,omitempty"`
+
+	// maxFilesSize is the max size an ACL_audit log file is allowed to reach before rotation occurs
+	// Units are in MB and the Default is 50MB
+	// +kubebuilder:default=50
+	// +kubebuilder:validation:Minimum=1
+	// +optional
+	MaxFileSize *uint32 `json:"maxFileSize,omitempty"`
+
+	// destination is the location for policy log messages.
+	// Regardless of this config, persistent logs will always be dumped to the host
+	// at /var/log/ovn/ however
+	// Additionally syslog output may be configured as follows.
+	// Valid values are:
+	// - "libc" -> to use the libc syslog() function of the host node's journdald process
+	// - "udp:host:port" -> for sending syslog over UDP
+	// - "unix:file" -> for using the UNIX domain socket directly
+	// - "null" -> to discard all messages logged to syslog
+	// The default is "null"
+	// +kubebuilder:default=null
+	// +kubebuilder:pattern='^libc$|^null$|^udp:(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5]):([0-9]){0,5}$|^unix:(\/[^\/ ]*)+([^\/\s])$'
+	// +optional
+	Destination string `json:"destination,omitempty"`
+
+	// syslogFacility the RFC5424 facility for generated messages, e.g. "kern". Default is "local0"
+	// +kubebuilder:default=local0
+	// +kubebuilder:Enum=kern;user;mail;daemon;auth;syslog;lpr;news;uucp;clock;ftp;ntp;audit;alert;clock2;local0;local1;local2;local3;local4;local5;local6;local7
+	// +optional
+	SyslogFacility string `json:"syslogFacility,omitempty"`
 }
 
 // NetworkType describes the network plugin type to configure
@@ -270,7 +461,9 @@ type ProxyArgumentList []string
 // ProxyConfig defines the configuration knobs for kubeproxy
 // All of these are optional and have sensible defaults
 type ProxyConfig struct {
-	// The period that iptables rules are refreshed.
+	// An internal kube-proxy parameter. In older releases of OCP, this sometimes needed to be adjusted
+	// in large clusters for performance reasons, but this is no longer necessary, and there is no reason
+	// to change this from the default value.
 	// Default: 30s
 	IptablesSyncPeriod string `json:"iptablesSyncPeriod,omitempty"`
 

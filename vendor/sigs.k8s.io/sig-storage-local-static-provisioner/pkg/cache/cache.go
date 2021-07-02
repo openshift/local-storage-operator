@@ -19,9 +19,9 @@ package cache
 import (
 	"sync"
 
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 
-	"k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 )
 
 // VolumeCache keeps all the PersistentVolumes that have been created by this provisioner.
@@ -83,4 +83,24 @@ func (cache *VolumeCache) ListPVs() []*v1.PersistentVolume {
 		pvs = append(pvs, pv)
 	}
 	return pvs
+}
+
+// LookupPVsByPath returns a list of all of the PVs in the cache with a given local path
+// Note: The PVs in the cache have been filtered by the populator so that the cache only
+// contains volumes created by the local-static-provisioner running on this knode.
+func (cache *VolumeCache) LookupPVsByPath(filePath string) []string {
+	cache.mutex.Lock()
+	defer cache.mutex.Unlock()
+	var matches = make([]string, 0, 1)
+
+	for _, pv := range cache.pvs {
+		lvs := pv.Spec.Local
+		if lvs != nil {
+			if lvs.Path == filePath {
+				matches = append(matches, pv.ObjectMeta.Name)
+			}
+		}
+	}
+
+	return matches
 }

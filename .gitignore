@@ -2,5 +2,6 @@ diskmaker
 *local-storage-operator
 !local-storage-operator/
 !diskmaker/
+bin/
 cover.out
 _output

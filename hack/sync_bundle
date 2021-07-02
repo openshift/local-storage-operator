@@ -47,14 +47,14 @@ class SyncBundle
 
   def initialize(args)
     @default_options = args
-    @package = YAML.load(File.read("manifests/local-storage-operator.package.yaml"))
+    @package = YAML.load(File.read("config/manifests/local-storage-operator.package.yaml"))
   end
 
   def sync_assets
     current_channel = @package["channels"][0]["name"]
     puts "current channel is #{current_channel}"
-    csv_file = "manifests/#{current_channel}/local-storage-operator.v#{current_channel}.0.clusterserviceversion.yaml"
-    crds = Dir["manifests/#{current_channel}/*.crd.yaml"]
+    csv_file = "config/manifests/#{current_channel}/local-storage-operator.v#{current_channel}.0.clusterserviceversion.yaml"
+    crds = Dir["config/manifests/#{current_channel}/*.crd.yaml"]
 
     csv_destination = "opm-bundle/manifests/local-storage-operator.clusterserviceversion.yaml"
     FileUtils.cp(csv_file, csv_destination)

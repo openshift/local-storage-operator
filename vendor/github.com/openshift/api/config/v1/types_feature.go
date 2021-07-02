@@ -8,8 +8,7 @@ import metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 // Feature holds cluster-wide information about feature gates.  The canonical name is `cluster`
 type FeatureGate struct {
-	metav1.TypeMeta `json:",inline"`
-	// Standard object's metadata.
+	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
 	// spec holds user settable values for configuration
@@ -35,6 +34,12 @@ var (
 	// Because of its nature, this setting cannot be validated.  If you have any typos or accidentally apply invalid combinations
 	// your cluster may fail in an unrecoverable way.
 	CustomNoUpgrade FeatureSet = "CustomNoUpgrade"
+
+	// TopologyManager enables ToplogyManager support. Upgrades are enabled with this feature.
+	LatencySensitive FeatureSet = "LatencySensitive"
+
+	// IPv6DualStackNoUpgrade enables dual-stack. Turning this feature set on IS NOT SUPPORTED, CANNOT BE UNDONE, and PREVENTS UPGRADES.
+	IPv6DualStackNoUpgrade FeatureSet = "IPv6DualStackNoUpgrade"
 )
 
 type FeatureGateSpec struct {
@@ -73,9 +78,9 @@ type FeatureGateStatus struct {
 
 type FeatureGateList struct {
 	metav1.TypeMeta `json:",inline"`
-	// Standard object's metadata.
 	metav1.ListMeta `json:"metadata"`
-	Items           []FeatureGate `json:"items"`
+
+	Items []FeatureGate `json:"items"`
 }
 
 type FeatureGateEnabledDisabled struct {
@@ -95,24 +100,109 @@ type FeatureGateEnabledDisabled struct {
 //
 // If you put an item in either of these lists, put your area and name on it so we can find owners.
 var FeatureSets = map[FeatureSet]*FeatureGateEnabledDisabled{
-	Default: {
-		Enabled: []string{
-			"ExperimentalCriticalPodAnnotation", // sig-pod, sjenning
-			"RotateKubeletServerCertificate",    // sig-pod, sjenning
-			"SupportPodPidsLimit",               // sig-pod, sjenning
-		},
-		Disabled: []string{
-			"LocalStorageCapacityIsolation", // sig-pod, sjenning
-		},
+	Default: defaultFeatures,
+	CustomNoUpgrade: {
+		Enabled:  []string{},
+		Disabled: []string{},
 	},
-	TechPreviewNoUpgrade: {
-		Enabled: []string{
-			"ExperimentalCriticalPodAnnotation", // sig-pod, sjenning
-			"RotateKubeletServerCertificate",    // sig-pod, sjenning
-			"SupportPodPidsLimit",               // sig-pod, sjenning
-		},
-		Disabled: []string{
-			"LocalStorageCapacityIsolation", // sig-pod, sjenning
-		},
+	TechPreviewNoUpgrade: newDefaultFeatures().
+		with("CSIDriverAzureDisk").    // sig-storage, jsafrane, OCP specific
+		with("CSIDriverVSphere").      // sig-storage, jsafrane, OCP specific
+		with("CSIMigrationAWS").       // sig-storage, jsafrane, Kubernetes feature gate
+		with("CSIMigrationOpenStack"). // sig-storage, jsafrane, Kubernetes feature gate
+		toFeatures(),
+	LatencySensitive: newDefaultFeatures().
+		with(
+			"TopologyManager", // sig-pod, sjenning
+		).
+		toFeatures(),
+	IPv6DualStackNoUpgrade: newDefaultFeatures().
+		with(
+			"IPv6DualStack", // sig-network, danwinship
+		).
+		toFeatures(),
+}
+
+var defaultFeatures = &FeatureGateEnabledDisabled{
+	Enabled: []string{
+		"APIPriorityAndFairness",         // sig-apimachinery, deads2k
+		"RotateKubeletServerCertificate", // sig-pod, sjenning
+		"SupportPodPidsLimit",            // sig-pod, sjenning
+		"NodeDisruptionExclusion",        // sig-scheduling, ccoleman
+		"ServiceNodeExclusion",           // sig-scheduling, ccoleman
+		"DownwardAPIHugePages",           // sig-node, rphillips
 	},
+	Disabled: []string{
+		"LegacyNodeRoleBehavior", // sig-scheduling, ccoleman
+	},
+}
+
+type featureSetBuilder struct {
+	forceOn  []string
+	forceOff []string
+}
+
+func newDefaultFeatures() *featureSetBuilder {
+	return &featureSetBuilder{}
+}
+
+func (f *featureSetBuilder) with(forceOn ...string) *featureSetBuilder {
+	f.forceOn = append(f.forceOn, forceOn...)
+	return f
+}
+
+func (f *featureSetBuilder) without(forceOff ...string) *featureSetBuilder {
+	f.forceOff = append(f.forceOff, forceOff...)
+	return f
+}
+
+func (f *featureSetBuilder) isForcedOff(needle string) bool {
+	for _, forcedOff := range f.forceOff {
+		if needle == forcedOff {
+			return true
+		}
+	}
+	return false
+}
+
+func (f *featureSetBuilder) isForcedOn(needle string) bool {
+	for _, forceOn := range f.forceOn {
+		if needle == forceOn {
+			return true
+		}
+	}
+	return false
+}
+
+func (f *featureSetBuilder) toFeatures() *FeatureGateEnabledDisabled {
+	finalOn := []string{}
+	finalOff := []string{}
+
+	// only add the default enabled features if they haven't been explicitly set off
+	for _, defaultOn := range defaultFeatures.Enabled {
+		if !f.isForcedOff(defaultOn) {
+			finalOn = append(finalOn, defaultOn)
+		}
+	}
+	for _, currOn := range f.forceOn {
+		if f.isForcedOff(currOn) {
+			panic("coding error, you can't have features both on and off")
+		}
+		finalOn = append(finalOn, currOn)
+	}
+
+	// only add the default disabled features if they haven't been explicitly set on
+	for _, defaultOff := range defaultFeatures.Disabled {
+		if !f.isForcedOn(defaultOff) {
+			finalOff = append(finalOff, defaultOff)
+		}
+	}
+	for _, currOff := range f.forceOff {
+		finalOff = append(finalOff, currOff)
+	}
+
+	return &FeatureGateEnabledDisabled{
+		Enabled:  finalOn,
+		Disabled: finalOff,
+	}
 }

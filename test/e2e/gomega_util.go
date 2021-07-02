@@ -8,16 +8,17 @@ import (
 
 	"github.com/onsi/gomega"
 
-	framework "github.com/operator-framework/operator-sdk/pkg/test"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	framework "github.com/openshift/local-storage-operator/test-framework"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
-	"k8s.io/apimachinery/pkg/runtime"
 )
 
 // name is only for logging
-func eventuallyDelete(t *testing.T, objs ...runtime.Object) {
+func eventuallyDelete(t *testing.T, objs ...client.Object) {
 	f := framework.Global
 	matcher := gomega.NewWithT(t)
 	for _, obj := range objs {

@@ -7,9 +7,9 @@ import (
 	"time"
 
 	"github.com/onsi/gomega"
-	"github.com/openshift/local-storage-operator/pkg/apis/local/v1alpha1"
-	localv1alpha1 "github.com/openshift/local-storage-operator/pkg/apis/local/v1alpha1"
-	framework "github.com/operator-framework/operator-sdk/pkg/test"
+	"github.com/openshift/local-storage-operator/api/v1alpha1"
+	localv1alpha1 "github.com/openshift/local-storage-operator/api/v1alpha1"
+	framework "github.com/openshift/local-storage-operator/test-framework"
 	v1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -17,7 +17,7 @@ import (
 	dynclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-func LocalVolumeDiscoveryTest(ctx *framework.Context, cleanupFuncs *[]cleanupFn) func(*testing.T) {
+func LocalVolumeDiscoveryTest(ctx *framework.TestCtx, cleanupFuncs *[]cleanupFn) func(*testing.T) {
 	return func(t *testing.T) {
 		f := framework.Global
 		namespace, err := ctx.GetNamespace()
@@ -135,7 +135,7 @@ func getFakeLocalVolumeDiscovery(selectedNode v1.Node, namespace string) *localv
 	localVolumeDiscovery := &localv1alpha1.LocalVolumeDiscovery{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "LocalVolumeDiscovery",
-			APIVersion: localv1alpha1.SchemeGroupVersion.String(),
+			APIVersion: localv1alpha1.GroupVersion.String(),
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "auto-discover-devices",

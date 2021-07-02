@@ -9,8 +9,7 @@ import metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 // Network holds cluster-wide information about Network. The canonical name is `cluster`. It is used to configure the desired network configuration, such as: IP address pools for services/pod IPs, network plugin, etc.
 // Please view network.spec for an explanation on what applies when configuring this resource.
 type Network struct {
-	metav1.TypeMeta `json:",inline"`
-	// Standard object's metadata.
+	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
 	// spec holds user settable values for configuration.
@@ -52,6 +51,15 @@ type NetworkSpec struct {
 	// not allowed to be set.
 	// +optional
 	ExternalIP *ExternalIPConfig `json:"externalIP,omitempty"`
+
+	// The port range allowed for Services of type NodePort.
+	// If not specified, the default of 30000-32767 will be used.
+	// Such Services without a NodePort specified will have one
+	// automatically allocated from this range.
+	// This parameter can be updated after the cluster is
+	// installed.
+	// +kubebuilder:validation:Pattern=`^([0-9]{1,4}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5])-([0-9]{1,4}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5])$`
+	ServiceNodePortRange string `json:"serviceNodePortRange,omitempty"`
 }
 
 // NetworkStatus is the current network configuration.
@@ -68,6 +76,9 @@ type NetworkStatus struct {
 
 	// ClusterNetworkMTU is the MTU for inter-pod networking.
 	ClusterNetworkMTU int `json:"clusterNetworkMTU,omitempty"`
+
+	// Migration contains the cluster network migration configuration.
+	Migration *NetworkMigration `json:"migration,omitempty"`
 }
 
 // ClusterNetworkEntry is a contiguous block of IP addresses from which pod IPs
@@ -76,8 +87,11 @@ type ClusterNetworkEntry struct {
 	// The complete block for pod IPs.
 	CIDR string `json:"cidr"`
 
-	// The size (prefix) of block to allocate to each node.
-	HostPrefix uint32 `json:"hostPrefix"`
+	// The size (prefix) of block to allocate to each node. If this
+	// field is not used by the plugin, it can be left unset.
+	// +kubebuilder:validation:Minimum=0
+	// +optional
+	HostPrefix uint32 `json:"hostPrefix,omitempty"`
 }
 
 // ExternalIPConfig specifies some IP blocks relevant for the ExternalIP field
@@ -116,7 +130,15 @@ type ExternalIPPolicy struct {
 
 type NetworkList struct {
 	metav1.TypeMeta `json:",inline"`
-	// Standard object's metadata.
 	metav1.ListMeta `json:"metadata"`
-	Items           []Network `json:"items"`
+
+	Items []Network `json:"items"`
+}
+
+// NetworkMigration represents the cluster network configuration.
+type NetworkMigration struct {
+	// NetworkType is the target plugin that is to be deployed.
+	// Currently supported values are: OpenShiftSDN, OVNKubernetes
+	// +kubebuilder:validation:Enum={"OpenShiftSDN","OVNKubernetes"}
+	NetworkType string `json:"networkType"`
 }
