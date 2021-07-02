@@ -128,6 +128,10 @@ func (r *ReconcileLocalVolumeSet) Reconcile(request reconcile.Request) (reconcil
 	}
 	symLinkDir := symLinkConfig.HostDir
 
+	// cleanup released PVs
+	// this function will be run once more after provisioning as the first run does the cleanup and the second run does the deletion
+	r.deleter.DeletePVs()
+
 	// list block devices
 	blockDevices, badRows, err := internal.ListBlockDevices()
 	if err != nil {
@@ -201,6 +205,8 @@ func (r *ReconcileLocalVolumeSet) Reconcile(request reconcile.Request) (reconcil
 		reqLogger.Info("found stale symLink Entries", "storageClass.Name", storageClassName, "paths.List", noMatch, "directory", symLinkDir)
 	}
 
+	// cleanup released PVs
+	// run once before provisioning too as the first run does the cleanup and the second run does the deletion
 	r.deleter.DeletePVs()
 
 	// shorten the requeueTime if there are delayed devices
