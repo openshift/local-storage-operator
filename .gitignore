@@ -5,3 +5,5 @@ diskmaker
 bin/
 cover.out
 _output
+testbin/
+debug.test
