@@ -87,7 +87,7 @@ func (r *LocalVolumeSetReconciler) reconcile(ctx context.Context, request reconc
 	}
 
 	// store a one to many association from storageClass to LocalVolumeSet
-	r.LvSetMap.DeregisterStorageClassOwner(lvSet.Spec.StorageClassName, request.NamespacedName)
+	r.LvSetMap.RegisterStorageClassOwner(lvSet.Spec.StorageClassName, request.NamespacedName)
 
 	// The diskmaker daemonset, local-staic-provisioner daemonset and configmap are created in pkg/daemon
 	// this way, there can be one daemonset for all LocalVolumeSets
