@@ -169,7 +169,7 @@ func getDiscoverdDevices(blockDevices []internal.BlockDevice) []v1alpha1.Discove
 	for _, blockDevice := range blockDevices {
 		deviceID, err := blockDevice.GetPathByID()
 		if err != nil {
-			klog.Warningf("failed to get persisent ID for the device %q. Error %v", blockDevice.Name, err)
+			klog.Warningf("failed to get persistent ID for the device %q. Error %v", blockDevice.Name, err)
 			deviceID = ""
 		}
 
