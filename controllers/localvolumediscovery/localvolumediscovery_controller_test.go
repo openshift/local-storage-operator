@@ -6,6 +6,7 @@ import (
 
 	operatorv1 "github.com/openshift/api/operator/v1"
 	localv1alpha1 "github.com/openshift/local-storage-operator/api/v1alpha1"
+	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	"github.com/stretchr/testify/assert"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -124,6 +125,9 @@ func newFakeLocalVolumeDiscoveryReconciler(t *testing.T, objs ...runtime.Object)
 
 	err = appsv1.AddToScheme(scheme)
 	assert.NoErrorf(t, err, "adding appsv1 to scheme")
+
+	err = monitoringv1.AddToScheme(scheme)
+	assert.NoErrorf(t, err, "adding corev1 to scheme")
 
 	client := fake.NewFakeClientWithScheme(scheme, objs...)
 

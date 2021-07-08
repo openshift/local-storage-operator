@@ -34,6 +34,12 @@ const (
 	// DiscoveryNodeLabelKey is the label key on the discovery result CR used to identify the node it belongs to.
 	// the value is the node's name
 	DiscoveryNodeLabel = "discovery-result-node"
+
+	//DiskMakerServiceName is the name of the service created for the diskmaker daemon
+	DiskMakerServiceName = "local-storage-diskmaker-metrics"
+
+	//DiscoveryServiceName is the name of the service created for the diskmaker discovery daemon
+	DiscoveryServiceName = "local-storage-discovery-metrics"
 )
 
 // GetLocalProvisionerImage return the image to be used for provisioner daemonset

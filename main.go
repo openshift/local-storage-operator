@@ -41,6 +41,7 @@ import (
 	lvdcontroller "github.com/openshift/local-storage-operator/controllers/localvolumediscovery"
 	lvscontroller "github.com/openshift/local-storage-operator/controllers/localvolumeset"
 	nodedaemoncontroller "github.com/openshift/local-storage-operator/controllers/nodedaemon"
+	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	//+kubebuilder:scaffold:imports
 )
 
@@ -54,6 +55,7 @@ func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 	utilruntime.Must(localv1.AddToScheme(scheme))
 	utilruntime.Must(localv1alpha1.AddToScheme(scheme))
+	utilruntime.Must(monitoringv1.AddToScheme(scheme))
 	//+kubebuilder:scaffold:scheme
 }
 
