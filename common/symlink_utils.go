@@ -52,7 +52,7 @@ func GetCleanPVSymlinkFunc(runtimeConfig *provCommon.RuntimeConfig) func(pv *v1.
 		}
 		mountPath, err := provCommon.GetContainerPath(pv, config)
 		if err != nil {
-			return fmt.Errorf("Unable to get mountPath: %w", err)
+			return errors.New("Unable to get mountpath")
 		}
 		cmd := exec.Command("rm", mountPath)
 		err = cmd.Start()
