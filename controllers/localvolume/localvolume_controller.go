@@ -213,20 +213,23 @@ func (r *LocalVolumeReconciler) addSuccessCondition(lv *localv1.LocalVolume) *lo
 
 func (r *LocalVolumeReconciler) cleanupLocalVolumeDeployment(ctx context.Context, lv *localv1.LocalVolume) error {
 	klog.Infof("Deleting localvolume: %s", commontypes.LocalVolumeKey(lv))
-	childPersistentVolumes, err := r.apiClient.listPersistentVolumes(metav1.ListOptions{LabelSelector: commontypes.GetPVOwnerSelector(lv).String()})
+	boundPVs, releasedPVs, err := commontypes.GetBoundAndReleasedPVs(lv, r.Client)
 	if err != nil {
 		msg := fmt.Sprintf("error listing persistent volumes for localvolume %s: %v", commontypes.LocalVolumeKey(lv), err)
 		r.apiClient.recordEvent(lv, corev1.EventTypeWarning, listingPersistentVolumesFailed, msg)
 		return fmt.Errorf(msg)
 	}
-	boundPVs := []corev1.PersistentVolume{}
-	for _, pv := range childPersistentVolumes.Items {
-		if pv.Status.Phase == corev1.VolumeBound {
-			boundPVs = append(boundPVs, pv)
+
+	// if we add support for other reclaimPolicys we can avoid appending releasedPVs here only bound PVs
+	pendingPVs := append(boundPVs, releasedPVs...)
+	if len(pendingPVs) > 0 {
+		pvNames := ""
+		for _, pv := range pendingPVs {
+			pvNames += fmt.Sprintf(" %v", pv.Name)
 		}
-	}
-	if len(boundPVs) > 0 {
-		msg := fmt.Sprintf("localvolume %s has bound persistentvolumes in use", commontypes.LocalVolumeKey(lv))
+
+		klog.Infof("bound/released PVs found, not removing finalizer %q", pvNames)
+		msg := fmt.Sprintf("localvolume %s has bound/released persistentvolumes in use", commontypes.LocalVolumeKey(lv))
 		r.apiClient.recordEvent(lv, corev1.EventTypeWarning, localVolumeDeletionFailed, msg)
 		return fmt.Errorf(msg)
 	}

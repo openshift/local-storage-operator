@@ -110,9 +110,7 @@ func LocalVolumeDiscoveryTest(ctx *framework.TestCtx, cleanupFuncs *[]cleanupFn)
 				node: selectedNode,
 			},
 		}
-		err = createAndAttachAWSVolumes(t, ec2Client, ctx, namespace, nodeEnv)
-		matcher.Expect(err).NotTo(gomega.HaveOccurred(), "createAndAttachAWSVolumes: %+v", selectedNode)
-
+		createAndAttachAWSVolumes(t, ec2Client, ctx, namespace, nodeEnv)
 		// verify that discovered device list got updated when a new volume is added
 		err = verifyContinousDiscovery(t, f.Client, localVolumeDiscoveryResult, discoveredDevices, selectedNode.Name)
 		if err != nil {
