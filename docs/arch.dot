@@ -1,0 +1,98 @@
+# dot -Tsvg -O <this_file>
+digraph G {
+    rankdir="LR"
+    nodesep=0.7
+    fontname="helvetica"
+    // subcomponents
+    nd_cont [label="Node Daemon Controller\n(merges nodeSelector, tolerations,\nownerRefs, creates diskmaker-ds)" ]
+    lv_cont [label="LocalVolume Controller\n(watches LVs, creates StorageClass,\nupdates LV status)" ]
+    lvset_cont [label="LocalVolumeSet Controller\n(watches LVSets, creates StorageClass,\nupdates LVSet status)" ]
+    discovery_cont [label="LocalVolumeDiscovery Controller\n(watches LVDisc.,\ncreates diskmaker-ds)"]
+    symlinks [label="Symlink to blockdev on Node"] 
+    
+    subgraph cluster_key {
+        label = "Key"
+        sc [label="Sub-Components"]
+        ko [label="Kubernetes objects" shape=ellipse style=filled color=lightgrey ]
+        cr [label="Kubernetes Custom Resource obects" shape=ellipse style=filled color=lightblue ]
+        
+    }
+
+
+    
+    // CRs
+    // style for all following nodes
+    node [shape=ellipse style=filled color=lightblue];
+    edge [ dir=forward ]
+
+    subgraph cluster_inputs {
+    lvset_cr [label="LocalVolumeSet Objects"]
+    lv_cr[label="LocalVolume Objects" ]
+    discovery_cr[label="LocalVolumeDiscovery Object (singleton)"]
+    }
+    
+    discovery_result_cr[label="LocalVolumeyResult Objects"]
+    
+    // objects
+     node [shape=ellipse style=filled color=lightgrey];
+    diskmaker_ds [label="Shared Diskmaker Daemonset (on nodes selected by LVs,LVSets)"]
+    discovery_ds [label="Shared Discovery Daemonset (on nodes selected by LVDiscovery) "]
+   
+    storageclass [label="StorageClass objects"]
+    pv_cr [label="PV objects pointing at symlink"]
+    
+    subgraph cluster_controllers {
+        nd_cont
+        lv_cont
+        lvset_cont
+        discovery_cont
+        label = "Local Storage Operator Pod"
+    }
+
+    
+    
+
+    
+    
+    node [shape=rectangle style=filled color=lightgrey];
+    
+    
+        
+    subgraph cluster_n0 {
+        label="Node 'N'";
+        diskmaker_pod_n [label = "Diskmaker Pod 'N'\n(watches spec of LVs,LVSets, creates symlinks and PVs"];
+        dicovery_pod_n [label = "Discovery Pod 'N'\n(creates discResult for this node)"]
+    }
+        
+    
+    
+
+    
+    // ========= relationships ========================
+    
+    // === Main Reconcilers
+    // LV,LVSet: the controller for each CR watches the CR and create/updates StorageClasses and updates the CR status
+    lv_cr -> lv_cont -> storageclass [color="purple" dir="both"]
+    lvset_cr -> lvset_cont -> storageclass [color="orange" dir="both"]
+    
+    // LVDiscovery: the controller watches it's CR and creates a daemonset based on the nodeSelector in the CR
+    discovery_cr -> discovery_cont -> discovery_ds -> dicovery_pod_n [color="red" dir="both"]
+    
+    // Nodedaemon Controller: schedules the diskmaker daemonset pods by combining nodeSelectors from all LVs,LVsets
+    // watches lv and lvset crs, updates the diskmaker daemonset with their scheduling info
+    lvset_cr,lv_cr -> nd_cont [color="green" ]
+    nd_cont -> diskmaker_ds -> diskmaker_pod_n [color="green" dir=both]
+
+
+    // == Reconcilers running on each node
+    
+    // LV,LVSet: each of the diskmaker daemons watch the crs and create symlinks and PVs based on them
+    lv_cr,lvset_cr -> diskmaker_pod_n [color="violet"]
+    diskmaker_pod_n -> symlinks, pv_cr [color="violet" dir=both]
+    // LVDiscovery
+    discovery_cr -> dicovery_pod_n 
+    discovery_result_cr -> dicovery_pod_n [dir=both]
+    
+    
+
+}
