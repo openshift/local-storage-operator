@@ -102,7 +102,7 @@ func (r *DeleteReconciler) Reconcile(ctx context.Context, request ctrl.Request) 
 	}
 
 	reqLogger.Info("Deleting Pvs through sig storage deleter")
-	r.deleter.DeletePVs()
+	r.deleter.DeletePVs(common.GetCleanPVSymlinkFunc(r.runtimeConfig))
 	return ctrl.Result{RequeueAfter: time.Second * 30}, nil
 }
 

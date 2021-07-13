@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"time"
 
@@ -16,6 +17,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -69,6 +71,16 @@ func (r *LocalVolumeSetReconciler) Reconcile(ctx context.Context, request ctrl.R
 
 	// don't provision for deleted lvsets
 	if !lvset.DeletionTimestamp.IsZero() {
+		reqLogger.Info("Lvset is deleted, Marking available PVs as released")
+		pvOwnerLabels := labels.Set{
+			common.PVOwnerKindLabel: lvset.Kind,
+			common.PVOwnerNameLabel: lvset.Name,
+		}
+		labelSelector := labels.SelectorFromSet(pvOwnerLabels)
+		err := common.ReleaseAvailablePVs(ctx, r.Client, labelSelector)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
 		return ctrl.Result{}, nil
 	}
 
@@ -395,6 +407,16 @@ func (r *LocalVolumeSetReconciler) provisionPV(
 				return fmt.Errorf("existing symlink not valid: %v,%w", err, evalErr)
 				// existing file evals to disk
 			} else if valid {
+				// if file exists but the localvolumeset is deleted
+				// remove the symlink
+				if !obj.DeletionTimestamp.IsZero() {
+					devLogger.Info("lvset deleted, removing symlink")
+					cmd := exec.Command("rm", symlinkPath)
+					err = cmd.Start()
+					if err != nil {
+						return err
+					}
+				}
 				// if file exists and is accurate symlink, create pv
 				return common.CreateLocalPV(
 					obj,

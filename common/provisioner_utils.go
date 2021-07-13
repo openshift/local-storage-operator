@@ -11,6 +11,7 @@ import (
 	storagev1 "k8s.io/api/storage/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/klog"
@@ -249,4 +250,21 @@ func GeneratePVName(file, node, class string) string {
 	h.Write([]byte(class))
 	// This is the FNV-1a 32-bit hash
 	return fmt.Sprintf("local-pv-%x", h.Sum32())
+}
+
+func ReleaseAvailablePVs(ctx context.Context, c client.Client, labelSelector labels.Selector) error {
+	pvList := &corev1.PersistentVolumeList{}
+	err := c.List(ctx, pvList, &client.ListOptions{LabelSelector: labelSelector})
+	if err != nil {
+		return err
+	}
+	for _, pv := range pvList.Items {
+		if pv.Status.Phase == "Available" {
+			pv.Status.Phase = corev1.VolumeReleased
+		}
+		//newVol, err := ctrl.kubeClient.CoreV1().PersistentVolumes().UpdateStatus(context.TODO(), volumeClone, metav1.UpdateOptions{})
+		c.Status().Update(ctx, &pv)
+	}
+	return nil
+
 }
