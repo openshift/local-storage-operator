@@ -215,6 +215,13 @@ func (r *LocalVolumeReconciler) Reconcile(ctx context.Context, request ctrl.Requ
 
 	// don't provision for deleted lvs
 	if !lv.DeletionTimestamp.IsZero() {
+		reqLogger.Info("Lvset is deleted, Marking available PVs as released")
+		//mark available PV as released
+		labelSelector := common.GetPVOwnerSelector(r.localVolume)
+		err := common.ReleaseAvailablePVs(ctx, r.Client, labelSelector)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
 		return ctrl.Result{}, nil
 	}
 

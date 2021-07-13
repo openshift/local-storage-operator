@@ -3,7 +3,7 @@ WORKDIR /go/src/github.com/openshift/local-storage-operator
 COPY . .
 RUN make build-diskmaker
 
-FROM registry.ci.openshift.org/ocp/4.8:base
+FROM centos:8
 
 COPY --from=builder /go/src/github.com/openshift/local-storage-operator/_output/bin/diskmaker /usr/bin/
 COPY --from=builder /go/src/github.com/openshift/local-storage-operator/hack/scripts /scripts
