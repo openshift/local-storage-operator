@@ -2,10 +2,15 @@ package common
 
 import (
 	"errors"
+	"fmt"
+	"os/exec"
 	"path"
 	"path/filepath"
 
 	"github.com/openshift/local-storage-operator/internal"
+	"github.com/prometheus/common/log"
+	v1 "k8s.io/api/core/v1"
+	provCommon "sigs.k8s.io/sig-storage-local-static-provisioner/pkg/common"
 )
 
 // GetSymLinkSourceAndTarget returns
@@ -36,4 +41,24 @@ func GetSymLinkSourceAndTarget(dev internal.BlockDevice, symlinkDir string) (str
 	target = path.Join(symlinkDir, filepath.Base(source))
 	return source, target, idExists, nil
 
+}
+
+func GetCleanPVSymlinkFunc(runtimeConfig *provCommon.RuntimeConfig) func(pv *v1.PersistentVolume) error {
+	return func(pv *v1.PersistentVolume) error {
+		log.Infof("Removing symlink for %s", pv.ObjectMeta.Name)
+		config, ok := runtimeConfig.DiscoveryMap[pv.Spec.StorageClassName]
+		if !ok {
+			return fmt.Errorf("Unknown storage class name %s", pv.Spec.StorageClassName)
+		}
+		mountPath, err := provCommon.GetContainerPath(pv, config)
+		if err != nil {
+			return fmt.Errorf("Unable to get mountPath: %w", err)
+		}
+		cmd := exec.Command("rm", mountPath)
+		err = cmd.Start()
+		if err != nil {
+			return err
+		}
+		return nil
+	}
 }
