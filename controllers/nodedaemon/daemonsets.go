@@ -2,13 +2,13 @@ package nodedaemon
 
 import (
 	"context"
-	"fmt"
 
+	"github.com/openshift/library-go/pkg/operator/resource/resourceread"
+	"github.com/openshift/local-storage-operator/assets"
 	"github.com/openshift/local-storage-operator/common"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/util/intstr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -63,43 +63,38 @@ func getDiskMakerDSMutateFn(
 	nodeSelector *corev1.NodeSelector,
 	dataHash string,
 ) func(*appsv1.DaemonSet) error {
-	maxUnavailable := intstr.FromString("10%")
 
 	return func(ds *appsv1.DaemonSet) error {
-		name := DiskMakerName
+		// read template for default values
+		dsBytes, err := assets.ReadFileAndReplace(
+			common.DiskMakerManagerDaemonSetTemplate,
+			[]string{
+				"${OBJECT_NAMESPACE}", request.Namespace,
+				"${CONTAINER_IMAGE}", common.GetDiskMakerImage(),
+			},
+		)
+		if err != nil {
+			return err
+		}
+		dsTemplate := resourceread.ReadDaemonSetV1OrDie(dsBytes)
 
 		// common spec
 		MutateAggregatedSpec(
 			ds,
-			request,
 			tolerations,
 			ownerRefs,
 			nodeSelector,
-			name,
+			dsTemplate,
 		)
 
-		// bind mount the host's "/run/udev" for `lsblk -o FSTYPE` value to be accurate
-		ds.Spec.Template.Spec.Volumes = append(ds.Spec.Template.Spec.Volumes, common.UDevHostDirVolume)
-		if len(ds.Spec.Template.Spec.Containers) < 1 {
-			return fmt.Errorf("can't add volumeMount to container, the daemonset has not specified any containers: %+v", ds)
-		}
-		ds.Spec.Template.Spec.Containers[0].VolumeMounts = append(ds.Spec.Template.Spec.Containers[0].VolumeMounts, common.UDevMount)
 		// add provisioner configmap hash
 		initMapIfNil(&ds.ObjectMeta.Annotations)
 		ds.ObjectMeta.Annotations[dataHashAnnotationKey] = dataHash
-		ds.Spec.Template.Spec.Containers[0].Image = common.GetDiskMakerImage()
-		ds.Spec.Template.Spec.Containers[0].ImagePullPolicy = corev1.PullIfNotPresent
-		ds.Spec.Template.Spec.Containers[0].Args = []string{"lv-manager"}
 
 		// setting maxUnavailable as a percentage
-		ds.Spec.UpdateStrategy = appsv1.DaemonSetUpdateStrategy{
-			Type: appsv1.RollingUpdateDaemonSetStrategyType,
-			RollingUpdate: &appsv1.RollingUpdateDaemonSet{
-				MaxUnavailable: &maxUnavailable,
-			},
-		}
+		ds.Spec.UpdateStrategy = dsTemplate.Spec.UpdateStrategy
 		// to read /proc/1/mountinfo
-		ds.Spec.Template.Spec.HostPID = true
+		ds.Spec.Template.Spec.HostPID = dsTemplate.Spec.Template.Spec.HostPID
 
 		return nil
 	}
@@ -116,41 +111,33 @@ func getLocalProvisionerDSMutateFn(
 ) func(*appsv1.DaemonSet) error {
 
 	return func(ds *appsv1.DaemonSet) error {
-		name := ProvisionerName
+		// read template for default values
+		dsBytes, err := assets.ReadFileAndReplace(
+			common.LocalProvisionerDaemonSetTemplate,
+			[]string{
+				"${OBJECT_NAMESPACE}", request.Namespace,
+				"${CONTAINER_IMAGE}", common.GetLocalProvisionerImage(),
+			},
+		)
+		if err != nil {
+			return err
+		}
+		dsTemplate := resourceread.ReadDaemonSetV1OrDie(dsBytes)
 
 		// common spec
 		MutateAggregatedSpec(
 			ds,
-			request,
 			tolerations,
 			ownerRefs,
 			nodeSelector,
-			name,
+			dsTemplate,
 		)
 		// add provisioner configmap hash
 		initMapIfNil(&ds.ObjectMeta.Annotations)
 		ds.ObjectMeta.Annotations[dataHashAnnotationKey] = dataHash
-		ds.Spec.Template.Spec.Containers[0].Image = common.GetLocalProvisionerImage()
-		ds.Spec.Template.Spec.Containers[0].ImagePullPolicy = corev1.PullIfNotPresent
 
 		return nil
 	}
-}
-
-// getProvisionerVolumesAndMounts defines the common set of volumes and mounts for localvolumeset daemonsets
-func getProvisionerVolumesAndMounts() ([]corev1.Volume, []corev1.VolumeMount) {
-	volumes := []corev1.Volume{
-		common.SymlinkHostDirVolume,
-		common.DevHostDirVolume,
-		common.ProvisionerConfigHostDirVolume,
-	}
-	volumeMounts := []corev1.VolumeMount{
-		common.SymlinkMount,
-		common.DevMount,
-		common.ProvisionerConfigMount,
-	}
-
-	return volumes, volumeMounts
 }
 
 // MutateAggregatedSpec returns a mutate function that applies the other arguments to the referenced daemonset
@@ -159,47 +146,43 @@ func getProvisionerVolumesAndMounts() ([]corev1.Volume, []corev1.VolumeMount) {
 // or applied to an existing one before an Update()
 func MutateAggregatedSpec(
 	ds *appsv1.DaemonSet,
-	request reconcile.Request,
 	tolerations []corev1.Toleration,
 	ownerRefs []metav1.OwnerReference,
 	nodeSelector *corev1.NodeSelector,
-	name string,
+	dsTemplate *appsv1.DaemonSet,
 ) {
-
-	selectorLabels := map[string]string{"app": name}
 	// create only actions
 	if ds.CreationTimestamp.IsZero() {
-		// name and namespace
-		ds.ObjectMeta = metav1.ObjectMeta{
-			Name:      name,
-			Namespace: request.Namespace,
-		}
+		// name, namespace, and labels
+		ds.ObjectMeta = dsTemplate.ObjectMeta
 		// daemonset selector
-		ds.Spec.Selector = &metav1.LabelSelector{
-			MatchLabels: selectorLabels,
-		}
+		ds.Spec.Selector = dsTemplate.Spec.Selector
 	}
 
-	// copy selector labels to daemonset and template
+	// copy selector labels to daemonset spec
 	initMapIfNil(&ds.ObjectMeta.Labels)
-	initMapIfNil(&ds.Spec.Template.ObjectMeta.Labels)
-	for key, value := range selectorLabels {
+	for key, value := range dsTemplate.ObjectMeta.Labels {
 		ds.ObjectMeta.Labels[key] = value
+	}
+	// copy selector labels to template spec
+	initMapIfNil(&ds.Spec.Template.ObjectMeta.Labels)
+	for key, value := range dsTemplate.Spec.Template.ObjectMeta.Labels {
 		ds.Spec.Template.ObjectMeta.Labels[key] = value
 	}
-
 	// add management workload annotations
 	initMapIfNil(&ds.Spec.Template.ObjectMeta.Annotations)
-	ds.Spec.Template.ObjectMeta.Annotations["target.workload.openshift.io/management"] = `{"effect": "PreferredDuringScheduling"}`
+	for key, value := range dsTemplate.Spec.Template.ObjectMeta.Annotations {
+		ds.Spec.Template.ObjectMeta.Annotations[key] = value
+	}
 
 	// ownerRefs
 	ds.ObjectMeta.OwnerReferences = ownerRefs
 
 	// service account
-	ds.Spec.Template.Spec.ServiceAccountName = common.ProvisionerServiceAccount
+	ds.Spec.Template.Spec.ServiceAccountName = dsTemplate.Spec.Template.Spec.ServiceAccountName
 
 	// priority class
-	ds.Spec.Template.Spec.PriorityClassName = common.PriorityClassName
+	ds.Spec.Template.Spec.PriorityClassName = dsTemplate.Spec.Template.Spec.PriorityClassName
 
 	// tolerations
 	ds.Spec.Template.Spec.Tolerations = tolerations
@@ -215,50 +198,11 @@ func MutateAggregatedSpec(
 		ds.Spec.Template.Spec.Affinity = nil
 	}
 
-	// fetch common volumes and mounts
-	volumes, volumeMounts := getProvisionerVolumesAndMounts()
-	ds.Spec.Template.Spec.Volumes = volumes
+	// set common volumes and mounts
+	ds.Spec.Template.Spec.Volumes = dsTemplate.Spec.Template.Spec.Volumes
 
 	// define containers
-	privileged := true
-	ds.Spec.Template.Spec.Containers = []corev1.Container{
-		{
-			Image: common.GetDiskMakerImage(),
-			Args:  []string{"lv-manager"},
-			Name:  name,
-			SecurityContext: &corev1.SecurityContext{
-				Privileged: &privileged,
-			},
-			VolumeMounts: volumeMounts,
-			Env: []corev1.EnvVar{
-				{
-					Name: "MY_NODE_NAME",
-					ValueFrom: &corev1.EnvVarSource{
-						FieldRef: &corev1.ObjectFieldSelector{
-							FieldPath: "spec.nodeName",
-						},
-					},
-				},
-				{
-					Name: "WATCH_NAMESPACE",
-					ValueFrom: &corev1.EnvVarSource{
-						FieldRef: &corev1.ObjectFieldSelector{
-							FieldPath: "metadata.namespace",
-						},
-					},
-				},
-				{
-					Name: "POD_NAME",
-					ValueFrom: &corev1.EnvVarSource{
-						FieldRef: &corev1.ObjectFieldSelector{
-							FieldPath: "metadata.name",
-						},
-					},
-				},
-			},
-		},
-	}
-
+	ds.Spec.Template.Spec.Containers = dsTemplate.Spec.Template.Spec.Containers
 }
 
 func initMapIfNil(m *map[string]string) {

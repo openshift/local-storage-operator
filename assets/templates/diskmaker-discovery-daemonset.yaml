@@ -1,0 +1,74 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  labels:
+    app: diskmaker-discovery
+  name: diskmaker-discovery
+  namespace: ${OBJECT_NAMESPACE}
+spec:
+  selector:
+    matchLabels:
+      app: diskmaker-discovery
+  template:
+    metadata:
+      annotations:
+        target.workload.openshift.io/management: '{"effect": "PreferredDuringScheduling"}'
+      labels:
+        app: diskmaker-discovery
+    spec:
+      containers:
+      - args:
+        - discover
+        env:
+        - name: MY_NODE_NAME
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: spec.nodeName
+        - name: WATCH_NAMESPACE
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.namespace
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.name
+        image: ${CONTAINER_IMAGE}
+        imagePullPolicy: IfNotPresent
+        name: diskmaker-discovery
+        securityContext:
+          privileged: true
+        volumeMounts:
+        - mountPath: /mnt/local-storage
+          mountPropagation: HostToContainer
+          name: local-disks
+        - mountPath: /dev
+          mountPropagation: HostToContainer
+          name: device-dir
+        - mountPath: /run/udev
+          mountPropagation: HostToContainer
+          name: run-udev
+      hostPID: true
+      priorityClassName: openshift-user-critical
+      serviceAccount: local-storage-admin
+      serviceAccountName: local-storage-admin
+      volumes:
+      - hostPath:
+          path: /mnt/local-storage
+          type: ""
+        name: local-disks
+      - hostPath:
+          path: /dev
+          type: Directory
+        name: device-dir
+      - hostPath:
+          path: /run/udev
+          type: ""
+        name: run-udev
+  updateStrategy:
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 10%
+    type: RollingUpdate

@@ -146,6 +146,7 @@ github.com/onsi/gomega/types
 ## explicit
 github.com/openshift/api/config/v1
 github.com/openshift/api/operator/v1
+github.com/openshift/api/route/v1
 github.com/openshift/api/security/v1
 # github.com/openshift/client-go v0.0.0-20210331195552-cf6c2669e01f
 ## explicit
@@ -153,6 +154,7 @@ github.com/openshift/client-go/security/clientset/versioned/scheme
 # github.com/openshift/library-go v0.0.0-20210419120351-ed14b5b9c873
 ## explicit
 github.com/openshift/library-go/pkg/operator/resource/resourcemerge
+github.com/openshift/library-go/pkg/operator/resource/resourceread
 # github.com/pborman/uuid v1.2.0
 ## explicit
 github.com/pborman/uuid
