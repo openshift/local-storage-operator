@@ -23,6 +23,8 @@ import (
 
 	"github.com/go-logr/logr"
 	operatorv1 "github.com/openshift/api/operator/v1"
+	"github.com/openshift/library-go/pkg/operator/resource/resourceread"
+	"github.com/openshift/local-storage-operator/assets"
 	"github.com/openshift/local-storage-operator/common"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -30,7 +32,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/apimachinery/pkg/util/intstr"
 	v1helper "k8s.io/component-helpers/scheduling/corev1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -146,35 +147,35 @@ func getDiskMakerDiscoveryDSMutateFn(request reconcile.Request,
 	envVars []corev1.EnvVar,
 	ownerRefs []metav1.OwnerReference,
 	nodeSelector *corev1.NodeSelector) func(*appsv1.DaemonSet) error {
-	maxUnavailable := intstr.FromString("10%")
 
 	return func(ds *appsv1.DaemonSet) error {
-		name := DiskMakerDiscovery
+		// read template for default values
+		dsBytes, err := assets.ReadFileAndReplace(
+			common.DiskMakerDiscoveryDaemonSetTemplate,
+			[]string{
+				"${OBJECT_NAMESPACE}", request.Namespace,
+				"${CONTAINER_IMAGE}", common.GetDiskMakerImage(),
+			},
+		)
+		if err != nil {
+			return err
+		}
+		dsTemplate := resourceread.ReadDaemonSetV1OrDie(dsBytes)
 
 		nodedaemon.MutateAggregatedSpec(
 			ds,
-			request,
 			tolerations,
 			ownerRefs,
 			nodeSelector,
-			name,
+			dsTemplate,
 		)
-		discoveryVolumes, discoveryVolumeMounts := getVolumesAndMounts()
-		ds.Spec.Template.Spec.Volumes = discoveryVolumes
+
+		ds.Spec.Template.Spec.Containers[0].Env = append(ds.Spec.Template.Spec.Containers[0].Env, envVars...)
 
 		// setting maxUnavailable as a percentage
-		ds.Spec.UpdateStrategy = appsv1.DaemonSetUpdateStrategy{
-			Type: appsv1.RollingUpdateDaemonSetStrategyType,
-			RollingUpdate: &appsv1.RollingUpdateDaemonSet{
-				MaxUnavailable: &maxUnavailable,
-			},
-		}
-		ds.Spec.Template.Spec.Containers[0].VolumeMounts = discoveryVolumeMounts
-		ds.Spec.Template.Spec.Containers[0].Env = append(ds.Spec.Template.Spec.Containers[0].Env, envVars...)
-		ds.Spec.Template.Spec.Containers[0].Image = common.GetDiskMakerImage()
-		ds.Spec.Template.Spec.Containers[0].ImagePullPolicy = corev1.PullIfNotPresent
-		ds.Spec.Template.Spec.Containers[0].Args = []string{"discover"}
-		ds.Spec.Template.Spec.HostPID = true
+		ds.Spec.UpdateStrategy = dsTemplate.Spec.UpdateStrategy
+		// to read /proc/1/mountinfo
+		ds.Spec.Template.Spec.HostPID = dsTemplate.Spec.Template.Spec.HostPID
 
 		return nil
 	}
@@ -258,20 +259,6 @@ func (r *LocalVolumeDiscoveryReconciler) getDaemonSetStatus(ctx context.Context,
 	}
 
 	return existingDS.Status.DesiredNumberScheduled, existingDS.Status.NumberReady, nil
-}
-
-func getVolumesAndMounts() ([]corev1.Volume, []corev1.VolumeMount) {
-	volumes := []corev1.Volume{
-		common.SymlinkHostDirVolume,
-		common.DevHostDirVolume,
-		common.UDevHostDirVolume,
-	}
-	volumeMounts := []corev1.VolumeMount{
-		common.SymlinkMount,
-		common.DevMount,
-		common.UDevMount,
-	}
-	return volumes, volumeMounts
 }
 
 func getOwnerRefs(cr *localv1alpha1.LocalVolumeDiscovery) []metav1.OwnerReference {

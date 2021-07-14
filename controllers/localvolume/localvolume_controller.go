@@ -27,7 +27,9 @@ import (
 	"k8s.io/klog"
 
 	operatorv1 "github.com/openshift/api/operator/v1"
+	"github.com/openshift/library-go/pkg/operator/resource/resourceread"
 	localv1 "github.com/openshift/local-storage-operator/api/v1"
+	"github.com/openshift/local-storage-operator/assets"
 	"github.com/openshift/local-storage-operator/common"
 	commontypes "github.com/openshift/local-storage-operator/common"
 	"github.com/openshift/local-storage-operator/controllers/nodedaemon"
@@ -248,8 +250,11 @@ func (r *LocalVolumeReconciler) syncStorageClass(ctx context.Context, cr *localv
 	for _, storageClassDevice := range storageClassDevices {
 		storageClassName := storageClassDevice.StorageClassName
 		expectedStorageClasses.Insert(storageClassName)
-		storageClass := generateStorageClass(cr, storageClassName)
-		_, _, err := r.apiClient.applyStorageClass(ctx, storageClass)
+		storageClass, err := generateStorageClass(cr, storageClassName)
+		if err != nil {
+			return fmt.Errorf("error generating storageClass %s: %v", storageClassName, err)
+		}
+		_, _, err = r.apiClient.applyStorageClass(ctx, storageClass)
 		if err != nil {
 			return fmt.Errorf("error creating storageClass %s: %v", storageClassName, err)
 		}
@@ -330,23 +335,20 @@ func addOwnerLabels(meta *metav1.ObjectMeta, cr *localv1.LocalVolume) bool {
 	return changed
 }
 
-func generateStorageClass(cr *localv1.LocalVolume, scName string) *storagev1.StorageClass {
-	deleteReclaimPolicy := corev1.PersistentVolumeReclaimDelete
-	firstConsumerBinding := storagev1.VolumeBindingWaitForFirstConsumer
-	sc := &storagev1.StorageClass{
-		TypeMeta: metav1.TypeMeta{
-			Kind:       "StorageClass",
-			APIVersion: "storage.k8s.io/v1",
+func generateStorageClass(cr *localv1.LocalVolume, scName string) (*storagev1.StorageClass, error) {
+	scBytes, err := assets.ReadFileAndReplace(
+		common.LocalVolumeStorageClassTemplate,
+		[]string{
+			"${OBJECT_NAME}", scName,
 		},
-		ObjectMeta: metav1.ObjectMeta{
-			Name: scName,
-		},
-		Provisioner:       "kubernetes.io/no-provisioner",
-		ReclaimPolicy:     &deleteReclaimPolicy,
-		VolumeBindingMode: &firstConsumerBinding,
+	)
+	if err != nil {
+		return nil, err
 	}
+	sc := resourceread.ReadStorageClassV1OrDie(scBytes)
+
 	addOwnerLabels(&sc.ObjectMeta, cr)
-	return sc
+	return sc, nil
 }
 
 func getOwnerLabelSelector(cr *localv1.LocalVolume) labels.Selector {

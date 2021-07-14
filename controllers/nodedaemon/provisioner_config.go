@@ -16,8 +16,10 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	localStaticProvisioner "sigs.k8s.io/sig-storage-local-static-provisioner/pkg/common"
 
+	"github.com/openshift/library-go/pkg/operator/resource/resourceread"
 	v1 "github.com/openshift/local-storage-operator/api/v1"
 	localv1alpha1 "github.com/openshift/local-storage-operator/api/v1alpha1"
+	"github.com/openshift/local-storage-operator/assets"
 	"github.com/openshift/local-storage-operator/common"
 )
 
@@ -28,13 +30,18 @@ func (r *DaemonReconciler) reconcileProvisionerConfigMap(
 	lvs []v1.LocalVolume,
 	ownerRefs []metav1.OwnerReference,
 ) (*corev1.ConfigMap, controllerutil.OperationResult, error) {
-	// object meta
-	objectMeta := metav1.ObjectMeta{
-		Name:      common.ProvisionerConfigMapName,
-		Namespace: request.Namespace,
-		Labels:    map[string]string{"app": common.ProvisionerConfigMapName},
+	// read template for default object meta
+	cmBytes, err := assets.ReadFileAndReplace(
+		common.LocalProvisionerConfigMapTemplate,
+		[]string{
+			"${OBJECT_NAMESPACE}", request.Namespace,
+		},
+	)
+	if err != nil {
+		return nil, controllerutil.OperationResultNone, err
 	}
-	configMap := &corev1.ConfigMap{ObjectMeta: objectMeta}
+	configMap := resourceread.ReadConfigMapV1OrDie(cmBytes)
+	objectMeta := configMap.ObjectMeta
 
 	// config data
 	storageClassConfig := make(map[string]localStaticProvisioner.MountConfig)
