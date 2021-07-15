@@ -94,4 +94,5 @@ spec:
               value: quay.io/openshift/origin-local-storage-static-provisioner
             - name: DISKMAKER_IMAGE
               value: quay.io/openshift/origin-local-storage-diskmaker
-
+            - name: KUBE_RBAC_PROXY_IMAGE
+              value: quay.io/openshift/origin-kube-rbac-proxy:latest

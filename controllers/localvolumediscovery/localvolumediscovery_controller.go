@@ -88,7 +88,7 @@ func (r *LocalVolumeDiscoveryReconciler) Reconcile(ctx context.Context, request 
 
 	// enable service and service monitor for Local Volume Discovery
 	serviceLabels := map[string]string{"app": DiskMakerDiscovery}
-	metricsExportor := localmetrics.NewExporter(ctx, r.Client, common.DiscoveryServiceName, instance.Namespace,
+	metricsExportor := localmetrics.NewExporter(ctx, r.Client, common.DiscoveryServiceName, instance.Namespace, common.DiscoveryMetricsServingCert,
 		getOwnerRefs(instance), serviceLabels)
 	if err := metricsExportor.EnableMetricsExporter(); err != nil {
 		reqLogger.Error(err, "failed to create service and servicemonitors", "object", instance.Name)
@@ -187,6 +187,10 @@ func getDiskMakerDiscoveryDSMutateFn(request reconcile.Request,
 		ds.Spec.UpdateStrategy = dsTemplate.Spec.UpdateStrategy
 		// to read /proc/1/mountinfo
 		ds.Spec.Template.Spec.HostPID = dsTemplate.Spec.Template.Spec.HostPID
+
+		//Add kube-rbac-proxy sidecar container to provide https proxy for http-based lso metrics.
+		ds.Spec.Template.Spec.Containers = append(ds.Spec.Template.Spec.Containers, common.KubeProxySideCar())
+		ds.Spec.Template.Spec.Volumes = append(ds.Spec.Template.Spec.Volumes, common.DiscoveryMetricsCertVolume)
 
 		return nil
 	}

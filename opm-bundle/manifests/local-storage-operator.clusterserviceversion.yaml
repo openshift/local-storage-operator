@@ -299,6 +299,12 @@ spec:
           - create
           - patch
           - update
+        - apiGroups:
+          - "authentication.k8s.io"
+          resources:
+          - "tokenreviews"
+          verbs:
+          - "create"
         serviceAccountName: local-storage-admin
       deployments:
       - name: local-storage-operator
@@ -339,6 +345,8 @@ spec:
                   value: quay.io/openshift/origin-local-storage-static-provisioner:latest
                 - name: DISKMAKER_IMAGE
                   value: quay.io/openshift/origin-local-storage-diskmaker:latest
+                - name: KUBE_RBAC_PROXY_IMAGE
+                  value: quay.io/openshift/origin-kube-rbac-proxy:latest
   customresourcedefinitions:
     owned:
     - displayName: Local Volume

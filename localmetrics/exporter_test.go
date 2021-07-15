@@ -30,7 +30,7 @@ func getFakeClient(t *testing.T) client.Client {
 }
 
 func TestEnableService(t *testing.T) {
-	fakeExporter := NewExporter(context.TODO(), getFakeClient(t), "test-service", "test-ns", []metav1.OwnerReference{}, fakeLabels)
+	fakeExporter := NewExporter(context.TODO(), getFakeClient(t), "test-service", "test-ns", "test-cert", []metav1.OwnerReference{}, fakeLabels)
 	err := fakeExporter.enableService()
 	assert.NoError(t, err)
 
@@ -45,7 +45,7 @@ func TestEnableService(t *testing.T) {
 }
 
 func TestEnableServiceMonitor(t *testing.T) {
-	fakeExporter := NewExporter(context.TODO(), getFakeClient(t), "test-service-monitor", "test-ns", []metav1.OwnerReference{}, fakeLabels)
+	fakeExporter := NewExporter(context.TODO(), getFakeClient(t), "test-service-monitor", "test-ns", "test-cert", []metav1.OwnerReference{}, fakeLabels)
 	err := fakeExporter.enableServiceMonitor()
 	assert.NoError(t, err)
 

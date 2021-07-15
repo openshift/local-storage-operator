@@ -18,22 +18,24 @@ import (
 )
 
 type Exporter struct {
-	Ctx       context.Context
-	Client    client.Client
-	Name      string
-	Namespace string
-	OwnerRefs []metav1.OwnerReference
-	Labels    map[string]string
+	Ctx             context.Context
+	Client          client.Client
+	Name            string
+	Namespace       string
+	OwnerRefs       []metav1.OwnerReference
+	Labels          map[string]string
+	ServiceCertName string
 }
 
-func NewExporter(ctx context.Context, client client.Client, name, namespace string, ownerRefs []metav1.OwnerReference, labels map[string]string) *Exporter {
+func NewExporter(ctx context.Context, client client.Client, name, namespace, certName string, ownerRefs []metav1.OwnerReference, labels map[string]string) *Exporter {
 	return &Exporter{
-		Ctx:       ctx,
-		Client:    client,
-		Name:      name,
-		Namespace: namespace,
-		OwnerRefs: ownerRefs,
-		Labels:    labels,
+		Ctx:             ctx,
+		Client:          client,
+		Name:            name,
+		Namespace:       namespace,
+		OwnerRefs:       ownerRefs,
+		Labels:          labels,
+		ServiceCertName: certName,
 	}
 }
 
@@ -61,6 +63,7 @@ func (e *Exporter) enableService() error {
 	service.SetLabels(e.Labels)
 	service.SetOwnerReferences(e.OwnerRefs)
 	service.Spec.Selector = e.Labels
+	service.Annotations["service.beta.openshift.io/serving-cert-secret-name"] = e.ServiceCertName
 
 	if _, err = e.createOrUpdateService(service); err != nil {
 		return fmt.Errorf("failed to enable service monitor. %v", err)
@@ -81,6 +84,7 @@ func (e *Exporter) enableServiceMonitor() error {
 	serviceMonitor.SetOwnerReferences(e.OwnerRefs)
 	serviceMonitor.Spec.NamespaceSelector.MatchNames = []string{e.Namespace}
 	serviceMonitor.Spec.Selector.MatchLabels = e.Labels
+	serviceMonitor.Spec.Endpoints[0].TLSConfig.ServerName = fmt.Sprintf("%s.%s.svc", e.Name, e.Namespace)
 
 	if _, err = e.createOrUpdateServiceMonitor(serviceMonitor); err != nil {
 		return fmt.Errorf("failed to enable service monitor. %v", err)
