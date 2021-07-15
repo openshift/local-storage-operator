@@ -3,7 +3,7 @@
 ## For developing on plain k8s
 
 Developing on plain k8s is pretty simple. Just write your code and use Makefile to build your own images
-and then update `deploy/operator.yaml` to point to your images and follow rest of the instructions in `deploy/README.md`.
+and then update `config/manager/manager.yaml` to point to your images and follow rest of the instructions in `config/README.md`.
 
 ## For developing on OpenShift and OLM
 
