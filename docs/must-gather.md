@@ -5,7 +5,7 @@ is used to gather the local-storage specific resources.
 
 ## Usage
 ```sh
-oc adm must-gather --image=quay.io/openshift/local-must-gather:latest
+oc adm must-gather --image=quay.io/openshift/origin-local-storage-mustgather:latest
 ```
 
 This command creates a directory that contains:
