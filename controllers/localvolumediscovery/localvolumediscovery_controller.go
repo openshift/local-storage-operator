@@ -26,6 +26,7 @@ import (
 	"github.com/openshift/library-go/pkg/operator/resource/resourceread"
 	"github.com/openshift/local-storage-operator/assets"
 	"github.com/openshift/local-storage-operator/common"
+	"github.com/openshift/local-storage-operator/localmetrics"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -85,6 +86,15 @@ func (r *LocalVolumeDiscoveryReconciler) Reconcile(ctx context.Context, request 
 		return ctrl.Result{}, err
 	}
 
+	// enable service and service monitor for Local Volume Discovery
+	serviceLabels := map[string]string{"app": DiskMakerDiscovery}
+	metricsExportor := localmetrics.NewExporter(ctx, r.Client, common.DiscoveryServiceName, instance.Namespace,
+		getOwnerRefs(instance), serviceLabels)
+	if err := metricsExportor.EnableMetricsExporter(); err != nil {
+		reqLogger.Error(err, "failed to create service and servicemonitors", "object", instance.Name)
+		return ctrl.Result{}, err
+	}
+
 	diskMakerDSMutateFn := getDiskMakerDiscoveryDSMutateFn(request, instance.Spec.Tolerations,
 		getEnvVars(instance.Name, string(instance.UID)),
 		getOwnerRefs(instance),
@@ -139,6 +149,7 @@ func (r *LocalVolumeDiscoveryReconciler) Reconcile(ctx context.Context, request 
 		reqLogger.Error(err, "failed to delete orphan discovery results")
 		return ctrl.Result{}, err
 	}
+
 	return ctrl.Result{}, nil
 }
 

@@ -1,0 +1,18 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: lso-metrics-exporter
+  namespace: openshift-local-storage
+  labels:
+    app: lso-metrics-exporter
+spec:
+  namespaceSelector:
+    matchNames:
+      - openshift-local-storage
+  selector:
+    matchLabels:
+      app: lso-metrics-exporter
+  endpoints:
+  - port: metrics
+    path: /metrics
+    interval: 1m

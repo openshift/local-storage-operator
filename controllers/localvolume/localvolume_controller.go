@@ -304,9 +304,9 @@ func removeFinalizer(lv *localv1.LocalVolume) *localv1.LocalVolume {
 	return lv
 }
 
-func addOwner(meta *metav1.ObjectMeta, cr *localv1.LocalVolume) {
+func getOwnerRefs(cr *localv1.LocalVolume) []metav1.OwnerReference {
 	trueVal := true
-	meta.OwnerReferences = []metav1.OwnerReference{
+	return []metav1.OwnerReference{
 		{
 			APIVersion: localv1.GroupVersion.String(),
 			Kind:       localv1.LocalVolumeKind,

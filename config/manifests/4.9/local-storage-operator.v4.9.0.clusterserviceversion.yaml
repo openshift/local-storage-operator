@@ -92,6 +92,7 @@ metadata:
       ]
     categories: Storage
     "operatorframework.io/suggested-namespace": openshift-local-storage
+    operatorframework.io/cluster-monitoring: "true"
     capabilities: Full Lifecycle
     containerImage: quay.io/openshift/origin-local-storage-operator:latest
     support: Red Hat

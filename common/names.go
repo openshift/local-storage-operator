@@ -37,6 +37,14 @@ const (
 	LocalProvisionerDaemonSetTemplate   = "templates/local-provisioner-daemonset.yaml"
 	DiskMakerManagerDaemonSetTemplate   = "templates/diskmaker-manager-daemonset.yaml"
 	DiskMakerDiscoveryDaemonSetTemplate = "templates/diskmaker-discovery-daemonset.yaml"
+	MetricsServiceTemplate              = "templates/localmetrics/service.yaml"
+	MetricsServiceMonitorTemplate       = "templates/localmetrics/service-monitor.yaml"
+
+	// DiskMakerServiceName is the name of the service created for the diskmaker daemon
+	DiskMakerServiceName = "local-storage-diskmaker-metrics"
+
+	// DiscoveryServiceName is the name of the service created for the diskmaker discovery daemon
+	DiscoveryServiceName = "local-storage-discovery-metrics"
 )
 
 // GetLocalProvisionerImage return the image to be used for provisioner daemonset

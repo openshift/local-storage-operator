@@ -16,6 +16,8 @@ require (
 	github.com/openshift/library-go v0.0.0-20210419120351-ed14b5b9c873
 	github.com/pborman/uuid v1.2.0
 	github.com/pkg/errors v0.9.1
+	github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring v0.49.0
+	github.com/prometheus/client_golang v1.9.0
 	github.com/prometheus/common v0.21.0
 	github.com/rogpeppe/go-internal v1.4.0
 	github.com/sirupsen/logrus v1.7.0
