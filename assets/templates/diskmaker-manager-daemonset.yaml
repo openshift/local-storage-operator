@@ -55,7 +55,6 @@ spec:
           name: run-udev
       hostPID: true
       priorityClassName: openshift-user-critical
-      serviceAccount: local-storage-admin
       serviceAccountName: local-storage-admin
       volumes:
       - hostPath:

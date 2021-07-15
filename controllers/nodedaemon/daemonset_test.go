@@ -64,19 +64,12 @@ func TestMutateAggregatedSpecTemplates(t *testing.T) {
 		nil,
 		dsTemplate,
 	)
-
-	// In the template, DeprecatedServiceAccount is set automatically based
-	// on the ServiceAccountName defined in the template. Since this is
-	// expected, we set DeprecatedServiceAccount to the same value in ds.
-	// This line can be removed when DeprecatedServiceAccount is removed.
-	ds.Spec.Template.Spec.DeprecatedServiceAccount = ds.Spec.Template.Spec.ServiceAccountName
 	assert.Equalf(t, dsTemplate, ds, "DaemonSet should be equal to the DaemonSet template in the absence of other arguments")
 
 	// If CreationTimestamp is set, we should not overwrite ObjectMeta fields
 	ds.CreationTimestamp = metav1.Now()
 	ds.ObjectMeta.Name = "test-name"
 	ds.ObjectMeta.Namespace = "test-namespace"
-
 	MutateAggregatedSpec(
 		ds,
 		nil,
