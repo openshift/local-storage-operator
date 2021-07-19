@@ -13,9 +13,6 @@ const (
 	defaultProvisionImage        = "quay.io/openshift/origin-local-storage-static-provisioner"
 	defaultlocalDiskLocation     = "/mnt/local-storage"
 
-	// ProvisionerServiceAccount is used by the diskmaker daemons
-	ProvisionerServiceAccount = "local-storage-admin"
-
 	// OwnerNamespaceLabel references the owning object's namespace
 	OwnerNamespaceLabel = "local.storage.openshift.io/owner-namespace"
 	// OwnerNameLabel references the owning object
@@ -34,6 +31,12 @@ const (
 	// DiscoveryNodeLabelKey is the label key on the discovery result CR used to identify the node it belongs to.
 	// the value is the node's name
 	DiscoveryNodeLabel = "discovery-result-node"
+
+	LocalVolumeStorageClassTemplate     = "templates/localvolume-storageclass.yaml"
+	LocalProvisionerConfigMapTemplate   = "templates/local-provisioner-configmap.yaml"
+	LocalProvisionerDaemonSetTemplate   = "templates/local-provisioner-daemonset.yaml"
+	DiskMakerManagerDaemonSetTemplate   = "templates/diskmaker-manager-daemonset.yaml"
+	DiskMakerDiscoveryDaemonSetTemplate = "templates/diskmaker-discovery-daemonset.yaml"
 )
 
 // GetLocalProvisionerImage return the image to be used for provisioner daemonset
