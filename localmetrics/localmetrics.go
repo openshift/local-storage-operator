@@ -5,6 +5,7 @@ import (
 )
 
 var (
+	// LocalVolumeDiscovery metrics
 	metricDiscoveredDevicesByLocalVolumeDiscovery = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "lso_discovery_disk_count",
 		Help: "Total disks discovered by the Local Volume Discovery controller per node",
@@ -26,6 +27,17 @@ var (
 		Help: "Total symlinks that became orphan after updating the Local Volume Set filter",
 	}, []string{"nodeName", "storageClass"})
 
+	// LocalVolume metrics
+	metricLocalVolumeProvisionedPVs = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "lso_lv_provisioned_PV_count",
+		Help: "Total persistent volumes provisioned by the LocalVolume controller per node",
+	}, []string{"nodeName", "storageClass"})
+
+	metricLocalVolumeOrphanedSymlinks = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "lso_lv_orphaned_symlink_count",
+		Help: "Total symlinks that became orphan after updating the devicePaths in LocalVolume CR",
+	}, []string{"nodeName", "storageClass"})
+
 	LVDMetricsList = []prometheus.Collector{
 		metricDiscoveredDevicesByLocalVolumeDiscovery,
 	}
@@ -34,6 +46,8 @@ var (
 		metricLocalVolumeSetProvisionedPVs,
 		metricLocalVolumeSetUnmatchedDisks,
 		metricLocalVolumeSetOrphanedSymlinks,
+		metricLocalVolumeProvisionedPVs,
+		metricLocalVolumeOrphanedSymlinks,
 	}
 )
 
@@ -57,6 +71,18 @@ func SetLVSUnmatchedDiskMetric(nodeName, storageClassName string, count int) {
 
 func SetLVSOrphanedSymlinksMetric(nodeName, storageClassName string, count int) {
 	metricLocalVolumeSetOrphanedSymlinks.
+		With(prometheus.Labels{"nodeName": nodeName, "storageClass": storageClassName}).
+		Set(float64(count))
+}
+
+func SetLVProvisionedPVMetric(nodeName, storageClassName string, count int) {
+	metricLocalVolumeProvisionedPVs.
+		With(prometheus.Labels{"nodeName": nodeName, "storageClass": storageClassName}).
+		Set(float64(count))
+}
+
+func SetLVOrphanedSymlinksMetric(nodeName, storageClassName string, count int) {
+	metricLocalVolumeOrphanedSymlinks.
 		With(prometheus.Labels{"nodeName": nodeName, "storageClass": storageClassName}).
 		Set(float64(count))
 }
