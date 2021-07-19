@@ -626,3 +626,47 @@ func TestGetRotationalFail(t *testing.T) {
 	}
 
 }
+
+func TestGetOrphanedSymlinks(t *testing.T) {
+	testcases := []struct {
+		label                  string
+		blockDevices           []BlockDevice
+		fakeGlobfunc           func(string) ([]string, error)
+		fakeEvalSymlinkfunc    func(string) (string, error)
+		expectedOrphanSymlinks []string
+	}{
+		{
+			label:        "no orphan synlinks found",
+			blockDevices: []BlockDevice{{KName: "sdb"}},
+			fakeGlobfunc: func(name string) ([]string, error) {
+				return []string{"sdb"}, nil
+			},
+			fakeEvalSymlinkfunc: func(path string) (string, error) {
+				return "/dev/disk/by-id/sdb", nil
+			},
+			expectedOrphanSymlinks: []string{},
+		},
+
+		{
+			label:        "orphan synlinks found",
+			blockDevices: []BlockDevice{{KName: "sdc"}},
+			fakeGlobfunc: func(name string) ([]string, error) {
+				return []string{"sdc"}, nil
+			},
+			fakeEvalSymlinkfunc: func(path string) (string, error) {
+				return "/dev/disk/by-id/sdb", nil
+			},
+			expectedOrphanSymlinks: []string{"sdc"},
+		},
+	}
+
+	for _, tc := range testcases {
+		FilePathEvalSymLinks = tc.fakeEvalSymlinkfunc
+		FilePathGlob = tc.fakeGlobfunc
+
+		actual, err := GetOrphanedSymlinks("test", tc.blockDevices)
+		assert.NoError(t, err)
+		assert.Equalf(t, tc.expectedOrphanSymlinks, actual, "[%s]: invalid orphaned symlinks", tc.label)
+
+	}
+}

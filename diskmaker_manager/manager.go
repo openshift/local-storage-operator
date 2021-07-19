@@ -100,8 +100,9 @@ func startManager(cmd *cobra.Command, args []string) error {
 	}
 
 	// start local server to emit custom metrics
-	// TODO add LocalVolume and LocalVolumeSet metric collectors
-	err = localmetrics.NewConfigBuilder().Build()
+	err = localmetrics.NewConfigBuilder().
+		WithCollectors(localmetrics.LVMetricsList).
+		Build()
 	if err != nil {
 		return errors.Wrap(err, "failed to configure local metrics")
 	}

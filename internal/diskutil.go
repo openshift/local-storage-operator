@@ -364,6 +364,35 @@ func GetMatchingSymlinksInDirs(path string, dirs ...string) ([]string, error) {
 	return links, nil
 }
 
+// GetOrphanedSymlinks returns the devices that were symlinked previously, but didn't match the updated
+// LocalVolumeSet deviceInclusionSpec or LocalVolume devicePaths
+func GetOrphanedSymlinks(symlinkDir string, validDevices []BlockDevice) ([]string, error) {
+	orphanedSymlinkDevices := []string{}
+	paths, err := FilePathGlob(filepath.Join(symlinkDir, "/*"))
+	if err != nil {
+		return orphanedSymlinkDevices, err
+	}
+
+	for _, path := range paths {
+		symlinkFound := false
+		for _, device := range validDevices {
+			isMatch, err := PathEvalsToDiskLabel(path, device.KName)
+			if err != nil {
+				return orphanedSymlinkDevices, err
+			}
+			if isMatch {
+				symlinkFound = true
+				break
+			}
+		}
+		if !symlinkFound {
+			orphanedSymlinkDevices = append(orphanedSymlinkDevices, path)
+		}
+	}
+
+	return orphanedSymlinkDevices, nil
+}
+
 type ExclusiveFileLock struct {
 	Path   string
 	locked bool

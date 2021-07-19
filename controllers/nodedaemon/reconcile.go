@@ -10,6 +10,7 @@ import (
 	v1 "github.com/openshift/local-storage-operator/api/v1"
 	localv1alpha1 "github.com/openshift/local-storage-operator/api/v1alpha1"
 	"github.com/openshift/local-storage-operator/common"
+	"github.com/openshift/local-storage-operator/localmetrics"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -85,6 +86,15 @@ func (r *DaemonReconciler) Reconcile(ctx context.Context, request ctrl.Request) 
 		return ctrl.Result{}, err
 	} else if opResult == controllerutil.OperationResultUpdated || opResult == controllerutil.OperationResultCreated {
 		r.ReqLogger.Info("provisioner configmap changed")
+	}
+
+	// enable service and servicemonitor for diskmaker daemonset
+	serviceLabels := map[string]string{"app": DiskMakerName}
+	metricsExportor := localmetrics.NewExporter(ctx, r.Client, common.DiskMakerServiceName, request.Namespace, common.DiskMakerMetricsServingCert,
+		ownerRefs, serviceLabels)
+	if err := metricsExportor.EnableMetricsExporter(); err != nil {
+		r.ReqLogger.Error(err, "failed to create service and servicemonitors for diskmaker daemonset")
+		return ctrl.Result{}, err
 	}
 
 	configMapDataHash := dataHash(configMap.Data)
