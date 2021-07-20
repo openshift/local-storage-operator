@@ -48,26 +48,30 @@ class SyncBundle
   def initialize(args)
     @default_options = args
     @package = YAML.load(File.read("config/manifests/local-storage-operator.package.yaml"))
-  end
+  endy
 
   def sync_assets
     current_channel = @package["channels"][0]["name"]
     puts "current channel is #{current_channel}"
-    csv_file = "config/manifests/#{current_channel}/local-storage-operator.v#{current_channel}.0.clusterserviceversion.yaml"
-    crds = Dir["config/manifests/#{current_channel}/*.crd.yaml"]
+
+    FileUtils.mkdir_p("opm-bundle/manifests")
 
     csv_destination = "opm-bundle/manifests/local-storage-operator.clusterserviceversion.yaml"
-    FileUtils.cp(csv_file, csv_destination)
-
+    yaml_files = Dir["config/manifests/#{current_channel}/*.yaml"]
+    yaml_files.each do |yaml_file|
+      if yaml_file =~ /clusterserviceversion/
+        # For CSV files drop channel name from it
+        FileUtils.cp(yaml_file, csv_destination)
+      else
+        FileUtils.cp(yaml_file, "opm-bundle/manifests")
+      end
+    end
     # only change CSV if images are changed
     if @default_options.operator_image != DEFAULT_OPERATOR_IMAGE || @default_options.diskmaker_image != DEFAULT_DISKMAKER_IMAGE
       updated_yaml = update_csv(csv_destination)
       File.open(csv_destination, 'w') do |fl|
         fl.write(YAML.dump(updated_yaml))
       end
-    end
-    crds.each do |crd|
-      FileUtils.cp(crd, "opm-bundle/manifests")
     end
     if @default_options.command == "bundle"
       generate_bundle()
