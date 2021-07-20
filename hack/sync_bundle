@@ -48,9 +48,58 @@ class SyncBundle
   def initialize(args)
     @default_options = args
     @package = YAML.load(File.read("config/manifests/local-storage-operator.package.yaml"))
-  endy
+  end
+
+  def tag_images(operator_image, diskmaker_image)
+    if operator_image != DEFAULT_OPERATOR_IMAGE
+      check_for_yum_install_dockerfile("./Dockerfile")
+    end
+    if diskmaker_image != DEFAULT_DISKMAKER_IMAGE
+      check_for_yum_install_dockerfile("./Dockerfile.diskmaker")
+    end
+
+    if operator_image != DEFAULT_OPERATOR_IMAGE
+      puts "Building operator image"
+      system("docker build --no-cache -t #{operator_image} -f ./Dockerfile .")
+      system("docker push #{operator_image}")
+    end
+
+    if diskmaker_image != DEFAULT_DISKMAKER_IMAGE
+      puts "Building diskmaker image"
+      system("docker build --no-cache -t #{diskmaker_image} -f ./Dockerfile.diskmaker .")
+      system("docker push #{diskmaker_image}")
+    end
+  end
+
+  def check_for_yum_install_dockerfile(dockerfile)
+    puts "Check for #{dockerfile}"
+    content = File.read(dockerfile)
+    content_lines = content.split("\n")
+    sources = []
+    content_lines.each do |line|
+      if line =~ /^FROM\s+(.+)/
+        sources << $1
+      end
+    end
+
+    sources_are_private = lambda do
+      all_private = true
+      sources.each { |source|
+        if source !~ /^registry/
+          all_private = false
+        end
+      }
+      return all_private
+    end
+
+    if content =~ /yum\s+install/ && sources_are_private.call()
+      puts "Dockerfile #{dockerfile} appears to have yum install and is using private image"
+      exit(1)
+    end
+  end
 
   def sync_assets
+    self.tag_images(@default_options.operator_image, @default_options.diskmaker_image)
     current_channel = @package["channels"][0]["name"]
     puts "current channel is #{current_channel}"
 
@@ -66,6 +115,7 @@ class SyncBundle
         FileUtils.cp(yaml_file, "opm-bundle/manifests")
       end
     end
+
     # only change CSV if images are changed
     if @default_options.operator_image != DEFAULT_OPERATOR_IMAGE || @default_options.diskmaker_image != DEFAULT_DISKMAKER_IMAGE
       updated_yaml = update_csv(csv_destination)

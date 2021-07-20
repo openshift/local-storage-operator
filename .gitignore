@@ -6,3 +6,4 @@ bin/
 cover.out
 _output
 testbin/
+opm-bundle/manifests/
