@@ -45,7 +45,7 @@ func newDiscoveryResultInstance(nodeName, namespace, parentObjName, parentObjUID
 	return cr
 }
 
-// ensureDiscoveryResultCR creates a new LocalVolumeDiscoveryResult custome resource on the node, if not present
+// ensureDiscoveryResultCR creates a new LocalVolumeDiscoveryResult custom resource on the node, if not present
 func (discovery *DeviceDiscovery) ensureDiscoveryResultCR() error {
 	nodeName := os.Getenv("MY_NODE_NAME")
 	namespace := os.Getenv("WATCH_NAMESPACE")

@@ -14,6 +14,8 @@ const (
 
 	udevVolName = "run-udev"
 	udevPath    = "/run/udev"
+
+	metricsServingCert = "metrics-serving-cert"
 )
 
 var (
@@ -92,5 +94,25 @@ var (
 		Name:             udevVolName,
 		MountPath:        udevPath,
 		MountPropagation: &hostContainerPropagation,
+	}
+
+	// DiscoveryMetricsCertVolume is the corev1.Volume definition for serving cert secret for discovery service
+	DiscoveryMetricsCertVolume = corev1.Volume{
+		Name: metricsServingCert,
+		VolumeSource: corev1.VolumeSource{
+			Secret: &corev1.SecretVolumeSource{
+				SecretName: DiscoveryMetricsServingCert,
+			},
+		},
+	}
+
+	// DiskmakerMetricsCertVolume is the corev1.Volume definition for serving cert secret for diskmaker service
+	DiskmakerMetricsCertVolume = corev1.Volume{
+		Name: metricsServingCert,
+		VolumeSource: corev1.VolumeSource{
+			Secret: &corev1.SecretVolumeSource{
+				SecretName: DiskMakerMetricsServingCert,
+			},
+		},
 	}
 )

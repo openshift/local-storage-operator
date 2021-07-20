@@ -13,6 +13,7 @@ import (
 	"github.com/openshift/local-storage-operator/common"
 	"github.com/openshift/local-storage-operator/diskmaker"
 	"github.com/openshift/local-storage-operator/internal"
+	"github.com/openshift/local-storage-operator/localmetrics"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
@@ -150,7 +151,11 @@ func (r *LocalVolumeSetReconciler) Reconcile(ctx context.Context, request ctrl.R
 	// find disks that match lvset filters and matchers
 	validDevices, delayedDevices := r.getValidDevices(reqLogger, lvset, blockDevices)
 
+	// update metrics for unmatched disks
+	localmetrics.SetLVSUnmatchedDiskMetric(nodeName, storageClassName, len(blockDevices)-len(validDevices))
+
 	// process valid devices
+	var totalProvisionedPVs int
 	var noMatch []string
 	for _, blockDevice := range validDevices {
 		devLogger := reqLogger.WithValues("Device.Name", blockDevice.Name)
@@ -197,7 +202,26 @@ func (r *LocalVolumeSetReconciler) Reconcile(ctx context.Context, request ctrl.R
 		}
 		devLogger.Info("provisioning succeeded")
 
+		totalProvisionedPVs += 1
 	}
+
+	reqLogger.Info("total devices provisioned", "count", totalProvisionedPVs, "storageClass.Name", storageClassName)
+
+	// update metrics for total persistent volumes provisioned
+	localmetrics.SetLVSProvisionedPVMetric(nodeName, storageClassName, totalProvisionedPVs)
+
+	orphanSymlinkDevices, err := internal.GetOrphanedSymlinks(symLinkDir, validDevices)
+	if err != nil {
+		reqLogger.Error(err, "failed to get orphaned symlink devices in current reconcile")
+	}
+
+	if len(orphanSymlinkDevices) > 0 {
+		reqLogger.Info("found orphan symlinked devices in current reconcile", "orphanedDevices", orphanSymlinkDevices)
+	}
+
+	// update metrics for orphaned symlink devices
+	localmetrics.SetLVSOrphanedSymlinksMetric(nodeName, storageClassName, len(orphanSymlinkDevices))
+
 	if len(noMatch) > 0 {
 		reqLogger.Info("found stale symLink Entries", "storageClass.Name", storageClassName, "paths.List", noMatch, "directory", symLinkDir)
 	}

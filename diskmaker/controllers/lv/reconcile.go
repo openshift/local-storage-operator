@@ -14,6 +14,7 @@ import (
 	"github.com/go-logr/logr"
 	"github.com/openshift/local-storage-operator/common"
 	"github.com/openshift/local-storage-operator/internal"
+	"github.com/openshift/local-storage-operator/localmetrics"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/utils/mount"
@@ -58,6 +59,12 @@ const (
 	// ComponentName for lv symlinker
 	ComponentName = "localvolume-symlink-controller"
 )
+
+var nodeName string
+
+func init() {
+	nodeName = common.GetNodeNameEnvVar()
+}
 
 type DiskLocation struct {
 	// diskNamePath stores full device name path - "/dev/sda"
@@ -359,9 +366,12 @@ func (r *LocalVolumeReconciler) Reconcile(ctx context.Context, request ctrl.Requ
 	var errors []error
 
 	for storageClassName, deviceArray := range deviceMap {
+		var totalProvisionedPVs int
+		var blockDeviceList []internal.BlockDevice
+		symLinkDirPath := path.Join(r.symlinkLocation, storageClassName)
 		for _, deviceNameLocation := range deviceArray {
+			blockDeviceList = append(blockDeviceList, deviceNameLocation.blockDevice)
 			devLogger := reqLogger.WithValues("Device.Name", deviceNameLocation.diskNamePath)
-			symLinkDirPath := path.Join(r.symlinkLocation, storageClassName)
 			source, target, idExists, err := common.GetSymLinkSourceAndTarget(deviceNameLocation.blockDevice, symLinkDirPath)
 			if err != nil {
 				reqLogger.Error(err, "failed to get symlink source and target")
@@ -400,8 +410,26 @@ func (r *LocalVolumeReconciler) Reconcile(ctx context.Context, request ctrl.Requ
 					errors = append(errors, err)
 					break
 				}
+
+				totalProvisionedPVs += 1
 			}
 		}
+
+		// update metrics for total persistent volumes provisioned
+		localmetrics.SetLVProvisionedPVMetric(nodeName, storageClassName, totalProvisionedPVs)
+
+		orphanSymlinkDevices, err := internal.GetOrphanedSymlinks(symLinkDirPath, blockDeviceList)
+		if err != nil {
+			reqLogger.Error(err, "failed to get orphaned symlink devices in current reconcile")
+		}
+
+		if len(orphanSymlinkDevices) > 0 {
+			reqLogger.Info("found orphan symlinked devices in current reconcile",
+				"storageClass.Name", storageClassName, "orphanedDevices", orphanSymlinkDevices)
+		}
+
+		// update metrics for orphaned symlink devices
+		localmetrics.SetLVOrphanedSymlinksMetric(nodeName, storageClassName, len(orphanSymlinkDevices))
 	}
 
 	return ctrl.Result{Requeue: true, RequeueAfter: checkDuration}, nil

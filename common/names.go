@@ -11,6 +11,7 @@ import (
 const (
 	defaultDiskMakerImageVersion = "quay.io/openshift/origin-local-storage-diskmaker"
 	defaultProvisionImage        = "quay.io/openshift/origin-local-storage-static-provisioner"
+	defaultKubeProxyImage        = "quay.io/openshift/origin-kube-rbac-proxy:latest"
 	defaultlocalDiskLocation     = "/mnt/local-storage"
 
 	// OwnerNamespaceLabel references the owning object's namespace
@@ -22,6 +23,8 @@ const (
 	DiskMakerImageEnv = "DISKMAKER_IMAGE"
 	// ProvisionerImageEnv is used by the operator to read the PROVISIONER_IMAGE from the environment
 	ProvisionerImageEnv = "PROVISIONER_IMAGE"
+	// KubeRBACProxyImageEnv is used by the operator to read the KUBE_RBAC_PROXY_IMAGE from the environment
+	KubeRBACProxyImageEnv = "KUBE_RBAC_PROXY_IMAGE"
 	// LocalDiskLocationEnv is passed to the operator to override the LOCAL_DISK_LOCATION host directory
 	LocalDiskLocationEnv = "LOCAL_DISK_LOCATION"
 
@@ -37,6 +40,20 @@ const (
 	LocalProvisionerDaemonSetTemplate   = "templates/local-provisioner-daemonset.yaml"
 	DiskMakerManagerDaemonSetTemplate   = "templates/diskmaker-manager-daemonset.yaml"
 	DiskMakerDiscoveryDaemonSetTemplate = "templates/diskmaker-discovery-daemonset.yaml"
+	MetricsServiceTemplate              = "templates/localmetrics/service.yaml"
+	MetricsServiceMonitorTemplate       = "templates/localmetrics/service-monitor.yaml"
+
+	// DiskMakerServiceName is the name of the service created for the diskmaker daemon
+	DiskMakerServiceName = "local-storage-diskmaker-metrics"
+
+	// DiscoveryServiceName is the name of the service created for the diskmaker discovery daemon
+	DiscoveryServiceName = "local-storage-discovery-metrics"
+
+	// DiskMakerMetricsServingCert is the name of secret created for diskmaker service to store TLS config
+	DiskMakerMetricsServingCert = "diskmaker-metric-serving-cert"
+
+	// DiscoveryMetricsServingCert is the name of secret created for discovery service to store TLS config
+	DiscoveryMetricsServingCert = "discovery-metric-serving-cert"
 )
 
 // GetLocalProvisionerImage return the image to be used for provisioner daemonset
@@ -53,6 +70,14 @@ func GetDiskMakerImage() string {
 		return diskMakerImageFromEnv
 	}
 	return defaultDiskMakerImageVersion
+}
+
+// GetKubeRBACProxyImage returns the image to be used for Kube RBAC Proxy sidecar container
+func GetKubeRBACProxyImage() string {
+	if kubeRBACProxyImageFromEnv := os.Getenv(KubeRBACProxyImageEnv); kubeRBACProxyImageFromEnv != "" {
+		return kubeRBACProxyImageFromEnv
+	}
+	return defaultKubeProxyImage
 }
 
 // GetLocalDiskLocationPath return the local disk path

@@ -9,6 +9,8 @@ import (
 	diskmakerControllerDeleter "github.com/openshift/local-storage-operator/diskmaker/controllers/deleter"
 	diskmakerControllerLv "github.com/openshift/local-storage-operator/diskmaker/controllers/lv"
 	diskmakerControllerLvSet "github.com/openshift/local-storage-operator/diskmaker/controllers/lvset"
+	"github.com/openshift/local-storage-operator/localmetrics"
+	"github.com/pkg/errors"
 	"github.com/prometheus/common/log"
 	"github.com/spf13/cobra"
 	apiruntime "k8s.io/apimachinery/pkg/runtime"
@@ -95,6 +97,14 @@ func startManager(cmd *cobra.Command, args []string) error {
 	}).SetupWithManager(mgr, &provDeleter.CleanupStatusTracker{ProcTable: provDeleter.NewProcTable()}, provCache.NewVolumeCache()); err != nil {
 		setupLog.Error(err, "unable to create diskmaker controller", "controller", "Deleter")
 		return err
+	}
+
+	// start local server to emit custom metrics
+	err = localmetrics.NewConfigBuilder().
+		WithCollectors(localmetrics.LVMetricsList).
+		Build()
+	if err != nil {
+		return errors.Wrap(err, "failed to configure local metrics")
 	}
 
 	// Start the Cmd

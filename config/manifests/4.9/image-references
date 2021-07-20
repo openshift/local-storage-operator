@@ -15,3 +15,7 @@ spec:
     from:
       kind: DockerImage
       name: quay.io/openshift/origin-local-storage-diskmaker:latest
+  - name: kube-rbac-proxy
+    from:
+      kind: DockerImage
+      name: quay.io/openshift/origin-kube-rbac-proxy:latest
