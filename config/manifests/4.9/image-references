@@ -7,10 +7,6 @@ spec:
     from:
       kind: DockerImage
       name: quay.io/openshift/origin-local-storage-operator:latest
-  - name: local-storage-static-provisioner
-    from:
-      kind: DockerImage
-      name: quay.io/openshift/origin-local-storage-static-provisioner:latest
   - name: local-storage-diskmaker
     from:
       kind: DockerImage
