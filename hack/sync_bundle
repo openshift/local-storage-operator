@@ -60,15 +60,19 @@ class SyncBundle
 
     if operator_image != DEFAULT_OPERATOR_IMAGE
       puts "Building operator image"
-      system("docker build --no-cache -t #{operator_image} -f ./Dockerfile .")
-      system("docker push #{operator_image}")
+      run_command_or_exit("docker build --no-cache -t #{operator_image} -f ./Dockerfile .")
+      run_command_or_exit("docker push #{operator_image}")
     end
 
     if diskmaker_image != DEFAULT_DISKMAKER_IMAGE
       puts "Building diskmaker image"
-      system("docker build --no-cache -t #{diskmaker_image} -f ./Dockerfile.diskmaker .")
-      system("docker push #{diskmaker_image}")
+      run_command_or_exit("docker build --no-cache -t #{diskmaker_image} -f ./Dockerfile.diskmaker .")
+      run_command_or_exit("docker push #{diskmaker_image}")
     end
+  end
+
+  def run_command_or_exit(command)
+    system(command) || exit()
   end
 
   def check_for_yum_install_dockerfile(dockerfile)
@@ -130,10 +134,10 @@ class SyncBundle
 
   def generate_bundle
     FileUtils.cd("opm-bundle") do
-      system("docker build -f ./bundle.Dockerfile -t #{@default_options.bundle_image} .")
-      system("docker push #{@default_options.bundle_image}")
-      system("opm index add --bundles #{@default_options.bundle_image} --tag #{@default_options.index_image} --container-tool docker")
-      system("docker push #{@default_options.index_image}")
+      run_command_or_exit("docker build -f ./bundle.Dockerfile -t #{@default_options.bundle_image} .")
+      run_command_or_exit("docker push #{@default_options.bundle_image}")
+      run_command_or_exit("opm index add --bundles #{@default_options.bundle_image} --tag #{@default_options.index_image} --container-tool docker")
+      run_command_or_exit("docker push #{@default_options.index_image}")
     end
   end
 
