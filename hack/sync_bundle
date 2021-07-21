@@ -133,6 +133,7 @@ class SyncBundle
       system("docker build -f ./bundle.Dockerfile -t #{@default_options.bundle_image} .")
       system("docker push #{@default_options.bundle_image}")
       system("opm index add --bundles #{@default_options.bundle_image} --tag #{@default_options.index_image} --container-tool docker")
+      system("docker push #{@default_options.index_image}")
     end
   end
 
