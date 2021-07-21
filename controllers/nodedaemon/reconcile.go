@@ -58,6 +58,7 @@ type DaemonReconciler struct {
 	Scheme                   *runtime.Scheme
 	ReqLogger                logr.Logger
 	deletedStaticProvisioner bool
+	SecureMetricsEndpoint    bool
 }
 
 // Reconcile reads that state of the cluster for a LocalVolumeSet object and makes changes based on the state read
@@ -91,7 +92,7 @@ func (r *DaemonReconciler) Reconcile(ctx context.Context, request ctrl.Request) 
 	// enable service and servicemonitor for diskmaker daemonset
 	serviceLabels := map[string]string{"app": DiskMakerName}
 	metricsExportor := localmetrics.NewExporter(ctx, r.Client, common.DiskMakerServiceName, request.Namespace, common.DiskMakerMetricsServingCert,
-		ownerRefs, serviceLabels)
+		ownerRefs, serviceLabels, r.SecureMetricsEndpoint)
 	if err := metricsExportor.EnableMetricsExporter(); err != nil {
 		r.ReqLogger.Error(err, "failed to create service and servicemonitors for diskmaker daemonset")
 		return ctrl.Result{}, err
@@ -99,7 +100,7 @@ func (r *DaemonReconciler) Reconcile(ctx context.Context, request ctrl.Request) 
 
 	configMapDataHash := dataHash(configMap.Data)
 
-	diskMakerDSMutateFn := getDiskMakerDSMutateFn(request, tolerations, ownerRefs, nodeSelector, configMapDataHash)
+	diskMakerDSMutateFn := getDiskMakerDSMutateFn(request, tolerations, ownerRefs, nodeSelector, configMapDataHash, r.SecureMetricsEndpoint)
 	ds, opResult, err := CreateOrUpdateDaemonset(ctx, r.Client, diskMakerDSMutateFn)
 	if err != nil {
 		return ctrl.Result{}, err

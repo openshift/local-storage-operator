@@ -59,9 +59,10 @@ const (
 type LocalVolumeDiscoveryReconciler struct {
 	// This client, initialized using mgr.Client() above, is a split client
 	// that reads objects from the cache and writes to the apiserver
-	Client    client.Client
-	Scheme    *runtime.Scheme
-	ReqLogger logr.Logger
+	Client                client.Client
+	Scheme                *runtime.Scheme
+	ReqLogger             logr.Logger
+	SecureMetricsEndpoint bool
 }
 
 // Reconcile reads that state of the cluster for a LocalVolumeDiscovery object and makes changes based on the state read
@@ -89,7 +90,7 @@ func (r *LocalVolumeDiscoveryReconciler) Reconcile(ctx context.Context, request 
 	// enable service and service monitor for Local Volume Discovery
 	serviceLabels := map[string]string{"app": DiskMakerDiscovery}
 	metricsExportor := localmetrics.NewExporter(ctx, r.Client, common.DiscoveryServiceName, instance.Namespace, common.DiscoveryMetricsServingCert,
-		getOwnerRefs(instance), serviceLabels)
+		getOwnerRefs(instance), serviceLabels, r.SecureMetricsEndpoint)
 	if err := metricsExportor.EnableMetricsExporter(); err != nil {
 		reqLogger.Error(err, "failed to create service and servicemonitors", "object", instance.Name)
 		return ctrl.Result{}, err
@@ -98,7 +99,7 @@ func (r *LocalVolumeDiscoveryReconciler) Reconcile(ctx context.Context, request 
 	diskMakerDSMutateFn := getDiskMakerDiscoveryDSMutateFn(request, instance.Spec.Tolerations,
 		getEnvVars(instance.Name, string(instance.UID)),
 		getOwnerRefs(instance),
-		instance.Spec.NodeSelector)
+		instance.Spec.NodeSelector, r.SecureMetricsEndpoint)
 	ds, opResult, err := nodedaemon.CreateOrUpdateDaemonset(ctx, r.Client, diskMakerDSMutateFn)
 	if err != nil {
 		message := fmt.Sprintf("failed to create discovery daemonset. Error %+v", err)
@@ -157,7 +158,8 @@ func getDiskMakerDiscoveryDSMutateFn(request reconcile.Request,
 	tolerations []corev1.Toleration,
 	envVars []corev1.EnvVar,
 	ownerRefs []metav1.OwnerReference,
-	nodeSelector *corev1.NodeSelector) func(*appsv1.DaemonSet) error {
+	nodeSelector *corev1.NodeSelector,
+	secureMetricsEndpoint bool) func(*appsv1.DaemonSet) error {
 
 	return func(ds *appsv1.DaemonSet) error {
 		// read template for default values
@@ -183,9 +185,11 @@ func getDiskMakerDiscoveryDSMutateFn(request reconcile.Request,
 
 		ds.Spec.Template.Spec.Containers[0].Env = append(ds.Spec.Template.Spec.Containers[0].Env, envVars...)
 
-		//Add kube-rbac-proxy sidecar container to provide https proxy for http-based lso metrics.
-		ds.Spec.Template.Spec.Containers = append(ds.Spec.Template.Spec.Containers, common.KubeProxySideCar())
-		ds.Spec.Template.Spec.Volumes = append(ds.Spec.Template.Spec.Volumes, common.DiscoveryMetricsCertVolume)
+		if secureMetricsEndpoint {
+			//Add kube-rbac-proxy sidecar container to provide https proxy for http-based lso metrics.
+			ds.Spec.Template.Spec.Containers = append(ds.Spec.Template.Spec.Containers, common.KubeProxySideCar())
+			ds.Spec.Template.Spec.Volumes = append(ds.Spec.Template.Spec.Volumes, common.DiscoveryMetricsCertVolume)
+		}
 
 		return nil
 	}

@@ -26,7 +26,7 @@ func KubeProxySideCar() corev1.Container {
 		Ports: []corev1.ContainerPort{
 			{
 				ContainerPort: int32(9393),
-				Name:          "metrics",
+				Name:          KubeRBACProxyPortName,
 				Protocol:      corev1.ProtocolTCP,
 			},
 		},

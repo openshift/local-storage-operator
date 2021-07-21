@@ -366,6 +366,8 @@ spec:
                         value: quay.io/openshift/origin-kube-rbac-proxy:latest
                       - name: PRIORITY_CLASS_NAME
                         value: openshift-user-critical
+                      - name: SECURE_METRICS_ENDPOINT
+                        value: "true"
   customresourcedefinitions:
     owned:
       - displayName: Local Volume

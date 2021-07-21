@@ -1,8 +1,6 @@
 apiVersion: v1
 kind: Service
 metadata:
-  annotations:
-    service.beta.openshift.io/serving-cert-secret-name: lso-metrics-serving-cert
   name: lso-metrics-exporter
   namespace: openshift-local-storage
   labels:
@@ -13,6 +11,6 @@ spec:
   - name: metrics
     port: 8383
     protocol: TCP
-    targetPort: metrics
+    targetPort: 8383
   selector:
     app: lso-metrics-exporter

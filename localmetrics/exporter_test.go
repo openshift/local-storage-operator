@@ -30,32 +30,68 @@ func getFakeClient(t *testing.T) client.Client {
 }
 
 func TestEnableService(t *testing.T) {
-	fakeExporter := NewExporter(context.TODO(), getFakeClient(t), "test-service", "test-ns", "test-cert", []metav1.OwnerReference{}, fakeLabels)
+	fakeExporter := NewExporter(context.TODO(), getFakeClient(t), "test-service", "test-ns", "test-cert", []metav1.OwnerReference{}, fakeLabels, false)
 	err := fakeExporter.enableService()
 	assert.NoError(t, err)
 
 	// assert that service was created with correct parameters.
-	expectedServce := &corev1.Service{}
+	expectedService := &corev1.Service{}
 	err = fakeExporter.Client.Get(fakeExporter.Ctx,
-		types.NamespacedName{Name: "test-service", Namespace: "test-ns"}, expectedServce)
+		types.NamespacedName{Name: "test-service", Namespace: "test-ns"}, expectedService)
 	assert.NoError(t, err)
-	assert.Equal(t, "test-service", expectedServce.Name)
-	assert.Equal(t, fakeLabels, expectedServce.Labels)
-	assert.Equal(t, fakeLabels, expectedServce.Spec.Selector)
+	assert.Equal(t, "test-service", expectedService.Name)
+	assert.Equal(t, fakeLabels, expectedService.Labels)
+	assert.Equal(t, fakeLabels, expectedService.Spec.Selector)
+	assert.Nil(t, expectedService.ObjectMeta.Annotations)
+}
+
+func TestEnableServiceWithSecureMetrics(t *testing.T) {
+	fakeExporter := NewExporter(context.TODO(), getFakeClient(t), "test-service", "test-ns", "test-cert", []metav1.OwnerReference{}, fakeLabels, true)
+	err := fakeExporter.enableService()
+	assert.NoError(t, err)
+
+	// assert that service was created with correct parameters.
+	expectedService := &corev1.Service{}
+	err = fakeExporter.Client.Get(fakeExporter.Ctx,
+		types.NamespacedName{Name: "test-service", Namespace: "test-ns"}, expectedService)
+	assert.NoError(t, err)
+	assert.Equal(t, "test-service", expectedService.Name)
+	assert.Equal(t, fakeLabels, expectedService.Labels)
+	assert.Equal(t, fakeLabels, expectedService.Spec.Selector)
+	assert.NotNil(t, expectedService.ObjectMeta.Annotations)
 }
 
 func TestEnableServiceMonitor(t *testing.T) {
-	fakeExporter := NewExporter(context.TODO(), getFakeClient(t), "test-service-monitor", "test-ns", "test-cert", []metav1.OwnerReference{}, fakeLabels)
+	fakeExporter := NewExporter(context.TODO(), getFakeClient(t), "test-service", "test-ns", "test-cert", []metav1.OwnerReference{}, fakeLabels, false)
 	err := fakeExporter.enableServiceMonitor()
 	assert.NoError(t, err)
 
 	// assert that service monitor was created with correct parameters.
-	expectedServce := &monitoringv1.ServiceMonitor{}
+	expectedServiceMonitor := &monitoringv1.ServiceMonitor{}
 
 	err = fakeExporter.Client.Get(fakeExporter.Ctx,
-		types.NamespacedName{Name: "test-service-monitor", Namespace: "test-ns"}, expectedServce)
+		types.NamespacedName{Name: "test-service", Namespace: "test-ns"}, expectedServiceMonitor)
 	assert.NoError(t, err)
-	assert.Equal(t, "test-service-monitor", expectedServce.Name)
-	assert.Equal(t, fakeLabels, expectedServce.Labels)
-	assert.Equal(t, fakeLabels, expectedServce.Spec.Selector.MatchLabels)
+	assert.Equal(t, "test-service-monitor", expectedServiceMonitor.Name)
+	assert.Equal(t, fakeLabels, expectedServiceMonitor.Labels)
+	assert.Equal(t, fakeLabels, expectedServiceMonitor.Spec.Selector.MatchLabels)
+	assert.Nil(t, expectedServiceMonitor.Spec.Endpoints[0].TLSConfig)
+}
+
+func TestEnableServiceMonitorWithSecureMetrics(t *testing.T) {
+	fakeExporter := NewExporter(context.TODO(), getFakeClient(t), "test-service", "test-ns", "test-cert", []metav1.OwnerReference{}, fakeLabels, true)
+	err := fakeExporter.enableServiceMonitor()
+	assert.NoError(t, err)
+
+	// assert that service monitor was created with correct parameters.
+	expectedServiceMonitor := &monitoringv1.ServiceMonitor{}
+
+	err = fakeExporter.Client.Get(fakeExporter.Ctx,
+		types.NamespacedName{Name: "test-service", Namespace: "test-ns"}, expectedServiceMonitor)
+	assert.NoError(t, err)
+	assert.Equal(t, "test-service", expectedServiceMonitor.Name)
+	assert.Equal(t, fakeLabels, expectedServiceMonitor.Labels)
+	assert.Equal(t, fakeLabels, expectedServiceMonitor.Spec.Selector.MatchLabels)
+	assert.NotNil(t, expectedServiceMonitor.Spec.Endpoints[0].TLSConfig)
+	assert.Equal(t, expectedServiceMonitor.Spec.Endpoints[0].TLSConfig.ServerName, "test-service.test-ns.svc")
 }

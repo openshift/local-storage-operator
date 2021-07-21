@@ -24,6 +24,7 @@ import (
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
+
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
 	apiruntime "k8s.io/apimachinery/pkg/runtime"
@@ -103,6 +104,11 @@ func main() {
 		os.Exit(1)
 	}
 
+	secureMetricsEndpoint := false
+	if os.Getenv("SECURE_METRICS_ENDPOINT") == "true" {
+		secureMetricsEndpoint = true
+	}
+
 	if err = (&lvcontroller.LocalVolumeReconciler{
 		Client: mgr.GetClient(),
 		//	Log:    ctrl.Log.WithName("controllers").WithName("LocalVolume"),
@@ -116,7 +122,8 @@ func main() {
 		Client:    mgr.GetClient(),
 		ReqLogger: logf.Log.WithName("controllers").WithName("LocalVolumeDiscovery"),
 		//	Log:    ctrl.Log.WithName("controllers").WithName("LocalVolumeDiscovery"),
-		Scheme: mgr.GetScheme(),
+		Scheme:                mgr.GetScheme(),
+		SecureMetricsEndpoint: secureMetricsEndpoint,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "LocalVolumeDiscovery")
 		os.Exit(1)
@@ -136,7 +143,8 @@ func main() {
 		Client:    mgr.GetClient(),
 		ReqLogger: logf.Log.WithName("controllers").WithName("NodeDaemon"),
 		//	Log:    ctrl.Log.WithName("controllers").WithName("LocalVolumeSet"),
-		Scheme: mgr.GetScheme(),
+		Scheme:                mgr.GetScheme(),
+		SecureMetricsEndpoint: secureMetricsEndpoint,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "LocalVolumeSet")
 		os.Exit(1)

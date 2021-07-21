@@ -13,29 +13,38 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	k8sYAML "k8s.io/apimachinery/pkg/util/yaml"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
+const (
+	bearerTokenFile = "/var/run/secrets/kubernetes.io/serviceaccount/token"
+	caFile          = "/etc/prometheus/configmaps/serving-certs-ca-bundle/service-ca.crt"
+)
+
 type Exporter struct {
-	Ctx             context.Context
-	Client          client.Client
-	Name            string
-	Namespace       string
-	OwnerRefs       []metav1.OwnerReference
-	Labels          map[string]string
-	ServiceCertName string
+	Ctx                   context.Context
+	Client                client.Client
+	Name                  string
+	Namespace             string
+	OwnerRefs             []metav1.OwnerReference
+	Labels                map[string]string
+	ServiceCertName       string
+	SecureMetricsEndpoint bool
 }
 
-func NewExporter(ctx context.Context, client client.Client, name, namespace, certName string, ownerRefs []metav1.OwnerReference, labels map[string]string) *Exporter {
+func NewExporter(ctx context.Context, client client.Client, name, namespace, certName string,
+	ownerRefs []metav1.OwnerReference, labels map[string]string, secureMetricsEndpoint bool) *Exporter {
 	return &Exporter{
-		Ctx:             ctx,
-		Client:          client,
-		Name:            name,
-		Namespace:       namespace,
-		OwnerRefs:       ownerRefs,
-		Labels:          labels,
-		ServiceCertName: certName,
+		Ctx:                   ctx,
+		Client:                client,
+		Name:                  name,
+		Namespace:             namespace,
+		OwnerRefs:             ownerRefs,
+		Labels:                labels,
+		ServiceCertName:       certName,
+		SecureMetricsEndpoint: secureMetricsEndpoint,
 	}
 }
 
@@ -63,10 +72,15 @@ func (e *Exporter) enableService() error {
 	service.SetLabels(e.Labels)
 	service.SetOwnerReferences(e.OwnerRefs)
 	service.Spec.Selector = e.Labels
-	service.Annotations["service.beta.openshift.io/serving-cert-secret-name"] = e.ServiceCertName
-
+	if e.SecureMetricsEndpoint {
+		service.Spec.Ports[0].TargetPort = intstr.IntOrString{Type: intstr.String, StrVal: common.KubeRBACProxyPortName}
+		if service.ObjectMeta.Annotations == nil {
+			service.ObjectMeta.Annotations = map[string]string{}
+		}
+		service.ObjectMeta.Annotations[common.OpenshiftServingCertAnnotation] = e.ServiceCertName
+	}
 	if _, err = e.createOrUpdateService(service); err != nil {
-		return fmt.Errorf("failed to enable service monitor. %v", err)
+		return fmt.Errorf("failed to enable service. %v", err)
 	}
 
 	return nil
@@ -84,7 +98,17 @@ func (e *Exporter) enableServiceMonitor() error {
 	serviceMonitor.SetOwnerReferences(e.OwnerRefs)
 	serviceMonitor.Spec.NamespaceSelector.MatchNames = []string{e.Namespace}
 	serviceMonitor.Spec.Selector.MatchLabels = e.Labels
-	serviceMonitor.Spec.Endpoints[0].TLSConfig.ServerName = fmt.Sprintf("%s.%s.svc", e.Name, e.Namespace)
+
+	if e.SecureMetricsEndpoint {
+		serviceMonitor.Spec.Endpoints[0].Scheme = "https"
+		serviceMonitor.Spec.Endpoints[0].BearerTokenFile = bearerTokenFile
+
+		if serviceMonitor.Spec.Endpoints[0].TLSConfig == nil {
+			serviceMonitor.Spec.Endpoints[0].TLSConfig = &monitoringv1.TLSConfig{}
+		}
+		serviceMonitor.Spec.Endpoints[0].TLSConfig.ServerName = fmt.Sprintf("%s.%s.svc", e.Name, e.Namespace)
+		serviceMonitor.Spec.Endpoints[0].TLSConfig.CAFile = caFile
+	}
 
 	if _, err = e.createOrUpdateServiceMonitor(serviceMonitor); err != nil {
 		return fmt.Errorf("failed to enable service monitor. %v", err)
@@ -135,7 +159,7 @@ func (e *Exporter) createOrUpdateServiceMonitor(serviceMonitor *monitoringv1.Ser
 			}
 			return serviceMonitor, nil
 		}
-		return nil, fmt.Errorf("failed to retrieve servicemonitor %v. %v", namespacedName, err)
+		return nil, fmt.Errorf("failed to get servicemonitor %v. %v", namespacedName, err)
 	}
 	oldSm.Spec = serviceMonitor.Spec
 	err = e.Client.Update(context.TODO(), oldSm)

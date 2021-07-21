@@ -53,6 +53,10 @@ const (
 	// LocalVolumeProtectionFinalizer is set to ensure the provisioner daemonset and owning object stick around long
 	// enough to handle the PV reclaim policy.
 	LocalVolumeProtectionFinalizer = "storage.openshift.com/local-volume-protection"
+
+	KubeRBACProxyPortName = "metrics"
+
+	OpenshiftServingCertAnnotation = "service.beta.openshift.io/serving-cert-secret-name"
 )
 
 // GetDiskMakerImage returns the image to be used for diskmaker daemonset
