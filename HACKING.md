@@ -9,27 +9,31 @@ and then update `deploy/operator.yaml` to point to your images and follow rest o
 
 1. Download and install `opm` tool via - https://github.com/operator-framework/operator-registry
 
-2. Make local-storage-operator and local-diskmaker images by running following command:
+2. Create images as documented below
 
-```
-~> make images
-```
+## Automatic creation of operator, bundle and index images
 
-3. Tag and push both images to quay.io (or a container registry of your choice). Make sure that images are publicly available.
-
-## Automatic creation of bundle and index image
-
-Assuming we have `opm` command and images of `local-storage-operator` and `local-diskmaker`, we can use following command to create the bundle and index image:
-
+All the images including operator, diskmaker, bundle and index images can be created in one shot using following command:
 
 ```
 ~> ./hack/sync_bundle -o <operator_image> -d <diskmaker_image> -b <bundle_image> -i <index_image> bundle
+```
 
-~> ./hack/sync_bundle -o quay.io/openshift/origin-local-storage-operator:latest  \
-        -d quay.io/openshift/origin-local-storage-diskmaker:latest \
+This command also pushes the images to selected docker registry, so if you ran this command with following arguments:
+
+```
+~> ./hack/sync_bundle -o quay.io/gnufied/local-storage-operator:latest  \
+        -d quay.io/gnufied/local-storage-diskmaker:latest \
         -b quay.io/gnufied/local-storage-bundle:v1 \
         -i quay.io/gnufied/gnufied-index:v1 bundle
-~> docker push quay.io/gnufied/gnufied-index:v1
+```
+
+The command will create all of these images and push them to quay. Operator and diskmaker arguments to `sync_bundle` script can be skipped and in that case `quay.io/openshift/origin-local-storage-diskmaker:latest` and `quay.io/openshift/origin-local-storage-operator:latest` version of those images are used:
+
+
+```
+~> ./hack/sync_bundle -b quay.io/gnufied/local-storage-bundle:v1 \
+        -i quay.io/gnufied/gnufied-index:v1 bundle
 ```
 
 This should give us index image `quay.io/gnufied/gnufied-index:v1`. Update the `CatalogSource` entry in `examples/olm/catalog-create-subscribe.yaml`

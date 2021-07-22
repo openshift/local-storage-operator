@@ -50,14 +50,75 @@ class SyncBundle
     @package = YAML.load(File.read("config/manifests/local-storage-operator.package.yaml"))
   end
 
+  def tag_images(operator_image, diskmaker_image)
+    if operator_image != DEFAULT_OPERATOR_IMAGE
+      check_for_yum_install_dockerfile("./Dockerfile")
+    end
+    if diskmaker_image != DEFAULT_DISKMAKER_IMAGE
+      check_for_yum_install_dockerfile("./Dockerfile.diskmaker")
+    end
+
+    if operator_image != DEFAULT_OPERATOR_IMAGE
+      puts "Building operator image"
+      run_command_or_exit("docker build --no-cache -t #{operator_image} -f ./Dockerfile .")
+      run_command_or_exit("docker push #{operator_image}")
+    end
+
+    if diskmaker_image != DEFAULT_DISKMAKER_IMAGE
+      puts "Building diskmaker image"
+      run_command_or_exit("docker build --no-cache -t #{diskmaker_image} -f ./Dockerfile.diskmaker .")
+      run_command_or_exit("docker push #{diskmaker_image}")
+    end
+  end
+
+  def run_command_or_exit(command)
+    system(command) || exit()
+  end
+
+  def check_for_yum_install_dockerfile(dockerfile)
+    puts "Check for #{dockerfile}"
+    content = File.read(dockerfile)
+    content_lines = content.split("\n")
+    sources = []
+    content_lines.each do |line|
+      if line =~ /^FROM\s+(.+)/
+        sources << $1
+      end
+    end
+
+    sources_are_private = lambda do
+      all_private = true
+      sources.each { |source|
+        if source !~ /^registry/
+          all_private = false
+        end
+      }
+      return all_private
+    end
+
+    if content =~ /yum\s+install/ && sources_are_private.call()
+      puts "Dockerfile #{dockerfile} appears to have yum install and is using private image"
+      exit(1)
+    end
+  end
+
   def sync_assets
+    self.tag_images(@default_options.operator_image, @default_options.diskmaker_image)
     current_channel = @package["channels"][0]["name"]
     puts "current channel is #{current_channel}"
-    csv_file = "config/manifests/#{current_channel}/local-storage-operator.v#{current_channel}.0.clusterserviceversion.yaml"
-    crds = Dir["config/manifests/#{current_channel}/*.crd.yaml"]
+
+    FileUtils.mkdir_p("opm-bundle/manifests")
 
     csv_destination = "opm-bundle/manifests/local-storage-operator.clusterserviceversion.yaml"
-    FileUtils.cp(csv_file, csv_destination)
+    yaml_files = Dir["config/manifests/#{current_channel}/*.yaml"]
+    yaml_files.each do |yaml_file|
+      if yaml_file =~ /clusterserviceversion/
+        # For CSV files drop channel name from it
+        FileUtils.cp(yaml_file, csv_destination)
+      else
+        FileUtils.cp(yaml_file, "opm-bundle/manifests")
+      end
+    end
 
     # only change CSV if images are changed
     if @default_options.operator_image != DEFAULT_OPERATOR_IMAGE || @default_options.diskmaker_image != DEFAULT_DISKMAKER_IMAGE
@@ -66,9 +127,6 @@ class SyncBundle
         fl.write(YAML.dump(updated_yaml))
       end
     end
-    crds.each do |crd|
-      FileUtils.cp(crd, "opm-bundle/manifests")
-    end
     if @default_options.command == "bundle"
       generate_bundle()
     end
@@ -76,9 +134,10 @@ class SyncBundle
 
   def generate_bundle
     FileUtils.cd("opm-bundle") do
-      system("docker build -f ./bundle.Dockerfile -t #{@default_options.bundle_image} .")
-      system("docker push #{@default_options.bundle_image}")
-      system("opm index add --bundles #{@default_options.bundle_image} --tag #{@default_options.index_image} --container-tool docker")
+      run_command_or_exit("docker build -f ./bundle.Dockerfile -t #{@default_options.bundle_image} .")
+      run_command_or_exit("docker push #{@default_options.bundle_image}")
+      run_command_or_exit("opm index add --bundles #{@default_options.bundle_image} --tag #{@default_options.index_image} --container-tool docker")
+      run_command_or_exit("docker push #{@default_options.index_image}")
     end
   end
 
