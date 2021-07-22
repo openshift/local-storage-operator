@@ -90,8 +90,6 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.namespace
-            - name: PROVISIONER_IMAGE
-              value: quay.io/openshift/origin-local-storage-static-provisioner
             - name: DISKMAKER_IMAGE
               value: quay.io/openshift/origin-local-storage-diskmaker
             - name: KUBE_RBAC_PROXY_IMAGE

@@ -10,7 +10,6 @@ import (
 
 const (
 	defaultDiskMakerImageVersion = "quay.io/openshift/origin-local-storage-diskmaker"
-	defaultProvisionImage        = "quay.io/openshift/origin-local-storage-static-provisioner"
 	defaultKubeProxyImage        = "quay.io/openshift/origin-kube-rbac-proxy:latest"
 	defaultlocalDiskLocation     = "/mnt/local-storage"
 
@@ -21,8 +20,6 @@ const (
 
 	// DiskMakerImageEnv is used by the operator to read the DISKMAKER_IMAGE from the environment
 	DiskMakerImageEnv = "DISKMAKER_IMAGE"
-	// ProvisionerImageEnv is used by the operator to read the PROVISIONER_IMAGE from the environment
-	ProvisionerImageEnv = "PROVISIONER_IMAGE"
 	// KubeRBACProxyImageEnv is used by the operator to read the KUBE_RBAC_PROXY_IMAGE from the environment
 	KubeRBACProxyImageEnv = "KUBE_RBAC_PROXY_IMAGE"
 	// LocalDiskLocationEnv is passed to the operator to override the LOCAL_DISK_LOCATION host directory
@@ -37,7 +34,6 @@ const (
 
 	LocalVolumeStorageClassTemplate     = "templates/localvolume-storageclass.yaml"
 	LocalProvisionerConfigMapTemplate   = "templates/local-provisioner-configmap.yaml"
-	LocalProvisionerDaemonSetTemplate   = "templates/local-provisioner-daemonset.yaml"
 	DiskMakerManagerDaemonSetTemplate   = "templates/diskmaker-manager-daemonset.yaml"
 	DiskMakerDiscoveryDaemonSetTemplate = "templates/diskmaker-discovery-daemonset.yaml"
 	MetricsServiceTemplate              = "templates/localmetrics/service.yaml"
@@ -55,14 +51,6 @@ const (
 	// DiscoveryMetricsServingCert is the name of secret created for discovery service to store TLS config
 	DiscoveryMetricsServingCert = "discovery-metric-serving-cert"
 )
-
-// GetLocalProvisionerImage return the image to be used for provisioner daemonset
-func GetLocalProvisionerImage() string {
-	if provisionerImageFromEnv := os.Getenv(ProvisionerImageEnv); provisionerImageFromEnv != "" {
-		return provisionerImageFromEnv
-	}
-	return defaultProvisionImage
-}
 
 // GetDiskMakerImage returns the image to be used for diskmaker daemonset
 func GetDiskMakerImage() string {

@@ -91,54 +91,9 @@ func getDiskMakerDSMutateFn(
 		initMapIfNil(&ds.ObjectMeta.Annotations)
 		ds.ObjectMeta.Annotations[dataHashAnnotationKey] = dataHash
 
-		// setting maxUnavailable as a percentage
-		ds.Spec.UpdateStrategy = dsTemplate.Spec.UpdateStrategy
-		// to read /proc/1/mountinfo
-		ds.Spec.Template.Spec.HostPID = dsTemplate.Spec.Template.Spec.HostPID
-
 		//Add kube-rbac-proxy sidecar container to provide https proxy for http-based lso metrics.
 		ds.Spec.Template.Spec.Containers = append(ds.Spec.Template.Spec.Containers, common.KubeProxySideCar())
 		ds.Spec.Template.Spec.Volumes = append(ds.Spec.Template.Spec.Volumes, common.DiskmakerMetricsCertVolume)
-
-		return nil
-	}
-}
-
-// Local Provisioner Daemonset
-// to be consumed by createOrUpdateDaemonset
-func getLocalProvisionerDSMutateFn(
-	request reconcile.Request,
-	tolerations []corev1.Toleration,
-	ownerRefs []metav1.OwnerReference,
-	nodeSelector *corev1.NodeSelector,
-	dataHash string,
-) func(*appsv1.DaemonSet) error {
-
-	return func(ds *appsv1.DaemonSet) error {
-		// read template for default values
-		dsBytes, err := assets.ReadFileAndReplace(
-			common.LocalProvisionerDaemonSetTemplate,
-			[]string{
-				"${OBJECT_NAMESPACE}", request.Namespace,
-				"${CONTAINER_IMAGE}", common.GetLocalProvisionerImage(),
-			},
-		)
-		if err != nil {
-			return err
-		}
-		dsTemplate := resourceread.ReadDaemonSetV1OrDie(dsBytes)
-
-		// common spec
-		MutateAggregatedSpec(
-			ds,
-			tolerations,
-			ownerRefs,
-			nodeSelector,
-			dsTemplate,
-		)
-		// add provisioner configmap hash
-		initMapIfNil(&ds.ObjectMeta.Annotations)
-		ds.ObjectMeta.Annotations[dataHashAnnotationKey] = dataHash
 
 		return nil
 	}
@@ -207,6 +162,11 @@ func MutateAggregatedSpec(
 
 	// define containers
 	ds.Spec.Template.Spec.Containers = dsTemplate.Spec.Template.Spec.Containers
+
+	// setting maxUnavailable as a percentage
+	ds.Spec.UpdateStrategy = dsTemplate.Spec.UpdateStrategy
+	// to read /proc/1/mountinfo
+	ds.Spec.Template.Spec.HostPID = dsTemplate.Spec.Template.Spec.HostPID
 }
 
 func initMapIfNil(m *map[string]string) {

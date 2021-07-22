@@ -41,10 +41,10 @@ func TestMutateAggregatedSpecWithNilNodeSelector(t *testing.T) {
 func TestMutateAggregatedSpecTemplates(t *testing.T) {
 	// Generate DaemonSet template by reading yaml asset
 	dsBytes, err := assets.ReadFileAndReplace(
-		common.LocalProvisionerDaemonSetTemplate,
+		common.DiskMakerManagerDaemonSetTemplate,
 		[]string{
-			"${OBJECT_NAMESPACE}", "test-namespace",
-			"${CONTAINER_IMAGE}", common.GetLocalProvisionerImage(),
+			"${OBJECT_NAMESPACE}", "new-namespace",
+			"${CONTAINER_IMAGE}", common.GetDiskMakerImage(),
 		},
 	)
 	assert.Nil(t, err, "ReadFile should not return an error when reading the template")
