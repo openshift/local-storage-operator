@@ -2,7 +2,7 @@
 
 The local-storage Operator is avaialble in OLM, this makes it easy to consume local storage on your OCP cluster.
 
-**Warning: These docs are for internal development and testing. Use https://docs.openshift.com/container-platform/latest/storage/persistent-storage/persistent-storage-local.html docs for installation on OCP**
+**Warning: These docs are for internal development and testing. Use https://docs.openshift.com/container-platform/latest/storage/persistent_storage/persistent-storage-local.html docs for installation on OCP**
 
 ## Pre Requisites
 
