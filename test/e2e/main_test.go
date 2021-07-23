@@ -32,6 +32,8 @@ var (
 		"LocalVolume":          LocalVolumeTest,
 		"LocalVolumeSet":       LocalVolumeSetTest,
 	}
+	// this is to order the tests to make them more efficient (e.g. discover will cause all images to be pulled on the nodes)
+	testNames = []string{"LocalVolumeDiscovery", "LocalVolumeSet", "LocalVolume"}
 )
 
 func TestMain(m *testing.M) {
@@ -78,7 +80,8 @@ func TestLocalStorage(t *testing.T) {
 	}
 
 	// Run tests with setup and teardown
-	for testName, testWrapper := range testMap {
+	for _, testName := range testNames {
+		testWrapper := testMap[testName]
 		context := framework.NewTestCtx(t)
 
 		// a list of functions that will be run at the end of every test suite
@@ -91,11 +94,14 @@ func TestLocalStorage(t *testing.T) {
 		stopChan := make(chan os.Signal)
 		signal.Notify(stopChan, os.Interrupt, syscall.SIGTERM)
 		go func() {
-			// block until interrupt recieved
-			<-stopChan
-			fmt.Println("\r- Interrupt recieved, cleaning up")
-			runCleanup()
-			os.Exit(1)
+			t.Log("listening for interrupt")
+			for range stopChan {
+				// block until interrupt recieved
+				fmt.Println("\r- Interrupt recieved, cleaning up")
+				t.Logf("running %d cleanup functions.", len(cleanupFuncs))
+				runCleanup()
+				os.Exit(1)
+			}
 
 		}()
 		// add context cleanup to cleanup funcs
@@ -116,6 +122,9 @@ func TestLocalStorage(t *testing.T) {
 		errs := runCleanup()
 		for _, err := range errs {
 			assert.NoErrorf(t, err, "expected cleanup step to succeed")
+		}
+		if t.Failed() {
+			t.Logf("============= Failed: %q =============================== ", testName)
 		}
 	}
 
@@ -139,7 +148,6 @@ func getCleanupRunner(t *testing.T, cleanupFuncs *[]cleanupFn) func() []error {
 			started = true
 			errs := make([]error, 0)
 			funcs := *cleanupFuncs
-			t.Logf("running %d cleanup functions.", len(funcs))
 			// run in reverse
 			for i := range funcs {
 				f := funcs[len(funcs)-(i+1)]

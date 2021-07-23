@@ -138,97 +138,99 @@ func populateDeviceInfo(t *testing.T, ctx *framework.TestCtx, nodeEnv []nodeDisk
 // this assumes that the device spaces /dev/sd[h-z] are available on the node
 // do not provide more than 20 disksizes
 // do not use more than once per node
-func createAndAttachAWSVolumes(t *testing.T, ec2Client *ec2.EC2, ctx *framework.TestCtx, namespace string, nodeEnv []nodeDisks) error {
-	var err error
-
+// this function is async
+func createAndAttachAWSVolumes(t *testing.T, ec2Client *ec2.EC2, ctx *framework.Context, namespace string, nodeEnv []nodeDisks) {
 	for _, nodeEntry := range nodeEnv {
-		node := nodeEntry.node
-		if len(nodeEntry.disks) > 20 {
-			return fmt.Errorf("can't provision more than 20 disks per node")
-		}
-		volumes := make([]*ec2.Volume, len(nodeEntry.disks))
-		volumeLetters := []string{"g", "h", "i", "j", "k", "l", "m", "n", "o", "p", "q", "r", "s", "t", "u", "v", "w", "x", "y", "z"}
-		volumeIDs := make([]*string, 0)
-		instanceID, _, zone, err := getAWSNodeInfo(node)
-		if err != nil {
-			return err
-		}
+		go createAndAttachAWSVolumesForNode(t, nodeEntry, ec2Client)
+	}
+}
+func createAndAttachAWSVolumesForNode(t *testing.T, nodeEntry nodeDisks, ec2Client *ec2.EC2) {
+	node := nodeEntry.node
+	if len(nodeEntry.disks) > 20 {
+		err := fmt.Errorf("can't provision more than 20 disks per node")
+		t.Fatalf("failed to create and attach aws disks for node %q: %+v", nodeEntry.node.Name, err)
+	}
+	volumes := make([]*ec2.Volume, len(nodeEntry.disks))
+	volumeLetters := []string{"g", "h", "i", "j", "k", "l", "m", "n", "o", "p", "q", "r", "s", "t", "u", "v", "w", "x", "y", "z"}
+	volumeIDs := make([]*string, 0)
+	instanceID, _, zone, err := getAWSNodeInfo(node)
+	if err != nil {
+		t.Fatalf("failed to create and attach aws disks for node %q: %+v", nodeEntry.node.Name, err)
+	}
 
-		// create ec2 volumes
-		for i, disk := range nodeEntry.disks {
-			diskSize := disk.size
-			diskName := fmt.Sprintf("sd%s", volumeLetters[i])
-			createInput := &ec2.CreateVolumeInput{
-				AvailabilityZone: aws.String(zone),
-				Size:             aws.Int64(int64(diskSize)),
-				VolumeType:       aws.String("gp2"),
-				TagSpecifications: []*ec2.TagSpecification{
-					{
-						ResourceType: aws.String("volume"),
-						Tags: []*ec2.Tag{
-							{
-								Key:   aws.String("Name"),
-								Value: aws.String(diskName),
-							},
-							{
-								Key:   aws.String("purpose"),
-								Value: aws.String(awsPurposeTag),
-							},
-							{
-								Key:   aws.String("chosen-instanceID"),
-								Value: aws.String(instanceID),
-							},
+	// create ec2 volumes
+	for i, disk := range nodeEntry.disks {
+		diskSize := disk.size
+		diskName := fmt.Sprintf("sd%s", volumeLetters[i])
+		createInput := &ec2.CreateVolumeInput{
+			AvailabilityZone: aws.String(zone),
+			Size:             aws.Int64(int64(diskSize)),
+			VolumeType:       aws.String("gp2"),
+			TagSpecifications: []*ec2.TagSpecification{
+				{
+					ResourceType: aws.String("volume"),
+					Tags: []*ec2.Tag{
+						{
+							Key:   aws.String("Name"),
+							Value: aws.String(diskName),
+						},
+						{
+							Key:   aws.String("purpose"),
+							Value: aws.String(awsPurposeTag),
+						},
+						{
+							Key:   aws.String("chosen-instanceID"),
+							Value: aws.String(instanceID),
 						},
 					},
 				},
-			}
-			volume, err := ec2Client.CreateVolume(createInput)
-			if err != nil {
-				return fmt.Errorf("expect to create AWS volume with input %v: %w", createInput, err)
-			}
-			t.Logf("creating volume: %q (%dGi)", *volume.VolumeId, *volume.Size)
-			volumes[i] = volume
-			volumeIDs = append(volumeIDs, volume.VolumeId)
+			},
 		}
-		// attach and poll for attachment to complete
-		err = wait.Poll(time.Second*5, time.Minute*4, func() (bool, error) {
-			describeVolumeInput := &ec2.DescribeVolumesInput{
-				VolumeIds: volumeIDs,
-			}
-			describedVolumes, err := ec2Client.DescribeVolumes(describeVolumeInput)
-			if err != nil {
-				return false, err
-			}
-			allAttached := true
-			for i, volume := range describedVolumes.Volumes {
-				if *volume.State == ec2.VolumeStateInUse {
-					t.Logf("volume attachment complete: %q (%dGi)", *volume.VolumeId, *volume.Size)
-					continue
-				}
-				allAttached = false
-				if *volume.State == ec2.VolumeStateAvailable {
-
-					t.Logf("volume attachment starting: %q (%dGi)", *volume.VolumeId, *volume.Size)
-					attachInput := &ec2.AttachVolumeInput{
-						VolumeId:   volume.VolumeId,
-						InstanceId: aws.String(instanceID),
-						Device:     aws.String(fmt.Sprintf("/dev/sd%s", volumeLetters[i])),
-					}
-					_, err = ec2Client.AttachVolume(attachInput)
-					if err != nil {
-						return false, err
-					}
-				}
-			}
-			return allAttached, nil
-
-		})
+		volume, err := ec2Client.CreateVolume(createInput)
 		if err != nil {
-			return err
+			err := fmt.Errorf("expect to create AWS volume with input %v: %w", createInput, err)
+			t.Fatalf("failed to create and attach aws disks for node %q: %+v", nodeEntry.node.Name, err)
 		}
+		t.Logf("creating volume: %q (%dGi)", *volume.VolumeId, *volume.Size)
+		volumes[i] = volume
+		volumeIDs = append(volumeIDs, volume.VolumeId)
 	}
+	// attach and poll for attachment to complete
+	err = wait.Poll(time.Second*5, time.Minute*4, func() (bool, error) {
+		describeVolumeInput := &ec2.DescribeVolumesInput{
+			VolumeIds: volumeIDs,
+		}
+		describedVolumes, err := ec2Client.DescribeVolumes(describeVolumeInput)
+		if err != nil {
+			return false, err
+		}
+		allAttached := true
+		for i, volume := range describedVolumes.Volumes {
+			if *volume.State == ec2.VolumeStateInUse {
+				t.Logf("volume attachment complete: %q (%dGi)", *volume.VolumeId, *volume.Size)
+				continue
+			}
+			allAttached = false
+			if *volume.State == ec2.VolumeStateAvailable {
 
-	return err
+				t.Logf("volume attachment starting: %q (%dGi)", *volume.VolumeId, *volume.Size)
+				attachInput := &ec2.AttachVolumeInput{
+					VolumeId:   volume.VolumeId,
+					InstanceId: aws.String(instanceID),
+					Device:     aws.String(fmt.Sprintf("/dev/sd%s", volumeLetters[i])),
+				}
+				_, err = ec2Client.AttachVolume(attachInput)
+				if err != nil {
+					return false, err
+				}
+			}
+		}
+		return allAttached, nil
+
+	})
+	if err != nil {
+		t.Fatalf("failed to create and attach aws disks for node %q: %+v", nodeEntry.node.Name, err)
+	}
 }
 
 func cleanupAWSDisks(t *testing.T, ec2Client *ec2.EC2) error {
@@ -253,6 +255,7 @@ func cleanupAWSDisks(t *testing.T, ec2Client *ec2.EC2) error {
 		allDeleted := true
 		for _, volume := range volumes {
 			if *volume.State != ec2.VolumeStateAvailable {
+				t.Logf("volume %q is in state %q, waiting for state %q", *volume.VolumeId, *volume.State, ec2.VolumeStateAvailable)
 				allDeleted = false
 				continue
 			}
