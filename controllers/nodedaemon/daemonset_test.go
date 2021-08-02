@@ -45,6 +45,7 @@ func TestMutateAggregatedSpecTemplates(t *testing.T) {
 		[]string{
 			"${OBJECT_NAMESPACE}", "new-namespace",
 			"${CONTAINER_IMAGE}", common.GetDiskMakerImage(),
+			"${PRIORITY_CLASS_NAME}", "",
 		},
 	)
 	assert.Nil(t, err, "ReadFile should not return an error when reading the template")

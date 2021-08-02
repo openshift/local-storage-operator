@@ -2,6 +2,7 @@ package nodedaemon
 
 import (
 	"context"
+	"os"
 
 	"github.com/openshift/library-go/pkg/operator/resource/resourceread"
 	"github.com/openshift/local-storage-operator/assets"
@@ -71,6 +72,7 @@ func getDiskMakerDSMutateFn(
 			[]string{
 				"${OBJECT_NAMESPACE}", request.Namespace,
 				"${CONTAINER_IMAGE}", common.GetDiskMakerImage(),
+				"${PRIORITY_CLASS_NAME}", os.Getenv("PRIORITY_CLASS_NAME"),
 			},
 		)
 		if err != nil {
@@ -141,7 +143,10 @@ func MutateAggregatedSpec(
 	ds.Spec.Template.Spec.ServiceAccountName = dsTemplate.Spec.Template.Spec.ServiceAccountName
 
 	// priority class
-	ds.Spec.Template.Spec.PriorityClassName = dsTemplate.Spec.Template.Spec.PriorityClassName
+
+	if os.Getenv("PRIORITY_CLASS_NAME") != "" {
+		ds.Spec.Template.Spec.PriorityClassName = os.Getenv("PRIORITY_CLASS_NAME")
+	}
 
 	// tolerations
 	ds.Spec.Template.Spec.Tolerations = tolerations

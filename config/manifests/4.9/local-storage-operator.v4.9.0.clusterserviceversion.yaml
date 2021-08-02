@@ -361,6 +361,8 @@ spec:
                         value: quay.io/openshift/origin-local-storage-diskmaker:latest
                       - name: KUBE_RBAC_PROXY_IMAGE
                         value: quay.io/openshift/origin-kube-rbac-proxy:latest
+                      - name: PRIORITY_CLASS_NAME
+                        value: openshift-user-critical
   customresourcedefinitions:
     owned:
       - displayName: Local Volume
