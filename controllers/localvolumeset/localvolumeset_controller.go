@@ -51,10 +51,10 @@ const (
 type LocalVolumeSetReconciler struct {
 	// This client, initialized using mgr.Client() above, is a split client
 	// that reads objects from the cache and writes to the apiserver
-	Client    client.Client
-	Scheme    *runtime.Scheme
-	ReqLogger logr.Logger
-	LvSetMap  *common.StorageClassOwnerMap
+	Client   client.Client
+	Scheme   *runtime.Scheme
+	Log      logr.Logger
+	LvSetMap *common.StorageClassOwnerMap
 }
 
 // Reconcile reads that state of the cluster for a LocalVolumeSet object and makes changes based on the state read
@@ -69,8 +69,8 @@ func (r *LocalVolumeSetReconciler) Reconcile(ctx context.Context, request ctrl.R
 }
 
 func (r *LocalVolumeSetReconciler) reconcile(ctx context.Context, request reconcile.Request) (ctrl.Result, error) {
-	r.ReqLogger.WithValues("Request.Namespace", request.Namespace, "Request.Name", request.Name)
-	r.ReqLogger.Info("Reconciling LocalVolumeSet")
+	r.Log = r.Log.WithValues("Request.Namespace", request.Namespace, "Request.Name", request.Name)
+	r.Log.Info("Reconciling LocalVolumeSet")
 	// Fetch the LocalVolumeSet instance
 	lvSet := &localv1alpha1.LocalVolumeSet{}
 	err := r.Client.Get(ctx, request.NamespacedName, lvSet)
@@ -83,7 +83,7 @@ func (r *LocalVolumeSetReconciler) reconcile(ctx context.Context, request reconc
 			return ctrl.Result{}, nil
 		}
 		// Error reading the object - requeue the request.
-		r.ReqLogger.Error(err, "failed to get localvolumeset")
+		r.Log.Error(err, "failed to get localvolumeset")
 		return ctrl.Result{}, err
 	}
 
@@ -101,20 +101,20 @@ func (r *LocalVolumeSetReconciler) reconcile(ctx context.Context, request reconc
 
 	err = r.syncStorageClass(ctx, lvSet)
 	if err != nil {
-		r.ReqLogger.Error(err, "failed to sync storageclass")
+		r.Log.Error(err, "failed to sync storageclass")
 		return ctrl.Result{}, err
 	}
-	r.ReqLogger.Info("updating status")
+	r.Log.Info("updating status")
 
 	err = r.updateDaemonSetsCondition(ctx, request)
 	if err != nil {
-		r.ReqLogger.Error(err, "failed to update status")
+		r.Log.Error(err, "failed to update status")
 		return ctrl.Result{}, err
 	}
 
 	err = r.updateTotalProvisionedDeviceCountStatus(ctx, request)
 	if err != nil {
-		r.ReqLogger.Error(err, "failed to update status")
+		r.Log.Error(err, "failed to update status")
 		return ctrl.Result{}, err
 	}
 

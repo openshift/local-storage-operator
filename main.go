@@ -24,14 +24,15 @@ import (
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
+
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
+	zaplog "go.uber.org/zap"
 	apiruntime "k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
-	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
 	localv1 "github.com/openshift/local-storage-operator/api/v1"
@@ -69,6 +70,7 @@ func main() {
 	var metricsAddr string
 	var enableLeaderElection bool
 	var probeAddr string
+
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "The address the metric endpoint binds to.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
 	flag.BoolVar(&enableLeaderElection, "leader-elect", false,
@@ -76,7 +78,9 @@ func main() {
 			"Enabling this will ensure there is only one active controller manager.")
 	opts := zap.Options{
 		Development: true,
+		ZapOpts:     []zaplog.Option{zaplog.AddCaller()},
 	}
+
 	opts.BindFlags(flag.CommandLine)
 	flag.Parse()
 
@@ -105,7 +109,7 @@ func main() {
 
 	if err = (&lvcontroller.LocalVolumeReconciler{
 		Client: mgr.GetClient(),
-		//	Log:    ctrl.Log.WithName("controllers").WithName("LocalVolume"),
+		Log:    ctrl.Log.WithName("controllers").WithName("LocalVolume"),
 		LvMap:  &common.StorageClassOwnerMap{},
 		Scheme: mgr.GetScheme(),
 	}).SetupWithManager(mgr); err != nil {
@@ -113,18 +117,16 @@ func main() {
 		os.Exit(1)
 	}
 	if err = (&lvdcontroller.LocalVolumeDiscoveryReconciler{
-		Client:    mgr.GetClient(),
-		ReqLogger: logf.Log.WithName("controllers").WithName("LocalVolumeDiscovery"),
-		//	Log:    ctrl.Log.WithName("controllers").WithName("LocalVolumeDiscovery"),
+		Client: mgr.GetClient(),
+		Log:    ctrl.Log.WithName("controllers").WithName("LocalVolumeDiscovery"),
 		Scheme: mgr.GetScheme(),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "LocalVolumeDiscovery")
 		os.Exit(1)
 	}
 	if err = (&lvscontroller.LocalVolumeSetReconciler{
-		Client:    mgr.GetClient(),
-		ReqLogger: logf.Log.WithName("controllers").WithName("LocalVolumeSet"),
-		//	Log:    ctrl.Log.WithName("controllers").WithName("LocalVolumeSet"),
+		Client:   mgr.GetClient(),
+		Log:      ctrl.Log.WithName("controllers").WithName("LocalVolumeSet"),
 		LvSetMap: &common.StorageClassOwnerMap{},
 		Scheme:   mgr.GetScheme(),
 	}).SetupWithManager(mgr); err != nil {
@@ -133,12 +135,11 @@ func main() {
 	}
 
 	if err = (&nodedaemoncontroller.DaemonReconciler{
-		Client:    mgr.GetClient(),
-		ReqLogger: logf.Log.WithName("controllers").WithName("NodeDaemon"),
-		//	Log:    ctrl.Log.WithName("controllers").WithName("LocalVolumeSet"),
+		Client: mgr.GetClient(),
+		Log:    ctrl.Log.WithName("controllers").WithName("NodeDaemon"),
 		Scheme: mgr.GetScheme(),
 	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "LocalVolumeSet")
+		setupLog.Error(err, "unable to create controller", "controller", "NodeDaemon")
 		os.Exit(1)
 	}
 	//+kubebuilder:scaffold:builder
