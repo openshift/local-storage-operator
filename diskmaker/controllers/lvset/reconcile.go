@@ -27,7 +27,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
-	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 	provCache "sigs.k8s.io/sig-storage-local-static-provisioner/pkg/cache"
@@ -44,16 +43,14 @@ const (
 	pvOwnerKey = "pvOwner"
 )
 
-var log = logf.Log.WithName(ComponentName)
-
 // Reconcile reads that state of the cluster for a LocalVolumeSet object and makes changes based on the state read
 // and what is in the LocalVolumeSet.Spec
 // Note:
 // The Controller will requeue the Request to be processed again if the returned error is non-nil or
 // Result.Requeue is true, otherwise upon completion it will remove the work from the queue.
 func (r *LocalVolumeSetReconciler) Reconcile(ctx context.Context, request ctrl.Request) (ctrl.Result, error) {
-	reqLogger := log.WithValues("Request.Namespace", request.Namespace, "Request.Name", request.Name)
-	reqLogger.Info("Reconciling LocalVolumeSet")
+	r.Log = r.Log.WithValues("Request.Namespace", request.Namespace, "Request.Name", request.Name)
+	r.Log.Info("Reconciling LocalVolumeSet")
 
 	// Fetch the LocalVolumeSet instance
 	lvset := &localv1alpha1.LocalVolumeSet{}
@@ -84,7 +81,7 @@ func (r *LocalVolumeSetReconciler) Reconcile(ctx context.Context, request ctrl.R
 	// NodeSelectorTerms.MatchExpressions are ORed
 	matches, err := common.NodeSelectorMatchesNodeLabels(r.runtimeConfig.Node, lvset.Spec.NodeSelector)
 	if err != nil {
-		reqLogger.Error(err, "failed to match nodeSelector to node labels")
+		r.Log.Error(err, "failed to match nodeSelector to node labels")
 		return ctrl.Result{}, err
 	}
 
@@ -98,7 +95,7 @@ func (r *LocalVolumeSetReconciler) Reconcile(ctx context.Context, request ctrl.R
 	storageClass := &storagev1.StorageClass{}
 	err = r.Client.Get(ctx, types.NamespacedName{Name: storageClassName}, storageClass)
 	if err != nil {
-		reqLogger.Error(err, "could not get storageclass")
+		r.Log.Error(err, "could not get storageclass")
 		return ctrl.Result{}, err
 	}
 
@@ -106,7 +103,7 @@ func (r *LocalVolumeSetReconciler) Reconcile(ctx context.Context, request ctrl.R
 	cm := &corev1.ConfigMap{}
 	err = r.Client.Get(ctx, types.NamespacedName{Name: common.ProvisionerConfigMapName, Namespace: request.Namespace}, cm)
 	if err != nil {
-		reqLogger.Error(err, "could not get provisioner configmap")
+		r.Log.Error(err, "could not get provisioner configmap")
 		return ctrl.Result{}, err
 	}
 
@@ -141,15 +138,15 @@ func (r *LocalVolumeSetReconciler) Reconcile(ctx context.Context, request ctrl.R
 	blockDevices, badRows, err := internal.ListBlockDevices()
 	if err != nil {
 		r.eventReporter.Report(lvset, newDiskEvent(diskmaker.ErrorRunningBlockList, "failed to list block devices", "", corev1.EventTypeWarning))
-		reqLogger.Error(err, "could not list block devices", "lsblk.BadRows", badRows)
+		r.Log.Error(err, "could not list block devices", "lsblk.BadRows", badRows)
 		return ctrl.Result{}, err
 	} else if len(badRows) > 0 {
 		r.eventReporter.Report(lvset, newDiskEvent(diskmaker.ErrorRunningBlockList, fmt.Sprintf("error parsing rows: %+v", badRows), "", corev1.EventTypeWarning))
-		reqLogger.Error(fmt.Errorf("bad rows"), "could not parse all the lsblk rows", "lsblk.BadRows", badRows)
+		r.Log.Error(fmt.Errorf("bad rows"), "could not parse all the lsblk rows", "lsblk.BadRows", badRows)
 	}
 
 	// find disks that match lvset filters and matchers
-	validDevices, delayedDevices := r.getValidDevices(reqLogger, lvset, blockDevices)
+	validDevices, delayedDevices := r.getValidDevices(lvset, blockDevices)
 
 	// update metrics for unmatched disks
 	localmetrics.SetLVSUnmatchedDiskMetric(nodeName, storageClassName, len(blockDevices)-len(validDevices))
@@ -158,7 +155,7 @@ func (r *LocalVolumeSetReconciler) Reconcile(ctx context.Context, request ctrl.R
 	var totalProvisionedPVs int
 	var noMatch []string
 	for _, blockDevice := range validDevices {
-		devLogger := reqLogger.WithValues("Device.Name", blockDevice.Name)
+		devLogger := r.Log.WithValues("Device.Name", blockDevice.Name)
 
 		symlinkSourcePath, symlinkPath, idExists, err := common.GetSymLinkSourceAndTarget(blockDevice, symLinkDir)
 		if err != nil {
@@ -205,25 +202,25 @@ func (r *LocalVolumeSetReconciler) Reconcile(ctx context.Context, request ctrl.R
 		totalProvisionedPVs += 1
 	}
 
-	reqLogger.Info("total devices provisioned", "count", totalProvisionedPVs, "storageClass.Name", storageClassName)
+	r.Log.Info("total devices provisioned", "count", totalProvisionedPVs, "storageClass.Name", storageClassName)
 
 	// update metrics for total persistent volumes provisioned
 	localmetrics.SetLVSProvisionedPVMetric(nodeName, storageClassName, totalProvisionedPVs)
 
 	orphanSymlinkDevices, err := internal.GetOrphanedSymlinks(symLinkDir, validDevices)
 	if err != nil {
-		reqLogger.Error(err, "failed to get orphaned symlink devices in current reconcile")
+		r.Log.Error(err, "failed to get orphaned symlink devices in current reconcile")
 	}
 
 	if len(orphanSymlinkDevices) > 0 {
-		reqLogger.Info("found orphan symlinked devices in current reconcile", "orphanedDevices", orphanSymlinkDevices)
+		r.Log.Info("found orphan symlinked devices in current reconcile", "orphanedDevices", orphanSymlinkDevices)
 	}
 
 	// update metrics for orphaned symlink devices
 	localmetrics.SetLVSOrphanedSymlinksMetric(nodeName, storageClassName, len(orphanSymlinkDevices))
 
 	if len(noMatch) > 0 {
-		reqLogger.Info("found stale symLink Entries", "storageClass.Name", storageClassName, "paths.List", noMatch, "directory", symLinkDir)
+		r.Log.Info("found stale symLink Entries", "storageClass.Name", storageClassName, "paths.List", noMatch, "directory", symLinkDir)
 	}
 
 	// shorten the requeueTime if there are delayed devices
@@ -240,7 +237,6 @@ func (r *LocalVolumeSetReconciler) Reconcile(ctx context.Context, request ctrl.R
 // i.e. if the device is younger than deviceMinAge
 // if the waitingDevices list is nonempty, the operator should requeueue
 func (r *LocalVolumeSetReconciler) getValidDevices(
-	reqLogger logr.Logger,
 	lvset *localv1alpha1.LocalVolumeSet,
 	blockDevices []internal.BlockDevice,
 ) ([]internal.BlockDevice, []internal.BlockDevice) {
@@ -253,7 +249,7 @@ DeviceLoop:
 		// store device in deviceAgeMap
 		r.deviceAgeMap.storeDeviceAge(blockDevice.KName)
 
-		devLogger := reqLogger.WithValues("Device.Name", blockDevice.Name)
+		devLogger := r.Log.WithValues("Device.Name", blockDevice.Name)
 		for name, filter := range FilterMap {
 			var valid bool
 			var err error
@@ -458,6 +454,7 @@ type LocalVolumeSetReconciler struct {
 	// that reads objects from the cache and writes to the apiserver
 	Client        client.Client
 	Scheme        *runtime.Scheme
+	Log           logr.Logger
 	nodeName      string
 	eventReporter *eventReporter
 	// map from KNAME of device to time when the device was first observed since the process started

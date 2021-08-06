@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/openshift/local-storage-operator/internal"
+	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	localv1 "github.com/openshift/local-storage-operator/api/v1"
 	"github.com/stretchr/testify/assert"
@@ -156,7 +157,7 @@ func TestCreateSymLinkByDeviceID(t *testing.T) {
 			},
 		},
 	}
-	d.createSymlink(diskLocation, fakeDiskByID.Name(), path.Join(tmpSymLinkTargetDir, "diskID"), log, true)
+	d.createSymlink(diskLocation, fakeDiskByID.Name(), path.Join(tmpSymLinkTargetDir, "diskID"), true)
 
 	// assert that target symlink is created for disk ID when both disk name and disk by-id are available
 	assert.Truef(t, hasFile(t, tmpSymLinkTargetDir, "diskID"), "failed to find symlink with disk ID in %s directory", tmpSymLinkTargetDir)
@@ -186,7 +187,7 @@ func TestCreateSymLinkByDeviceName(t *testing.T) {
 
 	d, _ := getFakeDiskMaker(t, tmpSymLinkTargetDir, lv, sc)
 	diskLocation := DiskLocation{fakeDisk.Name(), "", internal.BlockDevice{}}
-	d.createSymlink(diskLocation, fakeDisk.Name(), path.Join(tmpSymLinkTargetDir, "diskName"), log, false)
+	d.createSymlink(diskLocation, fakeDisk.Name(), path.Join(tmpSymLinkTargetDir, "diskName"), false)
 
 	// assert that target symlink is created for disk name when no disk ID is available
 	assert.Truef(t, hasFile(t, tmpSymLinkTargetDir, "diskName"), "failed to find symlink with disk name in %s directory", tmpSymLinkTargetDir)
@@ -235,6 +236,7 @@ func getFakeDiskMaker(t *testing.T, symlinkLocation string, objs ...runtime.Obje
 		symlinkLocation: symlinkLocation,
 		Client:          fakeClient,
 		Scheme:          scheme,
+		Log:             logf.Log.WithName("diskmaker-controllers-test").WithName("LocalVolume"),
 		eventSync:       fakeEventSync,
 		cleanupTracker:  cleanupTracker,
 		runtimeConfig:   runtimeConfig,
