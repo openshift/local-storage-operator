@@ -26,10 +26,13 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	utilerrors "k8s.io/apimachinery/pkg/util/errors"
+	"k8s.io/apimachinery/pkg/util/sets"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -41,10 +44,9 @@ import (
 )
 
 const (
-	ComponentName                = "localvolumeset-controller"
-	pvStorageClassField          = "spec.storageClassName"
-	LocalVolumeSetNameLabel      = "local.storage.openshift.io/localvolumeset-owner-name"
-	LocalVolumeSetNamespaceLabel = "local.storage.openshift.io/localvolumeset-owner-namespace"
+	ComponentName       = "localvolumeset-controller"
+	pvStorageClassField = "spec.storageClassName"
+	setFinalizer        = true
 )
 
 // LocalVolumeSetReconciler reconciles a LocalVolumeSet object
@@ -90,10 +92,14 @@ func (r *LocalVolumeSetReconciler) reconcile(ctx context.Context, request reconc
 	// store a one to many association from storageClass to LocalVolumeSet
 	r.LvSetMap.RegisterStorageClassOwner(lvSet.Spec.StorageClassName, request.NamespacedName)
 
-	// handle the LocalVolumeSet finalizer
-	err = r.syncFinalizer(*lvSet)
+	// handle the LocalVolumeSet finalizer while deletion
+	if !lvSet.DeletionTimestamp.IsZero() {
+		err = r.cleanupLocalVolumeSetDeployment(ctx, *lvSet)
+		return ctrl.Result{}, err
+	}
+	err = r.syncFinalizer(ctx, *lvSet, setFinalizer)
 	if err != nil {
-		return reconcile.Result{}, fmt.Errorf("failed to update localvolumeset finalizer: %w", err)
+		return ctrl.Result{}, fmt.Errorf("failed to update localvolumeset finalizer: %w", err)
 	}
 
 	// The diskmaker daemonset, local-staic-provisioner daemonset and configmap are created in pkg/daemon
@@ -124,6 +130,7 @@ func (r *LocalVolumeSetReconciler) reconcile(ctx context.Context, request reconc
 func (r *LocalVolumeSetReconciler) syncStorageClass(ctx context.Context, lvs *localv1alpha1.LocalVolumeSet) error {
 	deleteReclaimPolicy := corev1.PersistentVolumeReclaimDelete
 	firstConsumerBinding := storagev1.VolumeBindingWaitForFirstConsumer
+	expectedStorageClasses := sets.NewString()
 	storageClass := &storagev1.StorageClass{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      lvs.Spec.StorageClassName,
@@ -142,7 +149,39 @@ func (r *LocalVolumeSetReconciler) syncStorageClass(ctx context.Context, lvs *lo
 	if err != nil && !kerrors.IsAlreadyExists(err) {
 		return err
 	}
+
+	expectedStorageClasses.Insert(lvs.Spec.StorageClassName)
+	removeErrors := r.removeUnExpectedStorageClasses(ctx, lvs, expectedStorageClasses)
+	if removeErrors != nil {
+		r.Log.Error(removeErrors, "Error removing unexpected StorageClass.")
+	}
 	return nil
+}
+
+func (r *LocalVolumeSetReconciler) removeUnExpectedStorageClasses(ctx context.Context, lvs *localv1alpha1.LocalVolumeSet, expectedStorageClasses sets.String) error {
+
+	list := &storagev1.StorageClassList{}
+	ownerSeletor := client.MatchingLabels{
+		common.OwnerNameLabel:      lvs.Name,
+		common.OwnerNamespaceLabel: lvs.Namespace,
+	}
+	err := r.Client.List(ctx, list, ownerSeletor)
+	if err != nil {
+		return fmt.Errorf("error listing storageclasses for CR %s: %v", lvs.Name, err)
+	}
+
+	removeErrors := []error{}
+	for _, sc := range list.Items {
+		if !expectedStorageClasses.Has(sc.Name) {
+			r.Log.Info("Removing StorageClass", "StorageClass", sc.Name)
+			scDeleteErr := r.Client.Delete(ctx, sc.DeepCopy())
+
+			if scDeleteErr != nil && errors.IsNotFound(scDeleteErr) {
+				removeErrors = append(removeErrors, fmt.Errorf("error deleting storageclass %s: %v", sc.Name, scDeleteErr))
+			}
+		}
+	}
+	return utilerrors.NewAggregate(removeErrors)
 }
 
 // SetupWithManager sets up the controller with the Manager.
