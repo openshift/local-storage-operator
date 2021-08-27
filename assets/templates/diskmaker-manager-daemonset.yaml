@@ -54,7 +54,7 @@ spec:
           mountPropagation: HostToContainer
           name: run-udev
       hostPID: true
-      priorityClassName: openshift-user-critical
+      priorityClassName: ${PRIORITY_CLASS_NAME}
       serviceAccountName: local-storage-admin
       volumes:
       - hostPath:
