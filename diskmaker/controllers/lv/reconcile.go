@@ -101,9 +101,14 @@ func (r *LocalVolumeReconciler) createSymlink(
 				return true
 			}
 		}
+		msg := fmt.Sprintf("not symlinking, already claimed: %v", existingSymlinks)
+		r.eventSync.Report(r.localVolume, newDiskEvent(DeviceSymlinkExists, msg, symLinkTarget, corev1.EventTypeWarning))
+		klog.Errorf(msg)
 		return false
 	} else if err != nil || !pvLocked { // locking failed for some other reasion
-		klog.Errorf("not symlinking, could not get lock: %v", err)
+		msg := fmt.Sprintf("not symlinking, locking failed: %+v", err)
+		r.eventSync.Report(r.localVolume, newDiskEvent(ErrorCreatingSymLink, msg, symLinkTarget, corev1.EventTypeWarning))
+		klog.Errorf(msg)
 		return false
 	}
 
