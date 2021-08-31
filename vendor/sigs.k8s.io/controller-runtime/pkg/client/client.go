@@ -19,6 +19,7 @@ package client
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -48,7 +49,7 @@ type WarningHandlerOptions struct {
 	AllowDuplicateLogs bool
 }
 
-// Options are creation options for a Client
+// Options are creation options for a Client.
 type Options struct {
 	// Scheme, if provided, will be used to map go structs to GroupVersionKinds
 	Scheme *runtime.Scheme
@@ -159,7 +160,6 @@ type client struct {
 }
 
 // resetGroupVersionKind is a helper function to restore and preserve GroupVersionKind on an object.
-// TODO(vincepri): Remove this function and its calls once controller-runtime dependencies are upgraded to 1.16?
 func (c *client) resetGroupVersionKind(obj runtime.Object, gvk schema.GroupVersionKind) {
 	if gvk != schema.EmptyObjectKind.GroupVersionKind() {
 		if v, ok := obj.(schema.ObjectKind); ok {
@@ -178,7 +178,7 @@ func (c *client) RESTMapper() meta.RESTMapper {
 	return c.mapper
 }
 
-// Create implements client.Client
+// Create implements client.Client.
 func (c *client) Create(ctx context.Context, obj Object, opts ...CreateOption) error {
 	switch obj.(type) {
 	case *unstructured.Unstructured:
@@ -190,7 +190,7 @@ func (c *client) Create(ctx context.Context, obj Object, opts ...CreateOption) e
 	}
 }
 
-// Update implements client.Client
+// Update implements client.Client.
 func (c *client) Update(ctx context.Context, obj Object, opts ...UpdateOption) error {
 	defer c.resetGroupVersionKind(obj, obj.GetObjectKind().GroupVersionKind())
 	switch obj.(type) {
@@ -203,7 +203,7 @@ func (c *client) Update(ctx context.Context, obj Object, opts ...UpdateOption) e
 	}
 }
 
-// Delete implements client.Client
+// Delete implements client.Client.
 func (c *client) Delete(ctx context.Context, obj Object, opts ...DeleteOption) error {
 	switch obj.(type) {
 	case *unstructured.Unstructured:
@@ -215,7 +215,7 @@ func (c *client) Delete(ctx context.Context, obj Object, opts ...DeleteOption) e
 	}
 }
 
-// DeleteAllOf implements client.Client
+// DeleteAllOf implements client.Client.
 func (c *client) DeleteAllOf(ctx context.Context, obj Object, opts ...DeleteAllOfOption) error {
 	switch obj.(type) {
 	case *unstructured.Unstructured:
@@ -227,7 +227,7 @@ func (c *client) DeleteAllOf(ctx context.Context, obj Object, opts ...DeleteAllO
 	}
 }
 
-// Patch implements client.Client
+// Patch implements client.Client.
 func (c *client) Patch(ctx context.Context, obj Object, patch Patch, opts ...PatchOption) error {
 	defer c.resetGroupVersionKind(obj, obj.GetObjectKind().GroupVersionKind())
 	switch obj.(type) {
@@ -240,44 +240,68 @@ func (c *client) Patch(ctx context.Context, obj Object, patch Patch, opts ...Pat
 	}
 }
 
-// Get implements client.Client
+// Get implements client.Client.
 func (c *client) Get(ctx context.Context, key ObjectKey, obj Object) error {
 	switch obj.(type) {
 	case *unstructured.Unstructured:
 		return c.unstructuredClient.Get(ctx, key, obj)
 	case *metav1.PartialObjectMetadata:
+		// Metadata only object should always preserve the GVK coming in from the caller.
+		defer c.resetGroupVersionKind(obj, obj.GetObjectKind().GroupVersionKind())
 		return c.metadataClient.Get(ctx, key, obj)
 	default:
 		return c.typedClient.Get(ctx, key, obj)
 	}
 }
 
-// List implements client.Client
+// List implements client.Client.
 func (c *client) List(ctx context.Context, obj ObjectList, opts ...ListOption) error {
-	switch obj.(type) {
+	switch x := obj.(type) {
 	case *unstructured.UnstructuredList:
 		return c.unstructuredClient.List(ctx, obj, opts...)
 	case *metav1.PartialObjectMetadataList:
-		return c.metadataClient.List(ctx, obj, opts...)
+		// Metadata only object should always preserve the GVK.
+		gvk := obj.GetObjectKind().GroupVersionKind()
+		defer c.resetGroupVersionKind(obj, gvk)
+
+		// Call the list client.
+		if err := c.metadataClient.List(ctx, obj, opts...); err != nil {
+			return err
+		}
+
+		// Restore the GVK for each item in the list.
+		itemGVK := schema.GroupVersionKind{
+			Group:   gvk.Group,
+			Version: gvk.Version,
+			// TODO: this is producing unsafe guesses that don't actually work,
+			// but it matches ~99% of the cases out there.
+			Kind: strings.TrimSuffix(gvk.Kind, "List"),
+		}
+		for i := range x.Items {
+			item := &x.Items[i]
+			item.SetGroupVersionKind(itemGVK)
+		}
+
+		return nil
 	default:
 		return c.typedClient.List(ctx, obj, opts...)
 	}
 }
 
-// Status implements client.StatusClient
+// Status implements client.StatusClient.
 func (c *client) Status() StatusWriter {
 	return &statusWriter{client: c}
 }
 
-// statusWriter is client.StatusWriter that writes status subresource
+// statusWriter is client.StatusWriter that writes status subresource.
 type statusWriter struct {
 	client *client
 }
 
-// ensure statusWriter implements client.StatusWriter
+// ensure statusWriter implements client.StatusWriter.
 var _ StatusWriter = &statusWriter{}
 
-// Update implements client.StatusWriter
+// Update implements client.StatusWriter.
 func (sw *statusWriter) Update(ctx context.Context, obj Object, opts ...UpdateOption) error {
 	defer sw.client.resetGroupVersionKind(obj, obj.GetObjectKind().GroupVersionKind())
 	switch obj.(type) {
@@ -290,7 +314,7 @@ func (sw *statusWriter) Update(ctx context.Context, obj Object, opts ...UpdateOp
 	}
 }
 
-// Patch implements client.Client
+// Patch implements client.Client.
 func (sw *statusWriter) Patch(ctx context.Context, obj Object, patch Patch, opts ...PatchOption) error {
 	defer sw.client.resetGroupVersionKind(obj, obj.GetObjectKind().GroupVersionKind())
 	switch obj.(type) {
