@@ -3,6 +3,6 @@ approvers:
   - tsmetana
   - gnufied
   - bertinatto
-  - huffmanca
+  - dobsonj
 component: "Storage"
 subcomponent: "Local Storage Operator"
