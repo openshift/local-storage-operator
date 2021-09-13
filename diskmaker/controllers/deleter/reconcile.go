@@ -13,6 +13,7 @@ import (
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/utils/mount"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/event"
@@ -151,7 +152,8 @@ func (r *DeleteReconciler) SetupWithManager(mgr ctrl.Manager, cleanupTracker *pr
 	return ctrl.NewControllerManagedBy(mgr).
 		// set to 1 explicitly, despite it being the default, as the reconciler is not thread-safe.
 		WithOptions(controller.Options{MaxConcurrentReconciles: 1}).
-		For(&corev1.PersistentVolume{}).
+		// Watch config maps with the deleter config
+		For(&corev1.ConfigMap{}, builder.WithPredicates(common.EnqueueOnlyLabeledSubcomponents(common.ProvisionerConfigMapName))).
 		// update owned-pv cache used by provisioner/deleter libs and enequeue owning lvset
 		// only the cache is touched by
 		Watches(&source.Kind{Type: &corev1.PersistentVolume{}}, handler.Funcs{
