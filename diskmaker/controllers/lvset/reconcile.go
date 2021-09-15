@@ -562,9 +562,12 @@ func handlePVChange(runtimeConfig *provCommon.RuntimeConfig, pv *corev1.Persiste
 	}
 
 	if isDelete {
-		// delayed reconcile so that the cleanup tracker has time to mark the PV cleaned up
-		time.Sleep(time.Second * 10)
-		q.Add(reconcile.Request{NamespacedName: types.NamespacedName{Name: ownerName, Namespace: ownerNamespace}})
+		// Delayed reconcile so that the cleanup tracker has time to mark the PV cleaned up.
+		// Don't block the informer goroutine.
+		go func () {
+			time.Sleep(time.Second * 10)
+			q.Add(reconcile.Request{NamespacedName: types.NamespacedName{Name: ownerName, Namespace: ownerNamespace}})
+		}()
 	} else {
 		q.Add(reconcile.Request{NamespacedName: types.NamespacedName{Name: ownerName, Namespace: ownerNamespace}})
 	}
