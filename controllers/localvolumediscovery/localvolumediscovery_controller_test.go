@@ -132,9 +132,9 @@ func newFakeLocalVolumeDiscoveryReconciler(t *testing.T, objs ...runtime.Object)
 	client := fake.NewFakeClientWithScheme(scheme, objs...)
 
 	return &LocalVolumeDiscoveryReconciler{
-		Client:    client,
-		Scheme:    scheme,
-		ReqLogger: logf.Log.WithName("controller_localvolumediscovery_test"),
+		Client: client,
+		Scheme: scheme,
+		Log:    logf.Log.WithName("controller_localvolumediscovery_test"),
 	}
 }
 

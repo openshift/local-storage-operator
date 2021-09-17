@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/go-logr/logr"
 	"github.com/openshift/local-storage-operator/common"
-	"github.com/prometheus/common/log"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -18,7 +18,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
-	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 	provCache "sigs.k8s.io/sig-storage-local-static-provisioner/pkg/cache"
@@ -45,8 +44,8 @@ func init() {
 // Result.Requeue is true, otherwise upon completion it will remove the work from the queue.
 func (r *DeleteReconciler) Reconcile(ctx context.Context, request ctrl.Request) (ctrl.Result, error) {
 
-	reqLogger := logf.Log.WithName(ComponentName).WithValues("Request.Namespace", request.Namespace, "Request.Name", request.Name)
-	reqLogger.Info("Looking for released PVs to clean up")
+	r.Log = r.Log.WithValues("Request.Namespace", request.Namespace, "Request.Name", request.Name)
+	r.Log.Info("Looking for released PVs to clean up")
 	// enqueue if cache is not initialized
 	// and if any pv has phase == Releaseds
 
@@ -54,7 +53,7 @@ func (r *DeleteReconciler) Reconcile(ctx context.Context, request ctrl.Request) 
 	cm := &corev1.ConfigMap{}
 	err := r.Client.Get(ctx, types.NamespacedName{Name: common.ProvisionerConfigMapName, Namespace: request.Namespace}, cm)
 	if err != nil {
-		reqLogger.Error(err, "could not get provisioner configmap")
+		r.Log.Error(err, "could not get provisioner configmap")
 		return ctrl.Result{}, err
 	}
 
@@ -83,8 +82,8 @@ func (r *DeleteReconciler) Reconcile(ctx context.Context, request ctrl.Request) 
 			return ctrl.Result{}, err
 		}
 		r.runtimeConfig.Name = common.GetProvisionedByValue(*r.runtimeConfig.Node)
-		reqLogger.Info("first run", "provisionerName", r.runtimeConfig.Name)
-		reqLogger.Info("initializing PV cache")
+		r.Log.Info("first run", "provisionerName", r.runtimeConfig.Name)
+		r.Log.Info("initializing PV cache")
 		pvList := &corev1.PersistentVolumeList{}
 		err := r.Client.List(context.TODO(), pvList)
 		if err != nil {
@@ -102,7 +101,7 @@ func (r *DeleteReconciler) Reconcile(ctx context.Context, request ctrl.Request) 
 		r.firstRunOver = true
 	}
 
-	reqLogger.Info("Deleting Pvs through sig storage deleter")
+	r.Log.Info("Deleting Pvs through sig storage deleter")
 	r.deleter.DeletePVs()
 	return ctrl.Result{RequeueAfter: time.Second * 30}, nil
 }
@@ -121,6 +120,7 @@ type DeleteReconciler struct {
 	// that reads objects from the cache and writes to the apiserver
 	Client         client.Client
 	Scheme         *runtime.Scheme
+	Log            logr.Logger
 	cleanupTracker *provDeleter.CleanupStatusTracker
 	runtimeConfig  *provCommon.RuntimeConfig
 	deleter        *provDeleter.Deleter
@@ -160,32 +160,32 @@ func (r *DeleteReconciler) SetupWithManager(mgr ctrl.Manager, cleanupTracker *pr
 			GenericFunc: func(e event.GenericEvent, q workqueue.RateLimitingInterface) {
 				pv, ok := e.Object.(*corev1.PersistentVolume)
 				if ok {
-					handlePVChange(runtimeConfig, pv, q, false)
+					handlePVChange(r.Log, runtimeConfig, pv, q, false)
 				}
 			},
 			CreateFunc: func(e event.CreateEvent, q workqueue.RateLimitingInterface) {
 				pv, ok := e.Object.(*corev1.PersistentVolume)
 				if ok {
-					handlePVChange(runtimeConfig, pv, q, false)
+					handlePVChange(r.Log, runtimeConfig, pv, q, false)
 				}
 			},
 			UpdateFunc: func(e event.UpdateEvent, q workqueue.RateLimitingInterface) {
 				pv, ok := e.ObjectNew.(*corev1.PersistentVolume)
 				if ok {
-					handlePVChange(runtimeConfig, pv, q, false)
+					handlePVChange(r.Log, runtimeConfig, pv, q, false)
 				}
 			},
 			DeleteFunc: func(e event.DeleteEvent, q workqueue.RateLimitingInterface) {
 				pv, ok := e.Object.(*corev1.PersistentVolume)
 				if ok {
-					handlePVChange(runtimeConfig, pv, q, true)
+					handlePVChange(r.Log, runtimeConfig, pv, q, true)
 				}
 			},
 		}).
 		Complete(r)
 }
 
-func handlePVChange(runtimeConfig *provCommon.RuntimeConfig, pv *corev1.PersistentVolume, q workqueue.RateLimitingInterface, isDelete bool) {
+func handlePVChange(log logr.Logger, runtimeConfig *provCommon.RuntimeConfig, pv *corev1.PersistentVolume, q workqueue.RateLimitingInterface, isDelete bool) {
 
 	// if provisioner name is not known, enqueue to initialize the cache and discover provisioner name
 	if runtimeConfig.Name == "" {

@@ -55,7 +55,7 @@ func (r *LocalVolumeSetReconciler) updateDaemonSetsCondition(ctx context.Context
 	if changed {
 		err := r.Client.Status().Update(ctx, lvSet)
 		if err != nil {
-			r.ReqLogger.Error(err, "failed to update localvolumeset condition", conditionType, conditionStatus, "message", conditionMessage)
+			r.Log.Error(err, "failed to update localvolumeset condition", "conditionType", conditionType, "conditionStatus", conditionStatus, "message", conditionMessage)
 			return err
 		}
 	}
@@ -112,7 +112,7 @@ func (r *LocalVolumeSetReconciler) addAvailabilityConditions(ctx context.Context
 
 	// failure values
 	if reconcileError != nil {
-		r.ReqLogger.Error(reconcileError, "reconcile error")
+		r.Log.Error(reconcileError, "reconcile error")
 		conditionStatus = operatorv1.ConditionFalse
 		conditionMessage = fmt.Sprintf("Operator error: %+v", reconcileError)
 	}
@@ -120,7 +120,7 @@ func (r *LocalVolumeSetReconciler) addAvailabilityConditions(ctx context.Context
 	if changed {
 		err := r.Client.Status().Update(context.TODO(), lvSet)
 		if err != nil {
-			r.ReqLogger.Error(err, "failed to update localvolumeset condition", conditionType, conditionStatus, "message", conditionMessage)
+			r.Log.Error(err, "failed to update localvolumeset condition", "conditionType", conditionType, "conditionStatus", conditionStatus, "message", conditionMessage)
 			return result, err
 		}
 	}

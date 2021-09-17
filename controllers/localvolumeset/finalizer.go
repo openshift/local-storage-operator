@@ -18,7 +18,7 @@ func (r *LocalVolumeSetReconciler) syncFinalizer(lvSet localv1alpha1.LocalVolume
 
 	// handle deletion
 	if !lvSet.DeletionTimestamp.IsZero() {
-		r.ReqLogger.Info("deletionTimeStamp found, waiting for 0 bound PVs")
+		r.Log.Info("deletionTimeStamp found, waiting for 0 bound PVs")
 		// if obect is deleted, finalizer should be unset only when no boundPVs are found
 		boundPVs, releasedPVs, err := common.GetBoundAndReleasedPVs(&lvSet, r.Client)
 		if err != nil {
@@ -29,7 +29,7 @@ func (r *LocalVolumeSetReconciler) syncFinalizer(lvSet localv1alpha1.LocalVolume
 		pendingPVs := append(boundPVs, releasedPVs...)
 		if len(pendingPVs) == 0 {
 			setFinalizer = false
-			r.ReqLogger.Info("no bound/released PVs found, removing finalizer")
+			r.Log.Info("no bound/released PVs found, removing finalizer")
 		} else {
 			pvNames := ""
 			for i, pv := range pendingPVs {
@@ -40,7 +40,7 @@ func (r *LocalVolumeSetReconciler) syncFinalizer(lvSet localv1alpha1.LocalVolume
 					break
 				}
 			}
-			r.ReqLogger.Info("bound/released PVs found, not removing finalizer", "pvNames", pvNames)
+			r.Log.Info("bound/released PVs found, not removing finalizer", "pvNames", pvNames)
 		}
 	}
 

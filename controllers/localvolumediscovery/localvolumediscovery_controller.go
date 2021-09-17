@@ -38,7 +38,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
-	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
@@ -47,7 +46,6 @@ import (
 )
 
 var (
-	log                             = logf.Log.WithName("controller_localvolumediscovery")
 	waitForRequeueIfDaemonsNotReady = ctrl.Result{Requeue: true, RequeueAfter: 10 * time.Second}
 )
 
@@ -59,9 +57,9 @@ const (
 type LocalVolumeDiscoveryReconciler struct {
 	// This client, initialized using mgr.Client() above, is a split client
 	// that reads objects from the cache and writes to the apiserver
-	Client    client.Client
-	Scheme    *runtime.Scheme
-	ReqLogger logr.Logger
+	Client client.Client
+	Scheme *runtime.Scheme
+	Log    logr.Logger
 }
 
 // Reconcile reads that state of the cluster for a LocalVolumeDiscovery object and makes changes based on the state read
@@ -69,8 +67,8 @@ type LocalVolumeDiscoveryReconciler struct {
 // The Controller will requeue the Request to be processed again if the returned error is non-nil or
 // Result.Requeue is true, otherwise upon completion it will remove the work from the queue.
 func (r *LocalVolumeDiscoveryReconciler) Reconcile(ctx context.Context, request ctrl.Request) (ctrl.Result, error) {
-	reqLogger := r.ReqLogger.WithValues("Request.Namespace", request.Namespace, "Request.Name", request.Name)
-	reqLogger.Info("Reconciling LocalVolumeDiscovery")
+	r.Log = r.Log.WithValues("Request.Namespace", request.Namespace, "Request.Name", request.Name)
+	r.Log.Info("Reconciling LocalVolumeDiscovery")
 
 	// Fetch the LocalVolumeDiscovery instance
 	instance := &localv1alpha1.LocalVolumeDiscovery{}
@@ -91,7 +89,7 @@ func (r *LocalVolumeDiscoveryReconciler) Reconcile(ctx context.Context, request 
 	metricsExportor := localmetrics.NewExporter(ctx, r.Client, common.DiscoveryServiceName, instance.Namespace, common.DiscoveryMetricsServingCert,
 		getOwnerRefs(instance), serviceLabels)
 	if err := metricsExportor.EnableMetricsExporter(); err != nil {
-		reqLogger.Error(err, "failed to create service and servicemonitors", "object", instance.Name)
+		r.Log.Error(err, "failed to create service and servicemonitors", "object", instance.Name)
 		return ctrl.Result{}, err
 	}
 
@@ -108,12 +106,12 @@ func (r *LocalVolumeDiscoveryReconciler) Reconcile(ctx context.Context, request 
 			return ctrl.Result{}, err
 		}
 	} else if opResult == controllerutil.OperationResultUpdated || opResult == controllerutil.OperationResultCreated {
-		reqLogger.Info("daemonset changed", "daemonset.Name", ds.GetName(), "op.Result", opResult)
+		r.Log.Info("daemonset changed", "daemonset.Name", ds.GetName(), "op.Result", opResult)
 	}
 
 	desiredDaemons, readyDaemons, err := r.getDaemonSetStatus(ctx, instance.Namespace)
 	if err != nil {
-		reqLogger.Error(err, "failed to get discovery daemonset")
+		r.Log.Error(err, "failed to get discovery daemonset")
 		return ctrl.Result{}, err
 	}
 
@@ -143,10 +141,10 @@ func (r *LocalVolumeDiscoveryReconciler) Reconcile(ctx context.Context, request 
 		return ctrl.Result{}, err
 	}
 
-	reqLogger.Info("deleting orphan discovery result instances")
+	r.Log.Info("deleting orphan discovery result instances")
 	err = r.deleteOrphanDiscoveryResults(ctx, instance)
 	if err != nil {
-		reqLogger.Error(err, "failed to delete orphan discovery results")
+		r.Log.Error(err, "failed to delete orphan discovery results")
 		return ctrl.Result{}, err
 	}
 
@@ -219,7 +217,7 @@ func (r *LocalVolumeDiscoveryReconciler) updateDiscoveryStatus(ctx context.Conte
 
 func (r *LocalVolumeDiscoveryReconciler) deleteOrphanDiscoveryResults(ctx context.Context, instance *localv1alpha1.LocalVolumeDiscovery) error {
 	if instance.Spec.NodeSelector == nil || len(instance.Spec.NodeSelector.NodeSelectorTerms) == 0 {
-		r.ReqLogger.Info("skip deleting orphan discovery results as no NodeSelectors are provided")
+		r.Log.Info("skip deleting orphan discovery results as no NodeSelectors are provided")
 		return nil
 	}
 

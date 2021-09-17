@@ -8,13 +8,13 @@ import (
 	"github.com/openshift/local-storage-operator/assets"
 	"github.com/openshift/local-storage-operator/common"
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
-	"github.com/prometheus/common/log"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	k8sYAML "k8s.io/apimachinery/pkg/util/yaml"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	logf "sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 type Exporter struct {
@@ -96,8 +96,9 @@ func (e *Exporter) enableServiceMonitor() error {
 // createOrUpdateService creates service object or an error
 func (e *Exporter) createOrUpdateService(service *corev1.Service) (*corev1.Service, error) {
 	namespacedName := types.NamespacedName{Namespace: service.GetNamespace(), Name: service.GetName()}
-
-	log.Info("Reconciling metrics exporter service", "NamespacedName", namespacedName)
+	log := logf.Log.WithName("metrics-exporter")
+	log.WithValues("service.namespace", service.GetNamespace(), "service.name", service.GetName())
+	log.Info("Reconciling metrics exporter service")
 
 	oldService := &corev1.Service{}
 	err := e.Client.Get(e.Ctx, namespacedName, oldService)
@@ -123,7 +124,9 @@ func (e *Exporter) createOrUpdateService(service *corev1.Service) (*corev1.Servi
 // createOrUpdateServiceMonitor creates serviceMonitor object or an error
 func (e *Exporter) createOrUpdateServiceMonitor(serviceMonitor *monitoringv1.ServiceMonitor) (*monitoringv1.ServiceMonitor, error) {
 	namespacedName := types.NamespacedName{Name: serviceMonitor.Name, Namespace: serviceMonitor.Namespace}
-	log.Info("creating service monitor", "NamespacedName", namespacedName)
+	log := logf.Log.WithName("service-monitor")
+	log.WithValues("service-monitor.namespace", serviceMonitor.GetNamespace(), "serviceMonitor.name", serviceMonitor.GetName())
+	log.Info("creating service monitor")
 
 	oldSm := &monitoringv1.ServiceMonitor{}
 	err := e.Client.Get(context.TODO(), namespacedName, oldSm)

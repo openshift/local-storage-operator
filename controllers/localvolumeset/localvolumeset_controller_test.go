@@ -35,9 +35,9 @@ func newFakeLocalVolumeSetReconciler(t *testing.T, objs ...runtime.Object) *Loca
 	client := fake.NewFakeClientWithScheme(scheme, objs...)
 
 	return &LocalVolumeSetReconciler{
-		Client:    client,
-		Scheme:    scheme,
-		LvSetMap:  &common.StorageClassOwnerMap{},
-		ReqLogger: logf.Log.WithName("controllers").WithName("LocalVolumeSet"),
+		Client:   client,
+		Scheme:   scheme,
+		LvSetMap: &common.StorageClassOwnerMap{},
+		Log:      logf.Log.WithName("controllers").WithName("LocalVolumeSet"),
 	}
 }

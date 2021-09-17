@@ -13,6 +13,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/log"
 	"github.com/spf13/cobra"
+	zaplog "go.uber.org/zap"
 	apiruntime "k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -41,6 +42,7 @@ func startManager(cmd *cobra.Command, args []string) error {
 	klog.InitFlags(klogFlags)
 	opts := zap.Options{
 		Development: true,
+		ZapOpts:     []zaplog.Option{zaplog.AddCaller()},
 	}
 	opts.BindFlags(flag.CommandLine)
 	flag.Set("alsologtostderr", "true")
@@ -78,6 +80,7 @@ func startManager(cmd *cobra.Command, args []string) error {
 	if err = (&diskmakerControllerLv.LocalVolumeReconciler{
 		Client: mgr.GetClient(),
 		Scheme: mgr.GetScheme(),
+		Log:    ctrl.Log.WithName("diskmaker-controllers").WithName("LocalVolume"),
 	}).SetupWithManager(mgr, &provDeleter.CleanupStatusTracker{ProcTable: provDeleter.NewProcTable()}, provCache.NewVolumeCache()); err != nil {
 		setupLog.Error(err, "unable to create diskmaker controller", "controller", "LocalVolume")
 		return err
@@ -86,6 +89,7 @@ func startManager(cmd *cobra.Command, args []string) error {
 	if err = (&diskmakerControllerLvSet.LocalVolumeSetReconciler{
 		Client: mgr.GetClient(),
 		Scheme: mgr.GetScheme(),
+		Log:    ctrl.Log.WithName("diskmaker-controllers").WithName("LocalVolumeSet"),
 	}).SetupWithManager(mgr, &provDeleter.CleanupStatusTracker{ProcTable: provDeleter.NewProcTable()}, provCache.NewVolumeCache()); err != nil {
 		setupLog.Error(err, "unable to create diskmaker controller", "controller", "LocalVolumeSet")
 		return err
@@ -94,6 +98,7 @@ func startManager(cmd *cobra.Command, args []string) error {
 	if err = (&diskmakerControllerDeleter.DeleteReconciler{
 		Client: mgr.GetClient(),
 		Scheme: mgr.GetScheme(),
+		Log:    ctrl.Log.WithName("diskmaker-controllers").WithName("Deleter"),
 	}).SetupWithManager(mgr, &provDeleter.CleanupStatusTracker{ProcTable: provDeleter.NewProcTable()}, provCache.NewVolumeCache()); err != nil {
 		setupLog.Error(err, "unable to create diskmaker controller", "controller", "Deleter")
 		return err

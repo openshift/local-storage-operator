@@ -34,8 +34,6 @@ func TestDeviceAge(t *testing.T) {
 
 	r, tc := newFakeLocalVolumeSetReconciler(t)
 
-	logger := log.WithName("test-logr")
-
 	blockDevices := make([]internal.BlockDevice, 0)
 	// the amount to increment the block devices by between each time duration
 	increment := 5
@@ -68,7 +66,7 @@ func TestDeviceAge(t *testing.T) {
 			blockDevices = append(blockDevices, internal.BlockDevice{KName: fmt.Sprintf("dev-%d", len(blockDevices))})
 		}
 
-		validDevices, delayedDevices := r.getValidDevices(logger, nil, blockDevices)
+		validDevices, delayedDevices := r.getValidDevices(nil, blockDevices)
 		assert.Lenf(t, validDevices, expectedValid[run], "validDevices")
 		assert.Lenf(t, delayedDevices, len(blockDevices)-expectedValid[run], "delayedDevices")
 
