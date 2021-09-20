@@ -225,6 +225,22 @@ func LocalVolumeTest(ctx *framework.TestCtx, cleanupFuncs *[]cleanupFn) func(*te
 			return false
 		}).Should(gomega.BeTrue(), "verifying LocalVolume has been deleted", localVolume.Name)
 
+		sc := &storagev1.StorageClass{}
+		matcher.Eventually(func() error {
+			t.Log("Verifying StorageClass deletion")
+			err := f.Client.Get(goctx.TODO(), types.NamespacedName{Namespace: f.OperatorNamespace, Name: localVolume.Spec.StorageClassDevices[0].StorageClassName}, sc)
+
+			if err != nil && (errors.IsGone(err) || errors.IsNotFound(err)) {
+				t.Logf("StorageClass deleted: %+v", err)
+				return nil
+			} else if err != nil {
+				t.Logf("error getting storageclass: %+v", err)
+				return err
+			}
+			t.Logf("StorageClass found: %q", sc.Name)
+			return nil
+		}, time.Minute*2, time.Second*2).ShouldNot(gomega.HaveOccurred(), "waiting for lv sc to be deleted: %q", sc.GetName())
+
 	}
 
 }
@@ -261,11 +277,6 @@ func verifyProvisionerAnnotation(t *testing.T, pvs []corev1.PersistentVolume, no
 func cleanupLVResources(t *testing.T, f *framework.Framework, localVolume *localv1.LocalVolume) error {
 	// cleanup lv force-removing the finalizer if necessary
 	eventuallyDelete(t, true, localVolume)
-	sc := &storagev1.StorageClass{
-		TypeMeta:   metav1.TypeMeta{Kind: localv1.LocalVolumeKind},
-		ObjectMeta: metav1.ObjectMeta{Name: localVolume.Spec.StorageClassDevices[0].StorageClassName},
-	}
-	eventuallyDelete(t, false, sc)
 	pvList := &corev1.PersistentVolumeList{}
 	matcher := gomega.NewWithT(t)
 	matcher.Eventually(func() error {

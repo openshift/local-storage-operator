@@ -445,6 +445,22 @@ func LocalVolumeSetTest(ctx *framework.TestCtx, cleanupFuncs *[]cleanupFn) func(
 			return false
 		}).Should(gomega.BeTrue(), "verifying LocalVolumeSet has been deleted", twentyToFifty.Name)
 
+		sc := &storagev1.StorageClass{}
+		matcher.Eventually(func() error {
+			t.Log("Verifying StorageClass deletion")
+			err := f.Client.Get(goctx.TODO(), types.NamespacedName{Namespace: f.OperatorNamespace, Name: twentyToFifty.Spec.StorageClassName}, sc)
+
+			if err != nil && (errors.IsGone(err) || errors.IsNotFound(err)) {
+				t.Logf("StorageClass deleted: %+v", err)
+				return nil
+			} else if err != nil {
+				t.Logf("error getting storageclass: %+v", err)
+				return err
+			}
+			t.Logf("StorageClass found: %q", sc.Name)
+			return nil
+		}, time.Minute*2, time.Second*2).ShouldNot(gomega.HaveOccurred(), "waiting for lvSet sc to be deleted: %q", sc.GetName())
+
 	}
 
 }
@@ -454,10 +470,8 @@ func cleanupLVSetResources(t *testing.T, lvsets *[]*localv1alpha1.LocalVolumeSet
 		t.Logf("cleaning up pvs and storageclasses: %q", lvset.GetName())
 		f := framework.Global
 		matcher := gomega.NewWithT(t)
-		sc := &storagev1.StorageClass{ObjectMeta: metav1.ObjectMeta{Name: lvset.Spec.StorageClassName}}
 
 		eventuallyDelete(t, true, lvset)
-		eventuallyDelete(t, false, sc)
 		pvList := &corev1.PersistentVolumeList{}
 		t.Logf("listing pvs for lvset: %q", lvset.GetName())
 		matcher.Eventually(func() error {
