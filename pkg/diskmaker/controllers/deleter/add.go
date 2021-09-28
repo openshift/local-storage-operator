@@ -158,8 +158,10 @@ func handlePVChange(runtimeConfig *provCommon.RuntimeConfig, pv *corev1.Persiste
 	}
 	q.Add(reconcile.Request{NamespacedName: types.NamespacedName{Namespace: ownerNamespace}})
 	if isDelete {
-		time.Sleep(time.Second * 10)
-		q.Add(reconcile.Request{NamespacedName: types.NamespacedName{Namespace: ownerNamespace}})
+		go func() {
+			time.Sleep(time.Second * 10)
+			q.Add(reconcile.Request{NamespacedName: types.NamespacedName{Namespace: ownerNamespace}})
+		}()
 	}
 }
 

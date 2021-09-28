@@ -156,9 +156,11 @@ func handlePVChange(runtimeConfig *provCommon.RuntimeConfig, pv *corev1.Persiste
 		return
 	}
 	if isDelete {
-		// delayed reconcile so that the cleanup tracker has time to mark the PV cleaned up
-		time.Sleep(time.Second * 10)
-		q.Add(reconcile.Request{NamespacedName: types.NamespacedName{Name: ownerName, Namespace: ownerNamespace}})
+		go func() {
+			// delayed reconcile so that the cleanup tracker has time to mark the PV cleaned up
+			time.Sleep(time.Second * 10)
+			q.Add(reconcile.Request{NamespacedName: types.NamespacedName{Name: ownerName, Namespace: ownerNamespace}})
+		}()
 	} else {
 		q.Add(reconcile.Request{NamespacedName: types.NamespacedName{Name: ownerName, Namespace: ownerNamespace}})
 	}
