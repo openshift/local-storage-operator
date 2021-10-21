@@ -228,13 +228,16 @@ func MutateAggregatedSpec(
 			SecurityContext: &corev1.SecurityContext{
 				Privileged: &privileged,
 			},
-			VolumeMounts: volumeMounts,
+			VolumeMounts:             volumeMounts,
+			TerminationMessagePath:   "/dev/termination-log",
+			TerminationMessagePolicy: "File",
 			Env: []corev1.EnvVar{
 				{
 					Name: "MY_NODE_NAME",
 					ValueFrom: &corev1.EnvVarSource{
 						FieldRef: &corev1.ObjectFieldSelector{
-							FieldPath: "spec.nodeName",
+							APIVersion: "v1",
+							FieldPath:  "spec.nodeName",
 						},
 					},
 				},
@@ -242,7 +245,8 @@ func MutateAggregatedSpec(
 					Name: "WATCH_NAMESPACE",
 					ValueFrom: &corev1.EnvVarSource{
 						FieldRef: &corev1.ObjectFieldSelector{
-							FieldPath: "metadata.namespace",
+							APIVersion: "v1",
+							FieldPath:  "metadata.namespace",
 						},
 					},
 				},
@@ -250,7 +254,8 @@ func MutateAggregatedSpec(
 					Name: "POD_NAME",
 					ValueFrom: &corev1.EnvVarSource{
 						FieldRef: &corev1.ObjectFieldSelector{
-							FieldPath: "metadata.name",
+							APIVersion: "v1",
+							FieldPath:  "metadata.name",
 						},
 					},
 				},
