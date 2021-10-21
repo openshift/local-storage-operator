@@ -53,6 +53,8 @@ spec:
         - mountPath: /run/udev
           mountPropagation: HostToContainer
           name: run-udev
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
       hostPID: true
       priorityClassName: ${PRIORITY_CLASS_NAME}
       serviceAccountName: local-storage-admin
