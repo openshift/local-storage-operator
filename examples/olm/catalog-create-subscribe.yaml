@@ -30,7 +30,7 @@ metadata:
   name: local-storage-subscription
   namespace: openshift-local-storage
 spec:
-  channel: preview   # this is the default channel name defined in opm-bundle file
+  channel: preview   # this is the default channel name defined in config bundle file
   name: local-storage-operator
   source: localstorage-operator-manifests
   sourceNamespace: openshift-local-storage
