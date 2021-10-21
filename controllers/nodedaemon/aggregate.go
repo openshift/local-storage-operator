@@ -92,6 +92,12 @@ func extractLVInfo(lvs []v1.LocalVolume) ([]corev1.Toleration, []metav1.OwnerRef
 	// if any one of the lv nodeSelectors are nil, the terms should be empty to indicate matchAllNodes
 	matchAllNodes := false
 
+	// sort so that changing order doesn't cause unneccesary updates
+	sort.SliceStable(lvs, func(i, j int) bool {
+		a := fmt.Sprintf("%s-%s", lvs[i].GetNamespace(), lvs[i].GetName())
+		b := fmt.Sprintf("%s-%s", lvs[j].GetNamespace(), lvs[j].GetName())
+		return strings.Compare(a, b) == -1
+	})
 	for _, lv := range lvs {
 		tolerations = append(tolerations, lv.Spec.Tolerations...)
 
