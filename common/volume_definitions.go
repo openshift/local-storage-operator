@@ -22,6 +22,8 @@ var (
 	hostContainerPropagation = corev1.MountPropagationHostToContainer
 	directoryHostPath        = corev1.HostPathDirectory
 
+	defaultMode420 int32 = 420
+
 	// SymlinkHostDirVolume is the corev1.Volume definition for the lso symlink host directory.
 	// "/mnt/local-storage" is the default, but it can be controlled by env vars.
 	// SymlinkMount is the corresponding mount
@@ -101,7 +103,8 @@ var (
 		Name: metricsServingCert,
 		VolumeSource: corev1.VolumeSource{
 			Secret: &corev1.SecretVolumeSource{
-				SecretName: DiscoveryMetricsServingCert,
+				SecretName:  DiscoveryMetricsServingCert,
+				DefaultMode: &defaultMode420,
 			},
 		},
 	}
@@ -111,7 +114,8 @@ var (
 		Name: metricsServingCert,
 		VolumeSource: corev1.VolumeSource{
 			Secret: &corev1.SecretVolumeSource{
-				SecretName: DiskMakerMetricsServingCert,
+				SecretName:  DiskMakerMetricsServingCert,
+				DefaultMode: &defaultMode420,
 			},
 		},
 	}
