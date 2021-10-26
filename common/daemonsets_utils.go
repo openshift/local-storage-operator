@@ -21,8 +21,9 @@ func NodeSelectorMatchesNodeLabels(node *corev1.Node, nodeSelector *corev1.NodeS
 
 func KubeProxySideCar() corev1.Container {
 	return corev1.Container{
-		Name:  "kube-rbac-proxy",
-		Image: GetKubeRBACProxyImage(),
+		Name:            "kube-rbac-proxy",
+		Image:           GetKubeRBACProxyImage(),
+		ImagePullPolicy: "IfNotPresent",
 		Ports: []corev1.ContainerPort{
 			{
 				ContainerPort: int32(9393),
@@ -37,7 +38,8 @@ func KubeProxySideCar() corev1.Container {
 			"--tls-cert-file=/etc/tls/private/tls.crt",
 			"--tls-private-key-file=/etc/tls/private/tls.key",
 		},
-
+		TerminationMessagePath:   "/dev/termination-log",
+		TerminationMessagePolicy: "File",
 		VolumeMounts: []corev1.VolumeMount{
 			{
 				Name:      metricsServingCert,
