@@ -67,10 +67,5 @@ func AddDaemonReconciler(mgr manager.Manager) error {
 		return err
 	}
 
-	err = c.Watch(&source.Kind{Type: &appsv1.DaemonSet{}}, &handler.EnqueueRequestForOwner{OwnerType: &v1.LocalVolume{}, IsController: true})
-	if err != nil {
-		return err
-	}
-
 	return nil
 }
