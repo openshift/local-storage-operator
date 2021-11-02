@@ -73,6 +73,22 @@ type DiskLocation struct {
 	blockDevice  internal.BlockDevice
 }
 
+type LocalVolumeReconciler struct {
+	Client          client.Client
+	Scheme          *runtime.Scheme
+	Log             logr.Logger
+	symlinkLocation string
+	localVolume     *localv1.LocalVolume
+	eventSync       *eventReporter
+	cacheSynced     bool
+
+	// static-provisioner stuff
+	cleanupTracker *provDeleter.CleanupStatusTracker
+	runtimeConfig  *provCommon.RuntimeConfig
+	deleter        *provDeleter.Deleter
+	firstRunOver   bool
+}
+
 func (r *LocalVolumeReconciler) createSymlink(
 	deviceNameLocation DiskLocation,
 	symLinkSource string,
@@ -127,6 +143,15 @@ func (r *LocalVolumeReconciler) createSymlink(
 		return true
 	}
 
+	// if device has no disk/by-id and there is an existing PV for same device
+	// then we should skip trying to create symlink for this device
+	if !idExists && r.checkForExistingPV(deviceNameLocation) {
+		msg := "error creating symlink, no disk/by-id found and found an existing PV for same device "
+		r.eventSync.Report(r.localVolume, newDiskEvent(ErrorFindingMatchingDisk, msg, symLinkSource, corev1.EventTypeWarning))
+		r.Log.Error(err, msg, "symLink", symLinkTarget)
+		return false
+	}
+
 	err = os.Symlink(symLinkSource, symLinkTarget)
 	if err != nil {
 		msg := "error creating symlink "
@@ -143,13 +168,38 @@ func (r *LocalVolumeReconciler) createSymlink(
 	successMsg := fmt.Sprintf("found matching disk %s with id %s", deviceNameLocation.diskNamePath, deviceNameLocation.diskID)
 	r.eventSync.Report(r.localVolume, newDiskEvent(FoundMatchingDisk, successMsg, deviceNameLocation.diskNamePath, corev1.EventTypeNormal))
 	return true
-
 }
+
 func diskMakerLabels(crName string) map[string]string {
 	return map[string]string{
 		"app": fmt.Sprintf("local-volume-diskmaker-%s", crName),
 	}
 }
+
+func (r *LocalVolumeReconciler) checkForExistingPV(deviceNameLocation DiskLocation) bool {
+	pvs := r.runtimeConfig.Cache.ListPVs()
+	nodeLabels := r.runtimeConfig.Node.GetLabels()
+
+	hostname, found := nodeLabels[corev1.LabelHostname]
+	if !found {
+		return false
+	}
+
+	deviceName := filepath.Base(deviceNameLocation.diskNamePath)
+
+	for i := range pvs {
+		pv := pvs[i]
+		pvLabels := pv.GetLabels()
+		pvAnnotations := pv.GetAnnotations()
+		// if this PV has same hostname and same device name, we should not use the device for
+		// creating a new PV
+		if pvLabels[corev1.LabelHostname] == hostname && pvAnnotations[common.PVDeviceNameLabel] == deviceName {
+			return true
+		}
+	}
+	return false
+}
+
 func (r *LocalVolumeReconciler) generateConfig() *DiskConfig {
 	configMapData := &DiskConfig{
 		Disks:           map[string]*Disks{},
@@ -210,6 +260,30 @@ func (r *LocalVolumeReconciler) Reconcile(ctx context.Context, request ctrl.Requ
 	r.Log = r.Log.WithValues("request.namespace", request.Namespace, "Request.Name", request.Name)
 	r.Log.Info("Reconciling LocalVolume")
 
+	if !r.cacheSynced {
+		r.runtimeConfig.Node = &corev1.Node{}
+		err := r.Client.Get(ctx, types.NamespacedName{Name: os.Getenv("MY_NODE_NAME")}, r.runtimeConfig.Node)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+		r.runtimeConfig.Name = common.GetProvisionedByValue(*r.runtimeConfig.Node)
+
+		pvList := &corev1.PersistentVolumeList{}
+		err = r.Client.List(context.TODO(), pvList)
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to initialize PV cache: %w", err)
+		}
+		for _, pv := range pvList.Items {
+			// skip non-owned PVs
+			name, found := pv.Annotations[provCommon.AnnProvisionedBy]
+			if !found || name != r.runtimeConfig.Name {
+				continue
+			}
+			addOrUpdatePV(r.runtimeConfig, pv)
+		}
+		r.cacheSynced = true
+	}
+
 	lv := &localv1.LocalVolume{}
 	err := r.Client.Get(ctx, request.NamespacedName, lv)
 	if err != nil {
@@ -231,13 +305,6 @@ func (r *LocalVolumeReconciler) Reconcile(ctx context.Context, request ctrl.Requ
 
 	// ignore LocalVolumes whose LabelSelector doesn't match this node
 	// NodeSelectorTerms.MatchExpressions are ORed
-
-	r.runtimeConfig.Node = &corev1.Node{}
-	err = r.Client.Get(ctx, types.NamespacedName{Name: os.Getenv("MY_NODE_NAME")}, r.runtimeConfig.Node)
-	if err != nil {
-		return ctrl.Result{}, err
-	}
-
 	matches, err := common.NodeSelectorMatchesNodeLabels(r.runtimeConfig.Node, lv.Spec.NodeSelector)
 	if err != nil {
 		r.Log.Error(err, "failed to match nodeSelector to node labels")
@@ -569,21 +636,6 @@ func fileExists(filename string) bool {
 	return true
 }
 
-type LocalVolumeReconciler struct {
-	Client          client.Client
-	Scheme          *runtime.Scheme
-	Log             logr.Logger
-	symlinkLocation string
-	localVolume     *localv1.LocalVolume
-	eventSync       *eventReporter
-
-	// static-provisioner stuff
-	cleanupTracker *provDeleter.CleanupStatusTracker
-	runtimeConfig  *provCommon.RuntimeConfig
-	deleter        *provDeleter.Deleter
-	firstRunOver   bool
-}
-
 func (r *LocalVolumeReconciler) SetupWithManager(mgr ctrl.Manager, cleanupTracker *provDeleter.CleanupStatusTracker, pvCache *provCache.VolumeCache) error {
 	clientSet := provCommon.SetupClient()
 	runtimeConfig := &provCommon.RuntimeConfig{
@@ -652,6 +704,13 @@ func handlePVChange(runtimeConfig *provCommon.RuntimeConfig, pv *corev1.Persiste
 		return
 	}
 
+	// update cache
+	if isDelete {
+		removePV(runtimeConfig, *pv)
+	} else {
+		addOrUpdatePV(runtimeConfig, *pv)
+	}
+
 	// enqueue owner
 	ownerName, found := pv.Labels[common.PVOwnerNameLabel]
 	if !found {
@@ -667,5 +726,20 @@ func handlePVChange(runtimeConfig *provCommon.RuntimeConfig, pv *corev1.Persiste
 	}
 
 	q.Add(reconcile.Request{NamespacedName: types.NamespacedName{Name: ownerName, Namespace: ownerNamespace}})
+}
 
+func removePV(r *provCommon.RuntimeConfig, pv corev1.PersistentVolume) {
+	_, exists := r.Cache.GetPV(pv.GetName())
+	if exists {
+		r.Cache.DeletePV(pv.Name)
+	}
+}
+
+func addOrUpdatePV(r *provCommon.RuntimeConfig, pv corev1.PersistentVolume) {
+	_, exists := r.Cache.GetPV(pv.GetName())
+	if exists {
+		r.Cache.UpdatePV(&pv)
+	} else {
+		r.Cache.AddPV(&pv)
+	}
 }
