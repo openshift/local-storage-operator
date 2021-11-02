@@ -44,8 +44,8 @@ func init() {
 // Result.Requeue is true, otherwise upon completion it will remove the work from the queue.
 func (r *DeleteReconciler) Reconcile(ctx context.Context, request ctrl.Request) (ctrl.Result, error) {
 
-	r.Log = r.Log.WithValues("Request.Namespace", request.Namespace, "Request.Name", request.Name)
-	r.Log.Info("Looking for released PVs to clean up")
+	deleteLogger := r.Log.WithValues("Request.Namespace", request.Namespace, "Request.Name", request.Name)
+	deleteLogger.Info("Looking for released PVs to clean up")
 	// enqueue if cache is not initialized
 	// and if any pv has phase == Releaseds
 
@@ -53,7 +53,7 @@ func (r *DeleteReconciler) Reconcile(ctx context.Context, request ctrl.Request) 
 	cm := &corev1.ConfigMap{}
 	err := r.Client.Get(ctx, types.NamespacedName{Name: common.ProvisionerConfigMapName, Namespace: request.Namespace}, cm)
 	if err != nil {
-		r.Log.Error(err, "could not get provisioner configmap")
+		deleteLogger.Error(err, "could not get provisioner configmap")
 		return ctrl.Result{}, err
 	}
 
@@ -82,8 +82,8 @@ func (r *DeleteReconciler) Reconcile(ctx context.Context, request ctrl.Request) 
 			return ctrl.Result{}, err
 		}
 		r.runtimeConfig.Name = common.GetProvisionedByValue(*r.runtimeConfig.Node)
-		r.Log.Info("first run", "provisionerName", r.runtimeConfig.Name)
-		r.Log.Info("initializing PV cache")
+		deleteLogger.Info("first run", "provisionerName", r.runtimeConfig.Name)
+		deleteLogger.Info("initializing PV cache")
 		pvList := &corev1.PersistentVolumeList{}
 		err := r.Client.List(context.TODO(), pvList)
 		if err != nil {
@@ -101,7 +101,7 @@ func (r *DeleteReconciler) Reconcile(ctx context.Context, request ctrl.Request) 
 		r.firstRunOver = true
 	}
 
-	r.Log.Info("Deleting Pvs through sig storage deleter")
+	deleteLogger.Info("Deleting Pvs through sig storage deleter")
 	r.deleter.DeletePVs()
 	return ctrl.Result{RequeueAfter: time.Second * 30}, nil
 }
@@ -223,7 +223,7 @@ func handlePVChange(log logr.Logger, runtimeConfig *provCommon.RuntimeConfig, pv
 	q.Add(reconcile.Request{NamespacedName: types.NamespacedName{Namespace: ownerNamespace}})
 	if isDelete {
 		// Don't block the informer goroutine.
-		go func () {
+		go func() {
 			time.Sleep(time.Second * 10)
 			q.Add(reconcile.Request{NamespacedName: types.NamespacedName{Namespace: ownerNamespace}})
 		}()

@@ -49,8 +49,8 @@ const (
 // The Controller will requeue the Request to be processed again if the returned error is non-nil or
 // Result.Requeue is true, otherwise upon completion it will remove the work from the queue.
 func (r *LocalVolumeSetReconciler) Reconcile(ctx context.Context, request ctrl.Request) (ctrl.Result, error) {
-	r.Log = r.Log.WithValues("Request.Namespace", request.Namespace, "Request.Name", request.Name)
-	r.Log.Info("Reconciling LocalVolumeSet")
+	logger := r.Log.WithValues("Request.Namespace", request.Namespace, "Request.Name", request.Name)
+	logger.Info("Reconciling LocalVolumeSet")
 
 	// Fetch the LocalVolumeSet instance
 	lvset := &localv1alpha1.LocalVolumeSet{}
@@ -81,7 +81,7 @@ func (r *LocalVolumeSetReconciler) Reconcile(ctx context.Context, request ctrl.R
 	// NodeSelectorTerms.MatchExpressions are ORed
 	matches, err := common.NodeSelectorMatchesNodeLabels(r.runtimeConfig.Node, lvset.Spec.NodeSelector)
 	if err != nil {
-		r.Log.Error(err, "failed to match nodeSelector to node labels")
+		logger.Error(err, "failed to match nodeSelector to node labels")
 		return ctrl.Result{}, err
 	}
 
@@ -95,7 +95,7 @@ func (r *LocalVolumeSetReconciler) Reconcile(ctx context.Context, request ctrl.R
 	storageClass := &storagev1.StorageClass{}
 	err = r.Client.Get(ctx, types.NamespacedName{Name: storageClassName}, storageClass)
 	if err != nil {
-		r.Log.Error(err, "could not get storageclass")
+		logger.Error(err, "could not get storageclass")
 		return ctrl.Result{}, err
 	}
 
@@ -103,7 +103,7 @@ func (r *LocalVolumeSetReconciler) Reconcile(ctx context.Context, request ctrl.R
 	cm := &corev1.ConfigMap{}
 	err = r.Client.Get(ctx, types.NamespacedName{Name: common.ProvisionerConfigMapName, Namespace: request.Namespace}, cm)
 	if err != nil {
-		r.Log.Error(err, "could not get provisioner configmap")
+		logger.Error(err, "could not get provisioner configmap")
 		return ctrl.Result{}, err
 	}
 
@@ -138,11 +138,11 @@ func (r *LocalVolumeSetReconciler) Reconcile(ctx context.Context, request ctrl.R
 	blockDevices, badRows, err := internal.ListBlockDevices()
 	if err != nil {
 		r.eventReporter.Report(lvset, newDiskEvent(diskmaker.ErrorRunningBlockList, "failed to list block devices", "", corev1.EventTypeWarning))
-		r.Log.Error(err, "could not list block devices", "lsblk.BadRows", badRows)
+		logger.Error(err, "could not list block devices", "lsblk.BadRows", badRows)
 		return ctrl.Result{}, err
 	} else if len(badRows) > 0 {
 		r.eventReporter.Report(lvset, newDiskEvent(diskmaker.ErrorRunningBlockList, fmt.Sprintf("error parsing rows: %+v", badRows), "", corev1.EventTypeWarning))
-		r.Log.Error(fmt.Errorf("bad rows"), "could not parse all the lsblk rows", "lsblk.BadRows", badRows)
+		logger.Error(fmt.Errorf("bad rows"), "could not parse all the lsblk rows", "lsblk.BadRows", badRows)
 	}
 
 	// find disks that match lvset filters and matchers
@@ -155,7 +155,7 @@ func (r *LocalVolumeSetReconciler) Reconcile(ctx context.Context, request ctrl.R
 	var totalProvisionedPVs int
 	var noMatch []string
 	for _, blockDevice := range validDevices {
-		devLogger := r.Log.WithValues("Device.Name", blockDevice.Name)
+		devLogger := logger.WithValues("Device.Name", blockDevice.Name)
 
 		symlinkSourcePath, symlinkPath, idExists, err := common.GetSymLinkSourceAndTarget(blockDevice, symLinkDir)
 		if err != nil {
@@ -202,25 +202,25 @@ func (r *LocalVolumeSetReconciler) Reconcile(ctx context.Context, request ctrl.R
 		totalProvisionedPVs += 1
 	}
 
-	r.Log.Info("total devices provisioned", "count", totalProvisionedPVs, "storageClass.Name", storageClassName)
+	logger.Info("total devices provisioned", "count", totalProvisionedPVs, "storageClass.Name", storageClassName)
 
 	// update metrics for total persistent volumes provisioned
 	localmetrics.SetLVSProvisionedPVMetric(nodeName, storageClassName, totalProvisionedPVs)
 
 	orphanSymlinkDevices, err := internal.GetOrphanedSymlinks(symLinkDir, validDevices)
 	if err != nil {
-		r.Log.Error(err, "failed to get orphaned symlink devices in current reconcile")
+		logger.Error(err, "failed to get orphaned symlink devices in current reconcile")
 	}
 
 	if len(orphanSymlinkDevices) > 0 {
-		r.Log.Info("found orphan symlinked devices in current reconcile", "orphanedDevices", orphanSymlinkDevices)
+		logger.Info("found orphan symlinked devices in current reconcile", "orphanedDevices", orphanSymlinkDevices)
 	}
 
 	// update metrics for orphaned symlink devices
 	localmetrics.SetLVSOrphanedSymlinksMetric(nodeName, storageClassName, len(orphanSymlinkDevices))
 
 	if len(noMatch) > 0 {
-		r.Log.Info("found stale symLink Entries", "storageClass.Name", storageClassName, "paths.List", noMatch, "directory", symLinkDir)
+		logger.Info("found stale symLink Entries", "storageClass.Name", storageClassName, "paths.List", noMatch, "directory", symLinkDir)
 	}
 
 	// shorten the requeueTime if there are delayed devices
@@ -561,7 +561,7 @@ func handlePVChange(runtimeConfig *provCommon.RuntimeConfig, pv *corev1.Persiste
 	if isDelete {
 		// Delayed reconcile so that the cleanup tracker has time to mark the PV cleaned up.
 		// Don't block the informer goroutine.
-		go func () {
+		go func() {
 			time.Sleep(time.Second * 10)
 			q.Add(reconcile.Request{NamespacedName: types.NamespacedName{Name: ownerName, Namespace: ownerNamespace}})
 		}()

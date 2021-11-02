@@ -66,7 +66,7 @@ type DaemonReconciler struct {
 // The Controller will requeue the Request to be processed again if the returned error is non-nil or
 // Result.Requeue is true, otherwise upon completion it will remove the work from the queue.
 func (r *DaemonReconciler) Reconcile(ctx context.Context, request ctrl.Request) (ctrl.Result, error) {
-	r.Log = r.Log.WithValues("Request.Namespace", request.Namespace, "Request.Name", request.Name)
+	logger := r.Log.WithValues("Request.Namespace", request.Namespace, "Request.Name", request.Name)
 	// do a one-time delete of the old static-provisioner daemonset
 	err := r.cleanupOldDaemonsets(ctx, request.Namespace)
 	if err != nil {
@@ -85,7 +85,7 @@ func (r *DaemonReconciler) Reconcile(ctx context.Context, request ctrl.Request) 
 	if err != nil {
 		return ctrl.Result{}, err
 	} else if opResult == controllerutil.OperationResultUpdated || opResult == controllerutil.OperationResultCreated {
-		r.Log.Info("provisioner configmap changed")
+		logger.Info("provisioner configmap changed")
 	}
 
 	// enable service and servicemonitor for diskmaker daemonset
@@ -93,7 +93,7 @@ func (r *DaemonReconciler) Reconcile(ctx context.Context, request ctrl.Request) 
 	metricsExportor := localmetrics.NewExporter(ctx, r.Client, common.DiskMakerServiceName, request.Namespace, common.DiskMakerMetricsServingCert,
 		ownerRefs, serviceLabels)
 	if err := metricsExportor.EnableMetricsExporter(); err != nil {
-		r.Log.Error(err, "failed to create service and servicemonitors for diskmaker daemonset")
+		logger.Error(err, "failed to create service and servicemonitors for diskmaker daemonset")
 		return ctrl.Result{}, err
 	}
 
@@ -104,7 +104,7 @@ func (r *DaemonReconciler) Reconcile(ctx context.Context, request ctrl.Request) 
 	if err != nil {
 		return ctrl.Result{}, err
 	} else if opResult == controllerutil.OperationResultUpdated || opResult == controllerutil.OperationResultCreated {
-		r.Log.Info("daemonset changed", "daemonset.Name", ds.GetName(), "op.Result", opResult)
+		logger.Info("daemonset changed", "daemonset.Name", ds.GetName(), "op.Result", opResult)
 	}
 
 	return ctrl.Result{}, err

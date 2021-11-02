@@ -88,8 +88,8 @@ func (r *LocalVolumeReconciler) deregisterLVFromStorageClass(lv localv1.LocalVol
 //+kubebuilder:rbac:groups="",resources=nodes,verbs=get;list;watch
 
 func (r *LocalVolumeReconciler) Reconcile(ctx context.Context, request ctrl.Request) (ctrl.Result, error) {
-	r.Log = r.Log.WithValues("request.Namespace", request.Namespace, "Request.Name", request.Name)
-	r.Log.Info("Reconciling LocalVolume")
+	logger := r.Log.WithValues("request.Namespace", request.Namespace, "Request.Name", request.Name)
+	logger.Info("Reconciling LocalVolume")
 	localStorageProvider := &localv1.LocalVolume{}
 
 	err := r.Client.Get(ctx, request.NamespacedName, localStorageProvider)
@@ -97,7 +97,7 @@ func (r *LocalVolumeReconciler) Reconcile(ctx context.Context, request ctrl.Requ
 		if errors.IsNotFound(err) {
 			r.deregisterLVFromStorageClass(*localStorageProvider)
 			// Requested object not found, could have been deleted after reconcile request.
-			r.Log.Info("requested LocalVolume CR is not found, could have been deleted after the reconcile request")
+			logger.Info("requested LocalVolume CR is not found, could have been deleted after the reconcile request")
 			return ctrl.Result{}, nil
 		}
 		return ctrl.Result{Requeue: true}, err

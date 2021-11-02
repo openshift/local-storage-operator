@@ -207,8 +207,8 @@ func addOwnerLabels(meta *metav1.ObjectMeta, cr *localv1.LocalVolume) bool {
 //+kubebuilder:rbac:groups="";storage.k8s.io,resources=configmaps;storageclasses;persistentvolumeclaims;persistentvolumes,verbs=*
 
 func (r *LocalVolumeReconciler) Reconcile(ctx context.Context, request ctrl.Request) (ctrl.Result, error) {
-	r.Log = r.Log.WithValues("request.namespace", request.Namespace, "Request.Name", request.Name)
-	r.Log.Info("Reconciling LocalVolume")
+	logger := r.Log.WithValues("request.namespace", request.Namespace, "Request.Name", request.Name)
+	logger.Info("Reconciling LocalVolume")
 
 	lv := &localv1.LocalVolume{}
 	err := r.Client.Get(ctx, request.NamespacedName, lv)
@@ -240,7 +240,7 @@ func (r *LocalVolumeReconciler) Reconcile(ctx context.Context, request ctrl.Requ
 
 	matches, err := common.NodeSelectorMatchesNodeLabels(r.runtimeConfig.Node, lv.Spec.NodeSelector)
 	if err != nil {
-		r.Log.Error(err, "failed to match nodeSelector to node labels")
+		logger.Error(err, "failed to match nodeSelector to node labels")
 		return ctrl.Result{}, err
 	}
 
@@ -252,7 +252,7 @@ func (r *LocalVolumeReconciler) Reconcile(ctx context.Context, request ctrl.Requ
 	cm := &corev1.ConfigMap{}
 	err = r.Client.Get(ctx, types.NamespacedName{Name: common.ProvisionerConfigMapName, Namespace: request.Namespace}, cm)
 	if err != nil {
-		r.Log.Error(err, "could not get provisioner configmap")
+		logger.Error(err, "could not get provisioner configmap")
 		return ctrl.Result{}, err
 	}
 
@@ -278,7 +278,7 @@ func (r *LocalVolumeReconciler) Reconcile(ctx context.Context, request ctrl.Requ
 
 	err = os.MkdirAll(r.symlinkLocation, 0755)
 	if err != nil {
-		r.Log.Error(err, " error creating local-storage directory ", "symLinkLocation", r.symlinkLocation)
+		logger.Error(err, " error creating local-storage directory ", "symLinkLocation", r.symlinkLocation)
 		os.Exit(-1)
 	}
 	diskConfig := r.generateConfig()
@@ -292,7 +292,7 @@ func (r *LocalVolumeReconciler) Reconcile(ctx context.Context, request ctrl.Requ
 	if err != nil {
 		msg := " error running lsblk"
 		r.eventSync.Report(r.localVolume, newDiskEvent(ErrorRunningBlockList, msg, "", corev1.EventTypeWarning))
-		r.Log.Error(err, msg)
+		logger.Error(err, msg)
 		return ctrl.Result{}, err
 	}
 
@@ -301,24 +301,24 @@ func (r *LocalVolumeReconciler) Reconcile(ctx context.Context, request ctrl.Requ
 	if err != nil {
 		msg := fmt.Sprintf("failed to list block devices: %v", err)
 		r.eventSync.Report(r.localVolume, newDiskEvent(ErrorRunningBlockList, msg, "", corev1.EventTypeWarning))
-		r.Log.Error(err, msg, "lsblk.BadRows", badRows)
+		logger.Error(err, msg, "lsblk.BadRows", badRows)
 		return ctrl.Result{}, err
 	} else if len(badRows) > 0 {
 		msg := "error parsing rows "
 		r.eventSync.Report(r.localVolume, newDiskEvent(ErrorRunningBlockList, msg, "", corev1.EventTypeWarning))
-		r.Log.Error(err, "could not parse all the lsblk rows", "lsblk.BadRows", badRows)
+		logger.Error(err, "could not parse all the lsblk rows", "lsblk.BadRows", badRows)
 	}
 
 	validBlockDevices := make([]internal.BlockDevice, 0)
 	for _, blockDevice := range blockDevices {
-		if ignoreDevices(blockDevice, r.Log) {
+		if ignoreDevices(blockDevice, logger) {
 			continue
 		}
 		validBlockDevices = append(validBlockDevices, blockDevice)
 	}
 
 	if len(validBlockDevices) == 0 {
-		r.Log.Info("unable to find any new disks")
+		logger.Info("unable to find any new disks")
 		return ctrl.Result{}, nil
 	}
 
@@ -326,7 +326,7 @@ func (r *LocalVolumeReconciler) Reconcile(ctx context.Context, request ctrl.Requ
 	if err != nil {
 		msg := " error listing disks in /dev/disk/by-id"
 		r.eventSync.Report(r.localVolume, newDiskEvent(ErrorListingDeviceID, msg, "", corev1.EventTypeWarning))
-		r.Log.Error(err, msg)
+		logger.Error(err, msg)
 		return ctrl.Result{}, nil
 	}
 
@@ -334,7 +334,7 @@ func (r *LocalVolumeReconciler) Reconcile(ctx context.Context, request ctrl.Requ
 	if err != nil {
 		msg := " error finding matching disks"
 		r.eventSync.Report(r.localVolume, newDiskEvent(ErrorFindingMatchingDisk, msg, "", corev1.EventTypeWarning))
-		r.Log.Error(err, msg)
+		logger.Error(err, msg)
 		return ctrl.Result{}, nil
 	}
 
@@ -357,13 +357,13 @@ func (r *LocalVolumeReconciler) Reconcile(ctx context.Context, request ctrl.Requ
 			msg = strings.Join(diff.List(), ", ") + " was defined in devicePaths, but expected a path in /dev/"
 		}
 		r.eventSync.Report(r.localVolume, newDiskEvent(ErrorFindingMatchingDisk, msg, "", corev1.EventTypeWarning))
-		r.Log.Info(msg)
+		logger.Info(msg)
 		return ctrl.Result{}, nil
 	}
 
 	mountPointMap, err := common.GenerateMountMap(r.runtimeConfig)
 	if err != nil {
-		r.Log.Error(err, "failed to generate mountPointMap")
+		logger.Error(err, "failed to generate mountPointMap")
 		return ctrl.Result{}, err
 	}
 
@@ -375,10 +375,10 @@ func (r *LocalVolumeReconciler) Reconcile(ctx context.Context, request ctrl.Requ
 		symLinkDirPath := path.Join(r.symlinkLocation, storageClassName)
 		for _, deviceNameLocation := range deviceArray {
 			blockDeviceList = append(blockDeviceList, deviceNameLocation.blockDevice)
-			devLogger := r.Log.WithValues("Device.Name", deviceNameLocation.diskNamePath)
+			devLogger := logger.WithValues("Device.Name", deviceNameLocation.diskNamePath)
 			source, target, idExists, err := common.GetSymLinkSourceAndTarget(deviceNameLocation.blockDevice, symLinkDirPath)
 			if err != nil {
-				r.Log.Error(err, "failed to get symlink source and target")
+				logger.Error(err, "failed to get symlink source and target")
 				errors = append(errors, err)
 				break
 			}
@@ -424,11 +424,11 @@ func (r *LocalVolumeReconciler) Reconcile(ctx context.Context, request ctrl.Requ
 
 		orphanSymlinkDevices, err := internal.GetOrphanedSymlinks(symLinkDirPath, blockDeviceList)
 		if err != nil {
-			r.Log.Error(err, "failed to get orphaned symlink devices in current reconcile")
+			logger.Error(err, "failed to get orphaned symlink devices in current reconcile")
 		}
 
 		if len(orphanSymlinkDevices) > 0 {
-			r.Log.Info("found orphan symlinked devices in current reconcile",
+			logger.Info("found orphan symlinked devices in current reconcile",
 				"storageClass.Name", storageClassName, "orphanedDevices", orphanSymlinkDevices)
 		}
 

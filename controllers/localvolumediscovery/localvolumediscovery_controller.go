@@ -67,8 +67,8 @@ type LocalVolumeDiscoveryReconciler struct {
 // The Controller will requeue the Request to be processed again if the returned error is non-nil or
 // Result.Requeue is true, otherwise upon completion it will remove the work from the queue.
 func (r *LocalVolumeDiscoveryReconciler) Reconcile(ctx context.Context, request ctrl.Request) (ctrl.Result, error) {
-	r.Log = r.Log.WithValues("Request.Namespace", request.Namespace, "Request.Name", request.Name)
-	r.Log.Info("Reconciling LocalVolumeDiscovery")
+	discoveryLogger := r.Log.WithValues("Request.Namespace", request.Namespace, "Request.Name", request.Name)
+	discoveryLogger.Info("Reconciling LocalVolumeDiscovery")
 
 	// Fetch the LocalVolumeDiscovery instance
 	instance := &localv1alpha1.LocalVolumeDiscovery{}
@@ -89,7 +89,7 @@ func (r *LocalVolumeDiscoveryReconciler) Reconcile(ctx context.Context, request 
 	metricsExportor := localmetrics.NewExporter(ctx, r.Client, common.DiscoveryServiceName, instance.Namespace, common.DiscoveryMetricsServingCert,
 		getOwnerRefs(instance), serviceLabels)
 	if err := metricsExportor.EnableMetricsExporter(); err != nil {
-		r.Log.Error(err, "failed to create service and servicemonitors", "object", instance.Name)
+		discoveryLogger.Error(err, "failed to create service and servicemonitors", "object", instance.Name)
 		return ctrl.Result{}, err
 	}
 
@@ -106,12 +106,12 @@ func (r *LocalVolumeDiscoveryReconciler) Reconcile(ctx context.Context, request 
 			return ctrl.Result{}, err
 		}
 	} else if opResult == controllerutil.OperationResultUpdated || opResult == controllerutil.OperationResultCreated {
-		r.Log.Info("daemonset changed", "daemonset.Name", ds.GetName(), "op.Result", opResult)
+		discoveryLogger.Info("daemonset changed", "daemonset.Name", ds.GetName(), "op.Result", opResult)
 	}
 
 	desiredDaemons, readyDaemons, err := r.getDaemonSetStatus(ctx, instance.Namespace)
 	if err != nil {
-		r.Log.Error(err, "failed to get discovery daemonset")
+		discoveryLogger.Error(err, "failed to get discovery daemonset")
 		return ctrl.Result{}, err
 	}
 
@@ -141,10 +141,10 @@ func (r *LocalVolumeDiscoveryReconciler) Reconcile(ctx context.Context, request 
 		return ctrl.Result{}, err
 	}
 
-	r.Log.Info("deleting orphan discovery result instances")
+	discoveryLogger.Info("deleting orphan discovery result instances")
 	err = r.deleteOrphanDiscoveryResults(ctx, instance)
 	if err != nil {
-		r.Log.Error(err, "failed to delete orphan discovery results")
+		discoveryLogger.Error(err, "failed to delete orphan discovery results")
 		return ctrl.Result{}, err
 	}
 
