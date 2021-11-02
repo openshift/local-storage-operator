@@ -172,6 +172,9 @@ func (r *LocalVolumeSetReconciler) Reconcile(ctx context.Context, request ctrl.R
 		var currentDeviceSymlinked bool
 		alreadyProvisionedCount, currentDeviceSymlinked, noMatch, err = getAlreadySymlinked(symLinkDir, blockDevice, blockDevices)
 		_ = currentDeviceSymlinked
+
+		totalProvisionedPVs = alreadyProvisionedCount
+
 		if err != nil && lvset.Spec.MaxDeviceCount != nil {
 			r.eventReporter.Report(lvset, newDiskEvent(ErrorListingExistingSymlinks, "error determining already provisioned disks", "", corev1.EventTypeWarning))
 			return ctrl.Result{}, fmt.Errorf("could not determine how many devices are already provisioned: %w", err)
@@ -197,9 +200,8 @@ func (r *LocalVolumeSetReconciler) Reconcile(ctx context.Context, request ctrl.R
 			r.eventReporter.Report(lvset, newDiskEvent(diskmaker.ErrorProvisioningDisk, "provisioning failed", blockDevice.KName, corev1.EventTypeWarning))
 			return ctrl.Result{}, fmt.Errorf("could not provision disk: %w", err)
 		}
-		devLogger.Info("provisioning succeeded")
 
-		totalProvisionedPVs += 1
+		devLogger.Info("provisioning succeeded")
 	}
 
 	r.Log.Info("total devices provisioned", "count", totalProvisionedPVs, "storageClass.Name", storageClassName)
