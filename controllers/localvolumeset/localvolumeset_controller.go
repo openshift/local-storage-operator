@@ -69,8 +69,8 @@ func (r *LocalVolumeSetReconciler) Reconcile(ctx context.Context, request ctrl.R
 }
 
 func (r *LocalVolumeSetReconciler) reconcile(ctx context.Context, request reconcile.Request) (ctrl.Result, error) {
-	r.Log = r.Log.WithValues("Request.Namespace", request.Namespace, "Request.Name", request.Name)
-	r.Log.Info("Reconciling LocalVolumeSet")
+	volumeSetLogger := r.Log.WithValues("Request.Namespace", request.Namespace, "Request.Name", request.Name)
+	volumeSetLogger.Info("Reconciling LocalVolumeSet")
 	// Fetch the LocalVolumeSet instance
 	lvSet := &localv1alpha1.LocalVolumeSet{}
 	err := r.Client.Get(ctx, request.NamespacedName, lvSet)
@@ -83,7 +83,7 @@ func (r *LocalVolumeSetReconciler) reconcile(ctx context.Context, request reconc
 			return ctrl.Result{}, nil
 		}
 		// Error reading the object - requeue the request.
-		r.Log.Error(err, "failed to get localvolumeset")
+		volumeSetLogger.Error(err, "failed to get localvolumeset")
 		return ctrl.Result{}, err
 	}
 
@@ -101,20 +101,20 @@ func (r *LocalVolumeSetReconciler) reconcile(ctx context.Context, request reconc
 
 	err = r.syncStorageClass(ctx, lvSet)
 	if err != nil {
-		r.Log.Error(err, "failed to sync storageclass")
+		volumeSetLogger.Error(err, "failed to sync storageclass")
 		return ctrl.Result{}, err
 	}
-	r.Log.Info("updating status")
+	volumeSetLogger.Info("updating status")
 
 	err = r.updateDaemonSetsCondition(ctx, request)
 	if err != nil {
-		r.Log.Error(err, "failed to update status")
+		volumeSetLogger.Error(err, "failed to update status")
 		return ctrl.Result{}, err
 	}
 
 	err = r.updateTotalProvisionedDeviceCountStatus(ctx, request)
 	if err != nil {
-		r.Log.Error(err, "failed to update status")
+		volumeSetLogger.Error(err, "failed to update status")
 		return ctrl.Result{}, err
 	}
 
