@@ -48,17 +48,15 @@ to point to your newly created index image. Once updated, we can install local-s
 1. Since we will be going to test with our version of images, we need to modify CSV file to point to our version of image. This can be done by modifying following file:
 
 ```
-~> vim opm-bundle/manifests/local-storage-operator.clusterserviceversion.yaml
+~> vim config/manifests/local-storage-operator.clusterserviceversion.yaml
 ```
 
 and change image names in deployment field.
 
-*Note*: Currently opm-bundle/manifests folder has copied the CSV and CRDs. This obviously is problematic because now we have two versions of these resources. We plan to fix this in future.
-
 2. Now lets build a bundle image which can be used by index image. This can be done by:
 
 ```
-~> cd opm-bundle
+~> cd config
 ~> docker build -f ./bundle.Dockerfile -t quay.io/gnufied/local-storage-bundle:bundle1 .
 ```
 

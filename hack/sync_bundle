@@ -107,18 +107,19 @@ class SyncBundle
     current_channel = @package["channels"][0]["name"]
     puts "current channel is #{current_channel}"
 
-    FileUtils.mkdir_p("opm-bundle/manifests")
+    #FileUtils.mkdir_p("config/manifests/build/")
 
-    csv_destination = "opm-bundle/manifests/local-storage-operator.clusterserviceversion.yaml"
-    yaml_files = Dir["config/manifests/#{current_channel}/*.yaml"]
-    yaml_files.each do |yaml_file|
-      if yaml_file =~ /clusterserviceversion/
-        # For CSV files drop channel name from it
-        FileUtils.cp(yaml_file, csv_destination)
-      else
-        FileUtils.cp(yaml_file, "opm-bundle/manifests")
-      end
-    end
+    #csv_destination = "config/manifests/build/local-storage-operator.clusterserviceversion.yaml"
+    csv_destination = "config/manifests/#{current_channel}/local-storage-operator.clusterserviceversion.yaml"
+    # yaml_files = Dir["config/manifests/#{current_channel}/*.yaml"]
+    # yaml_files.each do |yaml_file|
+    #   if yaml_file =~ /clusterserviceversion/
+    #     # For CSV files drop channel name from it
+    #     FileUtils.cp(yaml_file, csv_destination)
+    #   else
+    #     FileUtils.cp(yaml_file, "config/manifests/build")
+    #   end
+    # end
 
     # only change CSV if images are changed
     if @default_options.operator_image != DEFAULT_OPERATOR_IMAGE || @default_options.diskmaker_image != DEFAULT_DISKMAKER_IMAGE
@@ -133,7 +134,7 @@ class SyncBundle
   end
 
   def generate_bundle
-    FileUtils.cd("opm-bundle") do
+    FileUtils.cd("config") do
       run_command_or_exit("docker build -f ./bundle.Dockerfile -t #{@default_options.bundle_image} .")
       run_command_or_exit("docker push #{@default_options.bundle_image}")
       run_command_or_exit("opm index add --bundles #{@default_options.bundle_image} --tag #{@default_options.index_image} --container-tool docker")
