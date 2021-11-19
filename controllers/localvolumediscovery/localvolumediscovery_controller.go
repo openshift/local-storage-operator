@@ -181,10 +181,6 @@ func getDiskMakerDiscoveryDSMutateFn(request reconcile.Request,
 
 		ds.Spec.Template.Spec.Containers[0].Env = append(ds.Spec.Template.Spec.Containers[0].Env, envVars...)
 
-		//Add kube-rbac-proxy sidecar container to provide https proxy for http-based lso metrics.
-		ds.Spec.Template.Spec.Containers = append(ds.Spec.Template.Spec.Containers, common.KubeProxySideCar())
-		ds.Spec.Template.Spec.Volumes = append(ds.Spec.Template.Spec.Volumes, common.DiscoveryMetricsCertVolume)
-
 		return nil
 	}
 }

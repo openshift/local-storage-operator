@@ -14,15 +14,11 @@ const (
 
 	udevVolName = "run-udev"
 	udevPath    = "/run/udev"
-
-	metricsServingCert = "metrics-serving-cert"
 )
 
 var (
 	hostContainerPropagation = corev1.MountPropagationHostToContainer
 	directoryHostPath        = corev1.HostPathDirectory
-
-	defaultMode420 int32 = 420
 
 	// SymlinkHostDirVolume is the corev1.Volume definition for the lso symlink host directory.
 	// "/mnt/local-storage" is the default, but it can be controlled by env vars.
@@ -96,27 +92,5 @@ var (
 		Name:             udevVolName,
 		MountPath:        udevPath,
 		MountPropagation: &hostContainerPropagation,
-	}
-
-	// DiscoveryMetricsCertVolume is the corev1.Volume definition for serving cert secret for discovery service
-	DiscoveryMetricsCertVolume = corev1.Volume{
-		Name: metricsServingCert,
-		VolumeSource: corev1.VolumeSource{
-			Secret: &corev1.SecretVolumeSource{
-				SecretName:  DiscoveryMetricsServingCert,
-				DefaultMode: &defaultMode420,
-			},
-		},
-	}
-
-	// DiskmakerMetricsCertVolume is the corev1.Volume definition for serving cert secret for diskmaker service
-	DiskmakerMetricsCertVolume = corev1.Volume{
-		Name: metricsServingCert,
-		VolumeSource: corev1.VolumeSource{
-			Secret: &corev1.SecretVolumeSource{
-				SecretName:  DiskMakerMetricsServingCert,
-				DefaultMode: &defaultMode420,
-			},
-		},
 	}
 )
