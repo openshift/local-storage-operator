@@ -93,10 +93,6 @@ func getDiskMakerDSMutateFn(
 		initMapIfNil(&ds.ObjectMeta.Annotations)
 		ds.ObjectMeta.Annotations[dataHashAnnotationKey] = dataHash
 
-		//Add kube-rbac-proxy sidecar container to provide https proxy for http-based lso metrics.
-		ds.Spec.Template.Spec.Containers = append(ds.Spec.Template.Spec.Containers, common.KubeProxySideCar())
-		ds.Spec.Template.Spec.Volumes = append(ds.Spec.Template.Spec.Volumes, common.DiskmakerMetricsCertVolume)
-
 		return nil
 	}
 }

@@ -1,10 +1,5 @@
 # Notes for hacking on local-storage-operator
 
-## For developing on plain k8s
-
-Developing on plain k8s is pretty simple. Just write your code and use Makefile to build your own images
-and then update `deploy/operator.yaml` to point to your images and follow rest of the instructions in `deploy/README.md`.
-
 ## For developing on OpenShift and OLM
 
 1. Download and install `opm` tool via - https://github.com/operator-framework/operator-registry
