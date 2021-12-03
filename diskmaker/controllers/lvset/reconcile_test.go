@@ -18,7 +18,6 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/utils/mount"
-	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	crFake "sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -99,7 +98,6 @@ func newFakeLocalVolumeSetReconciler(t *testing.T, objs ...runtime.Object) (*Loc
 	return &LocalVolumeSetReconciler{
 		Client:         fakeClient,
 		Scheme:         scheme,
-		Log:            logf.Log.WithName("diskmaker-controllers-test").WithName("LocalVolumeSet"),
 		eventReporter:  newEventReporter(fakeRecorder),
 		deviceAgeMap:   newAgeMap(fakeClock),
 		cleanupTracker: &provDeleter.CleanupStatusTracker{ProcTable: deleter.NewProcTable()},

@@ -10,7 +10,6 @@ import (
 	"testing"
 
 	"github.com/openshift/local-storage-operator/internal"
-	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	localv1 "github.com/openshift/local-storage-operator/api/v1"
 	"github.com/stretchr/testify/assert"
@@ -236,7 +235,6 @@ func getFakeDiskMaker(t *testing.T, symlinkLocation string, objs ...runtime.Obje
 		symlinkLocation: symlinkLocation,
 		Client:          fakeClient,
 		Scheme:          scheme,
-		Log:             logf.Log.WithName("diskmaker-controllers-test").WithName("LocalVolume"),
 		eventSync:       fakeEventSync,
 		cleanupTracker:  cleanupTracker,
 		runtimeConfig:   runtimeConfig,

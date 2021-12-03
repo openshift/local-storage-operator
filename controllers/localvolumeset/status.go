@@ -11,6 +11,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/klog"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -55,7 +56,9 @@ func (r *LocalVolumeSetReconciler) updateDaemonSetsCondition(ctx context.Context
 	if changed {
 		err := r.Client.Status().Update(ctx, lvSet)
 		if err != nil {
-			r.Log.Error(err, "failed to update localvolumeset condition", "conditionType", conditionType, "conditionStatus", conditionStatus, "message", conditionMessage)
+			klog.Errorf("failed to update localvolumeset condition, "+
+				"type = %s, status = %s, message = %s: %v",
+				conditionType, conditionStatus, conditionMessage, err)
 			return err
 		}
 	}
@@ -112,7 +115,7 @@ func (r *LocalVolumeSetReconciler) addAvailabilityConditions(ctx context.Context
 
 	// failure values
 	if reconcileError != nil {
-		r.Log.Error(reconcileError, "reconcile error")
+		klog.Errorf("reconcile error: %v", reconcileError)
 		conditionStatus = operatorv1.ConditionFalse
 		conditionMessage = fmt.Sprintf("Operator error: %+v", reconcileError)
 	}
@@ -120,7 +123,9 @@ func (r *LocalVolumeSetReconciler) addAvailabilityConditions(ctx context.Context
 	if changed {
 		err := r.Client.Status().Update(context.TODO(), lvSet)
 		if err != nil {
-			r.Log.Error(err, "failed to update localvolumeset condition", "conditionType", conditionType, "conditionStatus", conditionStatus, "message", conditionMessage)
+			klog.Errorf("failed to update localvolumeset condition, "+
+				"type = %s, status = %s, message = %s: %v",
+				conditionType, conditionStatus, conditionMessage, err)
 			return result, err
 		}
 	}
