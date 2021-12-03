@@ -7,6 +7,7 @@ import (
 	localv1alpha1 "github.com/openshift/local-storage-operator/api/v1alpha1"
 	"github.com/openshift/local-storage-operator/common"
 	"k8s.io/apimachinery/pkg/api/equality"
+	"k8s.io/klog"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
@@ -18,7 +19,7 @@ func (r *LocalVolumeSetReconciler) syncFinalizer(lvSet localv1alpha1.LocalVolume
 
 	// handle deletion
 	if !lvSet.DeletionTimestamp.IsZero() {
-		r.Log.Info("deletionTimeStamp found, waiting for 0 bound PVs")
+		klog.Info("deletionTimeStamp found, waiting for 0 bound PVs")
 		// if obect is deleted, finalizer should be unset only when no boundPVs are found
 		boundPVs, releasedPVs, err := common.GetBoundAndReleasedPVs(&lvSet, r.Client)
 		if err != nil {
@@ -29,7 +30,7 @@ func (r *LocalVolumeSetReconciler) syncFinalizer(lvSet localv1alpha1.LocalVolume
 		pendingPVs := append(boundPVs, releasedPVs...)
 		if len(pendingPVs) == 0 {
 			setFinalizer = false
-			r.Log.Info("no bound/released PVs found, removing finalizer")
+			klog.Info("no bound/released PVs found, removing finalizer")
 		} else {
 			pvNames := ""
 			for i, pv := range pendingPVs {
@@ -40,7 +41,7 @@ func (r *LocalVolumeSetReconciler) syncFinalizer(lvSet localv1alpha1.LocalVolume
 					break
 				}
 			}
-			r.Log.Info("bound/released PVs found, not removing finalizer", "pvNames", pvNames)
+			klog.Infof("bound/released PVs found, not removing finalizer %q", pvNames)
 		}
 	}
 

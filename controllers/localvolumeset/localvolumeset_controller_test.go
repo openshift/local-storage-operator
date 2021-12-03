@@ -11,7 +11,6 @@ import (
 	storagev1 "k8s.io/api/storage/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
-	logf "sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 // This file should contain all the mocking required for LocalVolumeSetReconciler to run in a unit test.
@@ -38,6 +37,5 @@ func newFakeLocalVolumeSetReconciler(t *testing.T, objs ...runtime.Object) *Loca
 		Client:   client,
 		Scheme:   scheme,
 		LvSetMap: &common.StorageClassOwnerMap{},
-		Log:      logf.Log.WithName("controllers").WithName("LocalVolumeSet"),
 	}
 }

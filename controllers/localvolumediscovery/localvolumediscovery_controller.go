@@ -21,7 +21,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/go-logr/logr"
 	operatorv1 "github.com/openshift/api/operator/v1"
 	"github.com/openshift/library-go/pkg/operator/resource/resourceread"
 	"github.com/openshift/local-storage-operator/assets"
@@ -34,6 +33,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	v1helper "k8s.io/component-helpers/scheduling/corev1"
+	"k8s.io/klog"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -59,7 +59,6 @@ type LocalVolumeDiscoveryReconciler struct {
 	// that reads objects from the cache and writes to the apiserver
 	Client client.Client
 	Scheme *runtime.Scheme
-	Log    logr.Logger
 }
 
 // Reconcile reads that state of the cluster for a LocalVolumeDiscovery object and makes changes based on the state read
@@ -67,8 +66,8 @@ type LocalVolumeDiscoveryReconciler struct {
 // The Controller will requeue the Request to be processed again if the returned error is non-nil or
 // Result.Requeue is true, otherwise upon completion it will remove the work from the queue.
 func (r *LocalVolumeDiscoveryReconciler) Reconcile(ctx context.Context, request ctrl.Request) (ctrl.Result, error) {
-	discoveryLogger := r.Log.WithValues("Request.Namespace", request.Namespace, "Request.Name", request.Name)
-	discoveryLogger.Info("Reconciling LocalVolumeDiscovery")
+	klog.Infof("Reconciling LocalVolumeDiscovery, namespace = %s, name = %s",
+		request.Namespace, request.Name)
 
 	// Fetch the LocalVolumeDiscovery instance
 	instance := &localv1alpha1.LocalVolumeDiscovery{}
@@ -89,7 +88,8 @@ func (r *LocalVolumeDiscoveryReconciler) Reconcile(ctx context.Context, request 
 	metricsExportor := localmetrics.NewExporter(ctx, r.Client, common.DiscoveryServiceName, instance.Namespace, common.DiscoveryMetricsServingCert,
 		getOwnerRefs(instance), serviceLabels)
 	if err := metricsExportor.EnableMetricsExporter(); err != nil {
-		discoveryLogger.Error(err, "failed to create service and servicemonitors", "object", instance.Name)
+		klog.Errorf("failed to create service and servicemonitors, "+
+			"object %s: %v", instance.Name, err)
 		return ctrl.Result{}, err
 	}
 
@@ -106,12 +106,12 @@ func (r *LocalVolumeDiscoveryReconciler) Reconcile(ctx context.Context, request 
 			return ctrl.Result{}, err
 		}
 	} else if opResult == controllerutil.OperationResultUpdated || opResult == controllerutil.OperationResultCreated {
-		discoveryLogger.Info("daemonset changed", "daemonset.Name", ds.GetName(), "op.Result", opResult)
+		klog.Infof("daemonset %s changed with result %s", ds.GetName(), opResult)
 	}
 
 	desiredDaemons, readyDaemons, err := r.getDaemonSetStatus(ctx, instance.Namespace)
 	if err != nil {
-		discoveryLogger.Error(err, "failed to get discovery daemonset")
+		klog.Errorf("failed to get discovery daemonset: %v", err)
 		return ctrl.Result{}, err
 	}
 
@@ -131,7 +131,7 @@ func (r *LocalVolumeDiscoveryReconciler) Reconcile(ctx context.Context, request 
 		if err != nil {
 			return ctrl.Result{}, err
 		}
-		discoveryLogger.Info(message)
+		klog.Info(message)
 		return waitForRequeueIfDaemonsNotReady, nil
 	}
 
@@ -142,10 +142,10 @@ func (r *LocalVolumeDiscoveryReconciler) Reconcile(ctx context.Context, request 
 		return ctrl.Result{}, err
 	}
 
-	discoveryLogger.Info("deleting orphan discovery result instances")
+	klog.Info("deleting orphan discovery result instances")
 	err = r.deleteOrphanDiscoveryResults(ctx, instance)
 	if err != nil {
-		discoveryLogger.Error(err, "failed to delete orphan discovery results")
+		klog.Errorf("failed to delete orphan discovery results: %v", err)
 		return ctrl.Result{}, err
 	}
 
@@ -215,7 +215,7 @@ func (r *LocalVolumeDiscoveryReconciler) updateDiscoveryStatus(ctx context.Conte
 
 func (r *LocalVolumeDiscoveryReconciler) deleteOrphanDiscoveryResults(ctx context.Context, instance *localv1alpha1.LocalVolumeDiscovery) error {
 	if instance.Spec.NodeSelector == nil || len(instance.Spec.NodeSelector.NodeSelectorTerms) == 0 {
-		r.Log.Info("skip deleting orphan discovery results as no NodeSelectors are provided")
+		klog.Info("skip deleting orphan discovery results as no NodeSelectors are provided")
 		return nil
 	}
 

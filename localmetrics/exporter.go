@@ -13,8 +13,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	k8sYAML "k8s.io/apimachinery/pkg/util/yaml"
+	"k8s.io/klog"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	logf "sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 type Exporter struct {
@@ -96,9 +96,8 @@ func (e *Exporter) enableServiceMonitor() error {
 // createOrUpdateService creates service object or an error
 func (e *Exporter) createOrUpdateService(service *corev1.Service) (*corev1.Service, error) {
 	namespacedName := types.NamespacedName{Namespace: service.GetNamespace(), Name: service.GetName()}
-	log := logf.Log.WithName("metrics-exporter")
-	log.WithValues("service.namespace", service.GetNamespace(), "service.name", service.GetName())
-	log.Info("Reconciling metrics exporter service")
+	klog.Infof("Reconciling metrics service, namespace = %s, name = %s",
+		service.GetNamespace(), service.GetName())
 
 	oldService := &corev1.Service{}
 	err := e.Client.Get(e.Ctx, namespacedName, oldService)
@@ -124,9 +123,8 @@ func (e *Exporter) createOrUpdateService(service *corev1.Service) (*corev1.Servi
 // createOrUpdateServiceMonitor creates serviceMonitor object or an error
 func (e *Exporter) createOrUpdateServiceMonitor(serviceMonitor *monitoringv1.ServiceMonitor) (*monitoringv1.ServiceMonitor, error) {
 	namespacedName := types.NamespacedName{Name: serviceMonitor.Name, Namespace: serviceMonitor.Namespace}
-	log := logf.Log.WithName("service-monitor")
-	log.WithValues("service-monitor.namespace", serviceMonitor.GetNamespace(), "serviceMonitor.name", serviceMonitor.GetName())
-	log.Info("creating service monitor")
+	klog.Infof("Reconciling metrics service monitor, namespace = %s, name = %s",
+		serviceMonitor.GetNamespace(), serviceMonitor.GetName())
 
 	oldSm := &monitoringv1.ServiceMonitor{}
 	err := e.Client.Get(context.TODO(), namespacedName, oldSm)
