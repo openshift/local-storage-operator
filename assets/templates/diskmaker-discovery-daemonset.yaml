@@ -90,7 +90,7 @@ spec:
       - name: metrics-serving-cert
         secret:
           defaultMode: 420
-          secretName: diskmaker-metric-serving-cert
+          secretName: discovery-metric-serving-cert
   updateStrategy:
     rollingUpdate:
       maxSurge: 0
