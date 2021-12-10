@@ -131,7 +131,8 @@ func (r *LocalVolumeDiscoveryReconciler) Reconcile(ctx context.Context, request 
 		if err != nil {
 			return ctrl.Result{}, err
 		}
-		return waitForRequeueIfDaemonsNotReady, fmt.Errorf(message)
+		discoveryLogger.Info(message)
+		return waitForRequeueIfDaemonsNotReady, nil
 	}
 
 	message := fmt.Sprintf("successfully running %d out of %d discovery daemons", desiredDaemons, readyDaemons)

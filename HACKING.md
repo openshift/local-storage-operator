@@ -6,6 +6,37 @@
 
 2. Create images as documented below
 
+## Running the operator locally
+
+1. Install LSO via OLM/OperatorHub in GUI
+
+2. Build the operator
+```
+make build-operator
+```
+
+3. Export env variables required by LSO [deployment](https://github.com/openshift/local-storage-operator/blob/8fc42cc8b990907c88a6da551dc85b55c2dc4417/config/manifests/4.10/local-storage-operator.clusterserviceversion.yaml#L363)
+```
+export DISKMAKER_IMAGE=quay.io/openshift/origin-local-storage-diskmaker:latest
+export KUBE_RBAC_PROXY_IMAGE=quay.io/openshift/origin-kube-rbac-proxy:latest
+export PRIORITY_CLASS_NAME=openshift-user-critical
+```
+
+4. Define LSO namespace as env variable
+```
+export WATCH_NAMESPACE=openshift-local-storage
+```
+
+5. Scale down the operator (on remote cluster)
+```
+oc scale --replicas=0 deployment.apps/local-storage-operator -n openshift-local-storage
+```
+
+6. Run the operator locally
+```
+~> ./_output/bin/local-storage-operator -kubeconfig=$KUBECONFIG
+```
+
 ## Automatic creation of operator, bundle and index images
 
 All the images including operator, diskmaker, bundle and index images can be created in one shot using following command:
