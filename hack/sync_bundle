@@ -97,8 +97,7 @@ class SyncBundle
     end
 
     if content =~ /yum\s+install/ && sources_are_private.call()
-      puts "Dockerfile #{dockerfile} appears to have yum install and is using private image"
-      exit(1)
+      warn "Dockerfile #{dockerfile} appears to have yum install and is using private image"
     end
   end
 
