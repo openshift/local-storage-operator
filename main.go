@@ -27,14 +27,6 @@ import (
 
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
-	zaplog "go.uber.org/zap"
-	apiruntime "k8s.io/apimachinery/pkg/runtime"
-	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
-	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
-	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/healthz"
-	"sigs.k8s.io/controller-runtime/pkg/log/zap"
-
 	localv1 "github.com/openshift/local-storage-operator/api/v1"
 	localv1alpha1 "github.com/openshift/local-storage-operator/api/v1alpha1"
 	"github.com/openshift/local-storage-operator/common"
@@ -42,7 +34,15 @@ import (
 	lvdcontroller "github.com/openshift/local-storage-operator/controllers/localvolumediscovery"
 	lvscontroller "github.com/openshift/local-storage-operator/controllers/localvolumeset"
 	nodedaemoncontroller "github.com/openshift/local-storage-operator/controllers/nodedaemon"
+	"github.com/openshift/local-storage-operator/internal/utils"
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
+	zaplog "go.uber.org/zap"
+	apiruntime "k8s.io/apimachinery/pkg/runtime"
+	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/healthz"
+	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	//+kubebuilder:scaffold:imports
 )
 
@@ -93,13 +93,20 @@ func main() {
 		setupLog.Error(err, "Failed to get watch namespace")
 		os.Exit(1)
 	}
-	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
+
+	restConfig := ctrl.GetConfigOrDie()
+	le := utils.GetLeaderElectionConfig(restConfig, enableLeaderElection)
+
+	mgr, err := ctrl.NewManager(restConfig, ctrl.Options{
 		Namespace:              namespace,
 		Scheme:                 scheme,
 		MetricsBindAddress:     metricsAddr,
 		Port:                   9443,
 		HealthProbeBindAddress: probeAddr,
 		LeaderElection:         enableLeaderElection,
+		RenewDeadline:          &le.RenewDeadline.Duration,
+		RetryPeriod:            &le.RetryPeriod.Duration,
+		LeaseDuration:          &le.LeaseDuration.Duration,
 		LeaderElectionID:       "98d5776d.storage.openshift.io",
 	})
 	if err != nil {

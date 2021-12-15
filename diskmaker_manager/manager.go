@@ -11,7 +11,6 @@ import (
 	diskmakerControllerLvSet "github.com/openshift/local-storage-operator/diskmaker/controllers/lvset"
 	"github.com/openshift/local-storage-operator/localmetrics"
 	"github.com/pkg/errors"
-	"github.com/prometheus/common/log"
 	"github.com/spf13/cobra"
 	zaplog "go.uber.org/zap"
 	apiruntime "k8s.io/apimachinery/pkg/runtime"
@@ -62,7 +61,7 @@ func startManager(cmd *cobra.Command, args []string) error {
 
 	namespace, err := common.GetWatchNamespace()
 	if err != nil {
-		log.Error(err, "Failed to get watch namespace")
+		setupLog.Error(err, "Failed to get watch namespace")
 		return err
 	}
 
@@ -115,7 +114,7 @@ func startManager(cmd *cobra.Command, args []string) error {
 	// Start the Cmd
 	stopChan := signals.SetupSignalHandler()
 	if err := mgr.Start(stopChan); err != nil {
-		log.Error(err, "manager exited non-zero")
+		setupLog.Error(err, "manager exited non-zero")
 		return err
 	}
 	return nil

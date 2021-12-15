@@ -9,7 +9,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"github.com/prometheus/common/log"
+	"k8s.io/klog"
 )
 
 const (
@@ -71,7 +71,7 @@ func (b *configBuilder) Build() error {
 		b.config.metricsRegisterer, promhttp.HandlerFor(b.config.metricsGatherer, promhttp.HandlerOpts{}),
 	)
 
-	log.Info(fmt.Sprintf("Port: %s", b.config.metricsPort))
+	klog.Infof("Port: %s", b.config.metricsPort)
 	metricsPort := fmt.Sprintf(":%s", b.config.metricsPort)
 	if free := isPortFree(metricsPort); !free {
 		return fmt.Errorf("port %s is not free", b.config.metricsPort)
