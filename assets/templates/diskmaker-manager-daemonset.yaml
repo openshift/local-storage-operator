@@ -61,7 +61,7 @@ spec:
         - --upstream=http://127.0.0.1:8383/
         - --tls-cert-file=/etc/tls/private/tls.crt
         - --tls-private-key-file=/etc/tls/private/tls.key
-        image: quay.io/openshift/origin-kube-rbac-proxy:latest
+        image: ${RBAC_PROXY_IMAGE}
         imagePullPolicy: IfNotPresent
         name: kube-rbac-proxy
         ports:

@@ -45,6 +45,7 @@ func TestMutateAggregatedSpecTemplates(t *testing.T) {
 		[]string{
 			"${OBJECT_NAMESPACE}", "new-namespace",
 			"${CONTAINER_IMAGE}", common.GetDiskMakerImage(),
+			"${RBAC_PROXY_IMAGE}", common.GetKubeRBACProxyImage(),
 			"${PRIORITY_CLASS_NAME}", "",
 		},
 	)
