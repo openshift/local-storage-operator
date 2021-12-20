@@ -165,6 +165,7 @@ func getDiskMakerDiscoveryDSMutateFn(request reconcile.Request,
 			[]string{
 				"${OBJECT_NAMESPACE}", request.Namespace,
 				"${CONTAINER_IMAGE}", common.GetDiskMakerImage(),
+				"${RBAC_PROXY_IMAGE}", common.GetKubeRBACProxyImage(),
 			},
 		)
 		if err != nil {

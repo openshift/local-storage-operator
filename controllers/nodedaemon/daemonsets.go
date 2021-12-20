@@ -72,6 +72,7 @@ func getDiskMakerDSMutateFn(
 			[]string{
 				"${OBJECT_NAMESPACE}", request.Namespace,
 				"${CONTAINER_IMAGE}", common.GetDiskMakerImage(),
+				"${RBAC_PROXY_IMAGE}", common.GetKubeRBACProxyImage(),
 				"${PRIORITY_CLASS_NAME}", os.Getenv("PRIORITY_CLASS_NAME"),
 			},
 		)
