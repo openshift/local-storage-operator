@@ -7,7 +7,6 @@ import (
 
 	localv1 "github.com/openshift/local-storage-operator/api/v1"
 	"github.com/openshift/local-storage-operator/api/v1alpha1"
-	"github.com/prometheus/common/log"
 
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -42,18 +41,18 @@ type sdkAPIUpdater struct {
 func NewAPIUpdater(scheme *runtime.Scheme) (ApiUpdater, error) {
 	recorder, err := getEventRecorder(scheme)
 	if err != nil {
-		log.Error(err, "failed to get event recorder")
+		klog.Error(err, "failed to get event recorder")
 		return &sdkAPIUpdater{}, err
 	}
 
 	config, err := config.GetConfig()
 	if err != nil {
-		log.Error(err, "failed to get rest.config")
+		klog.Error(err, "failed to get rest.config")
 		return &sdkAPIUpdater{}, err
 	}
 	crClient, err := client.New(config, client.Options{})
 	if err != nil {
-		log.Error(err, "failed to create controller-runtime client")
+		klog.Error(err, "failed to create controller-runtime client")
 		return &sdkAPIUpdater{}, err
 	}
 
@@ -68,12 +67,12 @@ func getEventRecorder(scheme *runtime.Scheme) (record.EventRecorder, error) {
 	var recorder record.EventRecorder
 	config, err := config.GetConfig()
 	if err != nil {
-		log.Error(err, "failed to get rest.config")
+		klog.Error(err, "failed to get rest.config")
 		return recorder, err
 	}
 	kubeClient, err := kubernetes.NewForConfig(config)
 	if err != nil {
-		log.Error(err, "could not build kubeclient")
+		klog.Error(err, "could not build kubeclient")
 	}
 	eventBroadcaster := record.NewBroadcaster()
 	eventBroadcaster.StartLogging(klog.Infof)
