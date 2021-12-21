@@ -86,6 +86,7 @@ func (r *LocalVolumeReconciler) deregisterLVFromStorageClass(lv localv1.LocalVol
 //+kubebuilder:rbac:groups=storage.k8s.io,resources=storageclasses,verbs=*
 //+kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=clusterroles;clusterrolebindings;rolebindings,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups="",resources=nodes,verbs=get;list;watch
+//+kubebuilder:rbac:groups=config.openshift.io,resources=infrastructures,verbs=get;list;watch
 
 func (r *LocalVolumeReconciler) Reconcile(ctx context.Context, request ctrl.Request) (ctrl.Result, error) {
 	logger := r.Log.WithValues("request.Namespace", request.Namespace, "Request.Name", request.Name)
