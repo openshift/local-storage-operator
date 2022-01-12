@@ -88,7 +88,7 @@ func TestNewDiscoveryResultInstance(t *testing.T) {
 		expected         v1alpha1.LocalVolumeDiscoveryResult
 	}{
 		{
-			label:            "Case 1: node name less than 63 characters",
+			label:            "Case 1: node name less than 253 characters",
 			nodeName:         "node1",
 			namespace:        "local-storage",
 			parentObjectName: "diskmaker-discvoery-123",
@@ -111,16 +111,16 @@ func TestNewDiscoveryResultInstance(t *testing.T) {
 			},
 		},
 		{
-			label:            "Case 2: node name greater than 63 characters",
-			nodeName:         "192.168.1.27.ec2.internal.node-name-greater-than-63-characters",
+			label:            "Case 2: node name greater than 253 characters",
+			nodeName:         "192.168.1.27.ec2.internal.node-name-greater-than-253-characters-1234567890.1234567890.1234567890.1234567890.1234567890.1234567890.1234567890.1234567890.1234567890.1234567890.1234567890.1234567890.1234567890.1234567890.1234567890.1234567890.1234567890.1234567890.1234567890",
 			namespace:        "default",
 			parentObjectName: "diskmaker-discvoery-456",
 			parentObjectUID:  "f288b336-434e-4939-b742-9d8fd232a56c",
 			expected: v1alpha1.LocalVolumeDiscoveryResult{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      "discovery-result-18ece452ed7782c7cc0eaea565398631",
+					Name:      "discovery-result-d57ec549800941f89ed17bbfcd013459",
 					Namespace: "default",
-					Labels:    map[string]string{"discovery-result-node": "192.168.1.27.ec2.internal.node-name-greater-than-63-characters"},
+					Labels:    map[string]string{"discovery-result-node": "192.168.1.27.ec2.internal.node-name-greater-than-253-characters-1234567890.1234567890.1234567890.1234567890.1234567890.1234567890.1234567890.1234567890.1234567890.1234567890.1234567890.1234567890.1234567890.1234567890.1234567890.1234567890.1234567890.1234567890.1234567890"},
 					OwnerReferences: []metav1.OwnerReference{
 						{
 							Name: "diskmaker-discvoery-456",
@@ -129,7 +129,7 @@ func TestNewDiscoveryResultInstance(t *testing.T) {
 					},
 				},
 				Spec: v1alpha1.LocalVolumeDiscoveryResultSpec{
-					NodeName: "192.168.1.27.ec2.internal.node-name-greater-than-63-characters",
+					NodeName: "192.168.1.27.ec2.internal.node-name-greater-than-253-characters-1234567890.1234567890.1234567890.1234567890.1234567890.1234567890.1234567890.1234567890.1234567890.1234567890.1234567890.1234567890.1234567890.1234567890.1234567890.1234567890.1234567890.1234567890.1234567890",
 				},
 			},
 		},
@@ -155,7 +155,7 @@ func TestTruncateNodeName(t *testing.T) {
 		{
 			label:    "Case 1: node name is equal to 68 chars",
 			input:    "k8s-worker-1234567890.this.is.a.very.very.long.node.name.example.com",
-			expected: "discovery-result-801a3ba95fe6ce6a3bd879552ca2a8b0",
+			expected: "discovery-result-k8s-worker-1234567890.this.is.a.very.very.long.node.name.example.com",
 		},
 		{
 			label:    "Case 2: node name is equal to 5 chars",
@@ -166,6 +166,11 @@ func TestTruncateNodeName(t *testing.T) {
 			label:    "Case 3: node name is equal to 47 chars",
 			input:    "k8s-worker-500.this.is.a.not.so.long.name",
 			expected: "discovery-result-k8s-worker-500.this.is.a.not.so.long.name",
+		},
+		{
+			label:    "Case 4: node name is equal to 256 chars",
+			input:    "k8s-worker-1234567890.1234567890.1234567890.1234567890.1234567890.1234567890.1234567890.1234567890.1234567890.1234567890.1234567890.1234567890.1234567890.1234567890.1234567890.1234567890.1234567890.1234567890.1234567890.very.very.long.node.name.example.com",
+			expected: "discovery-result-5705c7b58bd04799d9ab6aadbde0db3e",
 		},
 	}
 
