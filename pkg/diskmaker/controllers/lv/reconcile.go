@@ -33,7 +33,7 @@ import (
 // It also ensures that only stable device names are used.
 
 var (
-	checkDuration = 5 * time.Second
+	checkDuration = 60 * time.Second
 	diskByIDPath  = "/dev/disk/by-id/*"
 )
 
