@@ -105,9 +105,9 @@ func hash(s string) string {
 // truncateNodeName hashes the nodeName. This is done because some resource types require their names
 // to follow the DNS label standard where names can contain utmost 63 characters.
 func truncateNodeName(format, nodeName string) string {
-	if len(nodeName)+len(fmt.Sprintf(format, "")) > validation.DNS1035LabelMaxLength {
+	if len(nodeName)+len(fmt.Sprintf(format, "")) > validation.DNS1123SubdomainMaxLength {
 		hashed := hash(nodeName)
-		klog.Infof("format and nodeName longer than %d chars, nodeName %s will be %s", validation.DNS1035LabelMaxLength, nodeName, hashed)
+		klog.Infof("format and nodeName longer than %d chars, nodeName %s will be %s", validation.DNS1123SubdomainMaxLength, nodeName, hashed)
 		nodeName = hashed
 	}
 	return fmt.Sprintf(format, nodeName)
