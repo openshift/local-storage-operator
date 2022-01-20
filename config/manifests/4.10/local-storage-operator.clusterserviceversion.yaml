@@ -16,7 +16,7 @@ metadata:
             "storageClassDevices": [
               {
                 "devicePaths": [
-                  "/dev/disk/by-id/ata-crucial",
+                  "/dev/disk/by-id/ata-crucial"
                 ],
                 "fsType": "ext4",
                 "storageClassName": "foobar",
