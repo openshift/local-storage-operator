@@ -37,6 +37,7 @@ import (
 	"github.com/openshift/local-storage-operator/internal/utils"
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	zaplog "go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 	apiruntime "k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -80,6 +81,7 @@ func main() {
 	opts := zap.Options{
 		Development: true,
 		ZapOpts:     []zaplog.Option{zaplog.AddCaller()},
+		TimeEncoder: zapcore.ISO8601TimeEncoder,
 	}
 
 	opts.BindFlags(flag.CommandLine)

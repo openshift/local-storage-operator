@@ -13,6 +13,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
 	zaplog "go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 	apiruntime "k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -41,6 +42,7 @@ func startManager(cmd *cobra.Command, args []string) error {
 	opts := zap.Options{
 		Development: true,
 		ZapOpts:     []zaplog.Option{zaplog.AddCaller()},
+		TimeEncoder: zapcore.ISO8601TimeEncoder,
 	}
 	opts.BindFlags(flag.CommandLine)
 	flag.Set("alsologtostderr", "true")
