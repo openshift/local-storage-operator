@@ -16,7 +16,6 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
-	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
@@ -134,7 +133,6 @@ func newFakeLocalVolumeDiscoveryReconciler(t *testing.T, objs ...runtime.Object)
 	return &LocalVolumeDiscoveryReconciler{
 		Client: client,
 		Scheme: scheme,
-		Log:    logf.Log.WithName("controller_localvolumediscovery_test"),
 	}
 }
 

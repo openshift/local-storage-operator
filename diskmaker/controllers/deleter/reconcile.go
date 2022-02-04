@@ -5,12 +5,12 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/go-logr/logr"
 	"github.com/openshift/local-storage-operator/common"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/util/workqueue"
+	"k8s.io/klog/v2"
 	"k8s.io/utils/mount"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
@@ -43,9 +43,7 @@ func init() {
 // The Controller will requeue the Request to be processed again if the returned error is non-nil or
 // Result.Requeue is true, otherwise upon completion it will remove the work from the queue.
 func (r *DeleteReconciler) Reconcile(ctx context.Context, request ctrl.Request) (ctrl.Result, error) {
-
-	deleteLogger := r.Log.WithValues("Request.Namespace", request.Namespace, "Request.Name", request.Name)
-	deleteLogger.Info("Looking for released PVs to clean up")
+	klog.InfoS("Looking for released PVs to cleanup", "namespace", request.Namespace, "name", request.Name)
 	// enqueue if cache is not initialized
 	// and if any pv has phase == Releaseds
 
@@ -53,7 +51,7 @@ func (r *DeleteReconciler) Reconcile(ctx context.Context, request ctrl.Request) 
 	cm := &corev1.ConfigMap{}
 	err := r.Client.Get(ctx, types.NamespacedName{Name: common.ProvisionerConfigMapName, Namespace: request.Namespace}, cm)
 	if err != nil {
-		deleteLogger.Error(err, "could not get provisioner configmap")
+		klog.ErrorS(err, "could not get provisioner configmap")
 		return ctrl.Result{}, err
 	}
 
@@ -82,8 +80,7 @@ func (r *DeleteReconciler) Reconcile(ctx context.Context, request ctrl.Request) 
 			return ctrl.Result{}, err
 		}
 		r.runtimeConfig.Name = common.GetProvisionedByValue(*r.runtimeConfig.Node)
-		deleteLogger.Info("first run", "provisionerName", r.runtimeConfig.Name)
-		deleteLogger.Info("initializing PV cache")
+		klog.InfoS("first run, initializing PV cache", "provisionerName", r.runtimeConfig.Name)
 		pvList := &corev1.PersistentVolumeList{}
 		err := r.Client.List(context.TODO(), pvList)
 		if err != nil {
@@ -101,7 +98,7 @@ func (r *DeleteReconciler) Reconcile(ctx context.Context, request ctrl.Request) 
 		r.firstRunOver = true
 	}
 
-	deleteLogger.Info("Deleting Pvs through sig storage deleter")
+	klog.Info("Deleting PVs through sig storage deleter")
 	r.deleter.DeletePVs()
 	return ctrl.Result{RequeueAfter: time.Second * 30}, nil
 }
@@ -120,7 +117,6 @@ type DeleteReconciler struct {
 	// that reads objects from the cache and writes to the apiserver
 	Client         client.Client
 	Scheme         *runtime.Scheme
-	Log            logr.Logger
 	cleanupTracker *provDeleter.CleanupStatusTracker
 	runtimeConfig  *provCommon.RuntimeConfig
 	deleter        *provDeleter.Deleter
@@ -160,32 +156,32 @@ func (r *DeleteReconciler) SetupWithManager(mgr ctrl.Manager, cleanupTracker *pr
 			GenericFunc: func(e event.GenericEvent, q workqueue.RateLimitingInterface) {
 				pv, ok := e.Object.(*corev1.PersistentVolume)
 				if ok {
-					handlePVChange(r.Log, runtimeConfig, pv, q, false)
+					handlePVChange(runtimeConfig, pv, q, false)
 				}
 			},
 			CreateFunc: func(e event.CreateEvent, q workqueue.RateLimitingInterface) {
 				pv, ok := e.Object.(*corev1.PersistentVolume)
 				if ok {
-					handlePVChange(r.Log, runtimeConfig, pv, q, false)
+					handlePVChange(runtimeConfig, pv, q, false)
 				}
 			},
 			UpdateFunc: func(e event.UpdateEvent, q workqueue.RateLimitingInterface) {
 				pv, ok := e.ObjectNew.(*corev1.PersistentVolume)
 				if ok {
-					handlePVChange(r.Log, runtimeConfig, pv, q, false)
+					handlePVChange(runtimeConfig, pv, q, false)
 				}
 			},
 			DeleteFunc: func(e event.DeleteEvent, q workqueue.RateLimitingInterface) {
 				pv, ok := e.Object.(*corev1.PersistentVolume)
 				if ok {
-					handlePVChange(r.Log, runtimeConfig, pv, q, true)
+					handlePVChange(runtimeConfig, pv, q, true)
 				}
 			},
 		}).
 		Complete(r)
 }
 
-func handlePVChange(log logr.Logger, runtimeConfig *provCommon.RuntimeConfig, pv *corev1.PersistentVolume, q workqueue.RateLimitingInterface, isDelete bool) {
+func handlePVChange(runtimeConfig *provCommon.RuntimeConfig, pv *corev1.PersistentVolume, q workqueue.RateLimitingInterface, isDelete bool) {
 
 	// if provisioner name is not known, enqueue to initialize the cache and discover provisioner name
 	if runtimeConfig.Name == "" {
@@ -208,7 +204,7 @@ func handlePVChange(log logr.Logger, runtimeConfig *provCommon.RuntimeConfig, pv
 		addOrUpdatePV(runtimeConfig, *pv)
 	}
 	if pv.Status.Phase == corev1.VolumeReleased {
-		log.Info("found PV with state released", "pvName", pv.Name)
+		klog.InfoS("found PV with state released", "pvName", pv.Name)
 	}
 
 	// enqueue owner

@@ -15,7 +15,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	apiTypes "k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/validation"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 )
 
 // newDiscoveryResultInstance creates spec for the LocalVolumeDiscoveryResult

@@ -24,8 +24,8 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/klog/v2"
 
-	"github.com/go-logr/logr"
 	operatorv1 "github.com/openshift/api/operator/v1"
 	"github.com/openshift/library-go/pkg/operator/resource/resourceread"
 	localv1 "github.com/openshift/local-storage-operator/api/v1"
@@ -67,7 +67,6 @@ type LocalVolumeReconciler struct {
 	apiClient         apiUpdater
 	LvMap             *common.StorageClassOwnerMap
 	controllerVersion string
-	Log               logr.Logger
 }
 
 func (r *LocalVolumeReconciler) deregisterLVFromStorageClass(lv localv1.LocalVolume) {
@@ -89,8 +88,7 @@ func (r *LocalVolumeReconciler) deregisterLVFromStorageClass(lv localv1.LocalVol
 //+kubebuilder:rbac:groups=config.openshift.io,resources=infrastructures,verbs=get;list;watch
 
 func (r *LocalVolumeReconciler) Reconcile(ctx context.Context, request ctrl.Request) (ctrl.Result, error) {
-	logger := r.Log.WithValues("request.Namespace", request.Namespace, "Request.Name", request.Name)
-	logger.Info("Reconciling LocalVolume")
+	klog.InfoS("Reconciling LocalVolume", "namespace", request.Namespace, "name", request.Name)
 	localStorageProvider := &localv1.LocalVolume{}
 
 	err := r.Client.Get(ctx, request.NamespacedName, localStorageProvider)
@@ -98,7 +96,7 @@ func (r *LocalVolumeReconciler) Reconcile(ctx context.Context, request ctrl.Requ
 		if errors.IsNotFound(err) {
 			r.deregisterLVFromStorageClass(*localStorageProvider)
 			// Requested object not found, could have been deleted after reconcile request.
-			logger.Info("requested LocalVolume CR is not found, could have been deleted after the reconcile request")
+			klog.Info("requested LocalVolume CR is not found, could have been deleted after the reconcile request")
 			return ctrl.Result{}, nil
 		}
 		return ctrl.Result{Requeue: true}, err
@@ -131,7 +129,7 @@ func (r *LocalVolumeReconciler) syncLocalVolumeProvider(ctx context.Context, ins
 	}
 
 	if o.Spec.ManagementState != operatorv1.Managed && o.Spec.ManagementState != operatorv1.Force {
-		r.Log.Info("operator is not managing local volumes ", "ManagementState", o.Spec.ManagementState)
+		klog.InfoS("operator is not managing local volumes", "ManagementState", o.Spec.ManagementState)
 		o.Status.State = o.Spec.ManagementState
 		err = r.apiClient.syncStatus(instance, o)
 		if err != nil {
@@ -142,7 +140,7 @@ func (r *LocalVolumeReconciler) syncLocalVolumeProvider(ctx context.Context, ins
 
 	err = r.syncStorageClass(ctx, o)
 	if err != nil {
-		r.Log.Error(err, "failed to create storageClass")
+		klog.ErrorS(err, "failed to create storageClass")
 		return r.addFailureCondition(instance, o, err)
 	}
 
@@ -152,7 +150,7 @@ func (r *LocalVolumeReconciler) syncLocalVolumeProvider(ctx context.Context, ins
 	key := types.NamespacedName{Name: nodedaemon.DiskMakerName, Namespace: o.ObjectMeta.Namespace}
 	err = r.Client.Get(ctx, key, diskMakerDS)
 	if err != nil {
-		r.Log.Error(err, "failed to fetch diskmaker daemonset")
+		klog.ErrorS(err, "failed to fetch diskmaker daemonset")
 		return r.addFailureCondition(instance, o, err)
 	}
 
@@ -172,7 +170,7 @@ func (r *LocalVolumeReconciler) syncLocalVolumeProvider(ctx context.Context, ins
 	o.Status.ObservedGeneration = &o.Generation
 	err = r.apiClient.syncStatus(instance, o)
 	if err != nil {
-		r.Log.Error(err, "error syncing status")
+		klog.ErrorS(err, "error syncing status")
 		return fmt.Errorf("error syncing status: %v", err)
 	}
 	return nil
@@ -190,7 +188,7 @@ func (r *LocalVolumeReconciler) addFailureCondition(oldLv *localv1.LocalVolume, 
 	lv.Status.Conditions = newConditions
 	syncErr := r.apiClient.syncStatus(oldLv, lv)
 	if syncErr != nil {
-		r.Log.Error(syncErr, "error syncing condition")
+		klog.ErrorS(syncErr, "error syncing condition")
 	}
 	return err
 }
@@ -217,7 +215,7 @@ func (r *LocalVolumeReconciler) addSuccessCondition(lv *localv1.LocalVolume) *lo
 }
 
 func (r *LocalVolumeReconciler) cleanupLocalVolumeDeployment(ctx context.Context, lv *localv1.LocalVolume) error {
-	r.Log.Info("Deleting localvolume ", "Namespace-Name", commontypes.LocalVolumeKey(lv))
+	klog.InfoS("Deleting localvolume", "Namespace-Name", commontypes.LocalVolumeKey(lv))
 	boundPVs, releasedPVs, err := commontypes.GetBoundAndReleasedPVs(lv, r.Client)
 	if err != nil {
 		msg := fmt.Sprintf("error listing persistent volumes for localvolume %s: %v", commontypes.LocalVolumeKey(lv), err)
@@ -233,7 +231,7 @@ func (r *LocalVolumeReconciler) cleanupLocalVolumeDeployment(ctx context.Context
 			pvNames += fmt.Sprintf(" %v", pv.Name)
 		}
 
-		r.Log.Info("bound/released PVs found, not removing finalizer ", "PVNames", pvNames)
+		klog.InfoS("bound/released PVs found, not removing finalizer", "pvNames", pvNames)
 		msg := fmt.Sprintf("localvolume %s has bound/released persistentvolumes in use", commontypes.LocalVolumeKey(lv))
 		r.apiClient.recordEvent(lv, corev1.EventTypeWarning, localVolumeDeletionFailed, msg)
 		return fmt.Errorf(msg)
@@ -268,7 +266,7 @@ func (r *LocalVolumeReconciler) syncStorageClass(ctx context.Context, cr *localv
 	removeErrors := r.removeUnExpectedStorageClasses(ctx, cr, expectedStorageClasses)
 	// For now we will ignore errors while removing unexpected storageClasses
 	if removeErrors != nil {
-		r.Log.Error(removeErrors, "error removing unexpected storageclasses ")
+		klog.ErrorS(removeErrors, "error removing unexpected storageclasses")
 	}
 	return nil
 }
@@ -281,7 +279,7 @@ func (r *LocalVolumeReconciler) removeUnExpectedStorageClasses(ctx context.Conte
 	removeErrors := []error{}
 	for _, sc := range list.Items {
 		if !expectedStorageClasses.Has(sc.Name) {
-			r.Log.Info("removing storageClass ", "StorageClass Name", sc.Name)
+			klog.InfoS("removing storageClass", "scName", sc.Name)
 			scDeleteErr := r.Client.Delete(ctx, sc.DeepCopy())
 			if scDeleteErr != nil && !errors.IsNotFound(scDeleteErr) {
 				removeErrors = append(removeErrors, fmt.Errorf("error deleting storageclass %s: %v", sc.Name, scDeleteErr))

@@ -20,7 +20,6 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/go-logr/logr"
 	"github.com/openshift/local-storage-operator/common"
 	"github.com/openshift/local-storage-operator/controllers/nodedaemon"
 	appsv1 "k8s.io/api/apps/v1"
@@ -30,6 +29,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/klog/v2"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -53,7 +53,6 @@ type LocalVolumeSetReconciler struct {
 	// that reads objects from the cache and writes to the apiserver
 	Client   client.Client
 	Scheme   *runtime.Scheme
-	Log      logr.Logger
 	LvSetMap *common.StorageClassOwnerMap
 }
 
@@ -69,8 +68,7 @@ func (r *LocalVolumeSetReconciler) Reconcile(ctx context.Context, request ctrl.R
 }
 
 func (r *LocalVolumeSetReconciler) reconcile(ctx context.Context, request reconcile.Request) (ctrl.Result, error) {
-	volumeSetLogger := r.Log.WithValues("Request.Namespace", request.Namespace, "Request.Name", request.Name)
-	volumeSetLogger.Info("Reconciling LocalVolumeSet")
+	klog.InfoS("Reconciling LocalVolumeSet", "namespace", request.Namespace, "name", request.Name)
 	// Fetch the LocalVolumeSet instance
 	lvSet := &localv1alpha1.LocalVolumeSet{}
 	err := r.Client.Get(ctx, request.NamespacedName, lvSet)
@@ -83,7 +81,7 @@ func (r *LocalVolumeSetReconciler) reconcile(ctx context.Context, request reconc
 			return ctrl.Result{}, nil
 		}
 		// Error reading the object - requeue the request.
-		volumeSetLogger.Error(err, "failed to get localvolumeset")
+		klog.ErrorS(err, "failed to get localvolumeset")
 		return ctrl.Result{}, err
 	}
 
@@ -101,20 +99,20 @@ func (r *LocalVolumeSetReconciler) reconcile(ctx context.Context, request reconc
 
 	err = r.syncStorageClass(ctx, lvSet)
 	if err != nil {
-		volumeSetLogger.Error(err, "failed to sync storageclass")
+		klog.ErrorS(err, "failed to sync storageclass")
 		return ctrl.Result{}, err
 	}
-	volumeSetLogger.Info("updating status")
+	klog.Info("updating status")
 
 	err = r.updateDaemonSetsCondition(ctx, request)
 	if err != nil {
-		volumeSetLogger.Error(err, "failed to update status")
+		klog.ErrorS(err, "failed to set condition")
 		return ctrl.Result{}, err
 	}
 
 	err = r.updateTotalProvisionedDeviceCountStatus(ctx, request)
 	if err != nil {
-		volumeSetLogger.Error(err, "failed to update status")
+		klog.ErrorS(err, "failed to update status")
 		return ctrl.Result{}, err
 	}
 

@@ -16,12 +16,9 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
-	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	provCommon "sigs.k8s.io/sig-storage-local-static-provisioner/pkg/common"
 	provUtil "sigs.k8s.io/sig-storage-local-static-provisioner/pkg/util"
 )
-
-var log = logf.Log.WithName(ComponentName)
 
 func TestCreatePV(t *testing.T) {
 	reclaimPolicyDelete := corev1.PersistentVolumeReclaimDelete
@@ -214,7 +211,6 @@ func TestCreatePV(t *testing.T) {
 			&tc.lv,
 			r.runtimeConfig,
 			r.cleanupTracker,
-			log.WithName("testLogger"),
 			tc.sc,
 			tc.mountPoints,
 			r.Client,
@@ -265,7 +261,6 @@ func TestCreatePV(t *testing.T) {
 			&tc.lv,
 			r.runtimeConfig,
 			r.cleanupTracker,
-			log.WithName("testLogger"),
 			tc.sc,
 			tc.mountPoints,
 			r.Client,
