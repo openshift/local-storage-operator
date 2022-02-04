@@ -7,7 +7,7 @@ import (
 	localv1alpha1 "github.com/openshift/local-storage-operator/api/v1alpha1"
 	"github.com/openshift/local-storage-operator/common"
 	"k8s.io/apimachinery/pkg/api/equality"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
@@ -41,7 +41,7 @@ func (r *LocalVolumeSetReconciler) syncFinalizer(lvSet localv1alpha1.LocalVolume
 					break
 				}
 			}
-			klog.Infof("bound/released PVs found, not removing finalizer %q", pvNames)
+			klog.InfoS("bound/released PVs found, not removing finalizer", "pvNames", pvNames)
 		}
 	}
 

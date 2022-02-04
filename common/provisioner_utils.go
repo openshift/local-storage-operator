@@ -12,7 +12,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/sets"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
@@ -88,13 +88,13 @@ func CreateLocalPV(
 	}
 
 	if cleanupTracker.InProgress(pvName, useJob) {
-		klog.Infof("PV %s is still being cleaned, not going to recreate it", pvName)
+		klog.InfoS("PV is still being cleaned, not going to recreate it", "pvName", pvName)
 		return nil
 	}
 
 	_, _, err = cleanupTracker.RemoveStatus(pvName, useJob)
 	if err != nil {
-		klog.Errorf("failed to remove cleanup status for PV %s: %v", pvName, err)
+		klog.ErrorS(err, "failed to remove cleanup status for PV", "pvName", pvName)
 		return err
 	}
 
@@ -158,8 +158,8 @@ func CreateLocalPV(
 
 	var reclaimPolicy corev1.PersistentVolumeReclaimPolicy
 	if storageClass.ReclaimPolicy == nil {
-		klog.Infof("no ReclaimPolicy set in storageclass %s, "+
-			"defaulting to delete", storageClass.Name)
+		klog.InfoS("no ReclaimPolicy set in storageclass, defaulting to delete",
+			"storageClass", storageClass.Name)
 		reclaimPolicy = corev1.PersistentVolumeReclaimDelete
 	} else {
 		reclaimPolicy = *storageClass.ReclaimPolicy
@@ -191,7 +191,7 @@ func CreateLocalPV(
 
 	existingPV := &corev1.PersistentVolume{ObjectMeta: metav1.ObjectMeta{Name: pvName}}
 
-	klog.Infof("creating PV %s", pvName)
+	klog.InfoS("creating PV", "pvName", pvName)
 	opRes, err := controllerutil.CreateOrUpdate(context.TODO(), client, existingPV, func() error {
 		if existingPV.CreationTimestamp.IsZero() {
 			// operations for create
@@ -202,8 +202,8 @@ func CreateLocalPV(
 		// pv object says block, but the path is fs (the oppposite is fine)
 		if existingPV.Spec.VolumeMode != nil &&
 			*existingPV.Spec.VolumeMode == corev1.PersistentVolumeBlock && actualVolumeMode == corev1.PersistentVolumeFilesystem {
-			err := fmt.Errorf("incorrect Volume Mode: PV requires block mode but path was in fs mode")
-			klog.Errorf("error for PV %s at path %s: %v", pvName, symLinkPath, err)
+			err := fmt.Errorf("PV requires block mode but path was in fs mode")
+			klog.ErrorS(err, "incorrect VolumeMode", "pvName", pvName, "symLinkPath", symLinkPath)
 			runtimeConfig.Recorder.Eventf(existingPV, corev1.EventTypeWarning, provCommon.EventVolumeFailedDelete, err.Error())
 		}
 
@@ -230,7 +230,7 @@ func CreateLocalPV(
 		return nil
 	})
 	if opRes != controllerutil.OperationResultNone {
-		klog.Infof("PV changed, name = %s, status = %s", pvName, opRes)
+		klog.InfoS("PV changed", "pvName", pvName, "status", opRes)
 	}
 
 	return err

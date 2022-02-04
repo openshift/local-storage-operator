@@ -20,7 +20,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/util/workqueue"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 	"k8s.io/utils/mount"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -49,8 +49,7 @@ const (
 // The Controller will requeue the Request to be processed again if the returned error is non-nil or
 // Result.Requeue is true, otherwise upon completion it will remove the work from the queue.
 func (r *LocalVolumeSetReconciler) Reconcile(ctx context.Context, request ctrl.Request) (ctrl.Result, error) {
-	klog.Infof("Reconciling LocalVolumeSet, namespace = %s, name = %s",
-		request.Namespace, request.Name)
+	klog.InfoS("Reconciling LocalVolumeSet", "namespace", request.Namespace, "name", request.Name)
 
 	// Fetch the LocalVolumeSet instance
 	lvset := &localv1alpha1.LocalVolumeSet{}
@@ -81,7 +80,7 @@ func (r *LocalVolumeSetReconciler) Reconcile(ctx context.Context, request ctrl.R
 	// NodeSelectorTerms.MatchExpressions are ORed
 	matches, err := common.NodeSelectorMatchesNodeLabels(r.runtimeConfig.Node, lvset.Spec.NodeSelector)
 	if err != nil {
-		klog.Errorf("failed to match nodeSelector to node labels: %v", err)
+		klog.ErrorS(err, "failed to match nodeSelector to node labels")
 		return ctrl.Result{}, err
 	}
 
@@ -95,7 +94,7 @@ func (r *LocalVolumeSetReconciler) Reconcile(ctx context.Context, request ctrl.R
 	storageClass := &storagev1.StorageClass{}
 	err = r.Client.Get(ctx, types.NamespacedName{Name: storageClassName}, storageClass)
 	if err != nil {
-		klog.Errorf("could not get storageclass: %v", err)
+		klog.ErrorS(err, "could not get storageclass")
 		return ctrl.Result{}, err
 	}
 
@@ -103,7 +102,7 @@ func (r *LocalVolumeSetReconciler) Reconcile(ctx context.Context, request ctrl.R
 	cm := &corev1.ConfigMap{}
 	err = r.Client.Get(ctx, types.NamespacedName{Name: common.ProvisionerConfigMapName, Namespace: request.Namespace}, cm)
 	if err != nil {
-		klog.Errorf("could not get provisioner configmap: %v", err)
+		klog.ErrorS(err, "could not get provisioner configmap")
 		return ctrl.Result{}, err
 	}
 
@@ -159,15 +158,14 @@ func (r *LocalVolumeSetReconciler) Reconcile(ctx context.Context, request ctrl.R
 	for _, blockDevice := range validDevices {
 		symlinkSourcePath, symlinkPath, idExists, err := common.GetSymLinkSourceAndTarget(blockDevice, symLinkDir)
 		if err != nil {
-			klog.Errorf("error discovering symlink source and target "+
-				"for %s: %v", blockDevice.Name, err)
+			klog.ErrorS(err, "error discovering symlink source and target",
+				"blockDevice", blockDevice.Name)
 			continue
 		}
 
 		if !idExists {
-			klog.Info("Using real device path for %s, "+
-				"this could have problems if device name changes",
-				blockDevice.Name)
+			klog.InfoS("Using real device path, this could have problems if device name changes",
+				"blockDevice", blockDevice.Name)
 		}
 
 		// validate MaxDeviceCount
@@ -196,7 +194,7 @@ func (r *LocalVolumeSetReconciler) Reconcile(ctx context.Context, request ctrl.R
 			return ctrl.Result{}, err
 		}
 
-		klog.Infof("provisioning PV for %s", blockDevice.Name)
+		klog.InfoS("provisioning PV", "blockDevice", blockDevice.Name)
 		r.eventReporter.Report(lvset, newDiskEvent(diskmaker.FoundMatchingDisk, "provisioning matching disk", blockDevice.KName, corev1.EventTypeNormal))
 		err = r.provisionPV(lvset, blockDevice, *storageClass, mountPointMap, symlinkSourcePath, symlinkPath, idExists)
 		if err != nil {
@@ -207,32 +205,30 @@ func (r *LocalVolumeSetReconciler) Reconcile(ctx context.Context, request ctrl.R
 			return ctrl.Result{}, fmt.Errorf("could not provision disk: %w", err)
 		}
 
-		klog.Infof("provisioning succeeded for %s", blockDevice.Name)
+		klog.InfoS("provisioning succeeded", "blockDevice", blockDevice.Name)
 	}
 
-	klog.Infof("total devices provisioned for storagecClass %s: %v",
-		storageClassName, totalProvisionedPVs)
+	klog.InfoS("total devices provisioned", "storagecClass", storageClassName, "count", totalProvisionedPVs)
 
 	// update metrics for total persistent volumes provisioned
 	localmetrics.SetLVSProvisionedPVMetric(nodeName, storageClassName, totalProvisionedPVs)
 
 	orphanSymlinkDevices, err := internal.GetOrphanedSymlinks(symLinkDir, validDevices)
 	if err != nil {
-		klog.Errorf("failed to get orphaned symlink devices in current reconcile: %v", err)
+		klog.ErrorS(err, "failed to get orphaned symlink devices in current reconcile")
 	}
 
 	if len(orphanSymlinkDevices) > 0 {
-		klog.Infof("found orphan symlinked devices in current reconcile: %v",
-			orphanSymlinkDevices)
+		klog.InfoS("found orphan symlinked devices in current reconcile",
+			"orphanedDevices", orphanSymlinkDevices)
 	}
 
 	// update metrics for orphaned symlink devices
 	localmetrics.SetLVSOrphanedSymlinksMetric(nodeName, storageClassName, len(orphanSymlinkDevices))
 
 	if len(noMatch) > 0 {
-		klog.Infof("found stale symLink entries, storageClass = %s, "+
-			"paths = %v, directory = %s", storageClassName,
-			noMatch, symLinkDir)
+		klog.InfoS("found stale symLink entries", "storageClass", storageClassName,
+			"paths", noMatch, "directory", symLinkDir)
 	}
 
 	// shorten the requeueTime if there are delayed devices
@@ -266,13 +262,13 @@ DeviceLoop:
 			var err error
 			valid, err = filter(blockDevice, nil)
 			if err != nil {
-				klog.Errorf("filter error, device = %s, filter = %s: %v",
-					blockDevice.Name, name, err)
+				klog.ErrorS(err, "filter error", "device",
+					blockDevice.Name, "filter", name)
 				valid = false
 				continue DeviceLoop
 			} else if !valid {
-				klog.Infof("filter negative, device = %s, filter = %s",
-					blockDevice.Name, name)
+				klog.InfoS("filter negative", "device",
+					blockDevice.Name, "filter", name)
 				continue DeviceLoop
 			}
 		}
@@ -300,17 +296,17 @@ DeviceLoop:
 		for name, matcher := range matcherMap {
 			valid, err := matcher(blockDevice, lvset.Spec.DeviceInclusionSpec)
 			if err != nil {
-				klog.Errorf("match error, device = %s, filter = %s: %v",
-					blockDevice.Name, name, err)
+				klog.ErrorS(err, "match error", "device",
+					blockDevice.Name, "filter", name)
 				valid = false
 				continue DeviceLoop
 			} else if !valid {
-				klog.Infof("match negative, device = %s, filter = %s",
-					blockDevice.Name, name)
+				klog.InfoS("match negative", "device",
+					blockDevice.Name, "filter", name)
 				continue DeviceLoop
 			}
 		}
-		klog.Infof("matched disk %s", blockDevice.Name)
+		klog.InfoS("matched disk", "device", blockDevice.Name)
 		// handle valid disk
 		validDevices = append(validDevices, blockDevice)
 
@@ -384,7 +380,7 @@ func (r *LocalVolumeSetReconciler) provisionPV(
 	unlockFunc := func() {
 		err := pvLock.Unlock()
 		if err != nil {
-			klog.Errorf("failed to unlock device: %v", err)
+			klog.ErrorS(err, "failed to unlock device")
 		}
 	}
 	defer unlockFunc()
@@ -407,11 +403,11 @@ func (r *LocalVolumeSetReconciler) provisionPV(
 		}
 		return nil
 	} else if err != nil || !pvLocked { // locking failed for some other reasion
-		klog.Errorf("not provisioning, could not get lock: %v", err)
+		klog.ErrorS(err, "not provisioning, could not get lock")
 		return err
 	}
 
-	klog.Infof("symlinking source %s to target %s", symlinkSourcePath, symlinkPath)
+	klog.InfoS("symlinking", "sourcePath", symlinkSourcePath, "targetPath", symlinkPath)
 	// create symlink
 	err = os.Symlink(symlinkSourcePath, symlinkPath)
 	if os.IsExist(err) {

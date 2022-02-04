@@ -10,7 +10,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/util/workqueue"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 	"k8s.io/utils/mount"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
@@ -43,9 +43,7 @@ func init() {
 // The Controller will requeue the Request to be processed again if the returned error is non-nil or
 // Result.Requeue is true, otherwise upon completion it will remove the work from the queue.
 func (r *DeleteReconciler) Reconcile(ctx context.Context, request ctrl.Request) (ctrl.Result, error) {
-
-	klog.Infof("Looking for released PVs to cleanup, namespace = %s, name = %s",
-		request.Namespace, request.Name)
+	klog.InfoS("Looking for released PVs to cleanup", "namespace", request.Namespace, "name", request.Name)
 	// enqueue if cache is not initialized
 	// and if any pv has phase == Releaseds
 
@@ -53,7 +51,7 @@ func (r *DeleteReconciler) Reconcile(ctx context.Context, request ctrl.Request) 
 	cm := &corev1.ConfigMap{}
 	err := r.Client.Get(ctx, types.NamespacedName{Name: common.ProvisionerConfigMapName, Namespace: request.Namespace}, cm)
 	if err != nil {
-		klog.Errorf("could not get provisioner configmap: %v", err)
+		klog.ErrorS(err, "could not get provisioner configmap")
 		return ctrl.Result{}, err
 	}
 
@@ -82,8 +80,7 @@ func (r *DeleteReconciler) Reconcile(ctx context.Context, request ctrl.Request) 
 			return ctrl.Result{}, err
 		}
 		r.runtimeConfig.Name = common.GetProvisionedByValue(*r.runtimeConfig.Node)
-		klog.Infof("first run, initializing PV cache for provisioner %s",
-			r.runtimeConfig.Name)
+		klog.InfoS("first run, initializing PV cache", "provisionerName", r.runtimeConfig.Name)
 		pvList := &corev1.PersistentVolumeList{}
 		err := r.Client.List(context.TODO(), pvList)
 		if err != nil {
@@ -207,7 +204,7 @@ func handlePVChange(runtimeConfig *provCommon.RuntimeConfig, pv *corev1.Persiste
 		addOrUpdatePV(runtimeConfig, *pv)
 	}
 	if pv.Status.Phase == corev1.VolumeReleased {
-		klog.Infof("found PV %s with state released", pv.Name)
+		klog.InfoS("found PV with state released", "pvName", pv.Name)
 	}
 
 	// enqueue owner

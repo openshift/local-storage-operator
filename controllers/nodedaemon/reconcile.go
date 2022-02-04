@@ -17,7 +17,7 @@ import (
 	"k8s.io/apimachinery/pkg/selection"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -75,8 +75,7 @@ func (r *DaemonReconciler) Reconcile(ctx context.Context, request ctrl.Request) 
 	if err != nil {
 		return ctrl.Result{}, err
 	} else if opResult == controllerutil.OperationResultUpdated || opResult == controllerutil.OperationResultCreated {
-		klog.Infof("provisioner configmap %s changed, result = %s",
-			configMap.GetName(), opResult)
+		klog.InfoS("provisioner configmap", "configMap", configMap.GetName(), "result", opResult)
 	}
 
 	// enable service and servicemonitor for diskmaker daemonset
@@ -84,7 +83,7 @@ func (r *DaemonReconciler) Reconcile(ctx context.Context, request ctrl.Request) 
 	metricsExportor := localmetrics.NewExporter(ctx, r.Client, common.DiskMakerServiceName, request.Namespace, common.DiskMakerMetricsServingCert,
 		ownerRefs, serviceLabels)
 	if err := metricsExportor.EnableMetricsExporter(); err != nil {
-		klog.Errorf("failed to create service and servicemonitors for diskmaker daemonset: %v", err)
+		klog.ErrorS(err, "failed to create service and servicemonitors for diskmaker daemonset")
 		return ctrl.Result{}, err
 	}
 
@@ -95,8 +94,7 @@ func (r *DaemonReconciler) Reconcile(ctx context.Context, request ctrl.Request) 
 	if err != nil {
 		return ctrl.Result{}, err
 	} else if opResult == controllerutil.OperationResultUpdated || opResult == controllerutil.OperationResultCreated {
-		klog.Infof("daemonset %s changed, result = %s",
-			ds.GetName(), opResult)
+		klog.InfoS("daemonset changed", "dsName", ds.GetName(), "opResult", opResult)
 	}
 
 	return ctrl.Result{}, err
@@ -112,7 +110,7 @@ func (r *DaemonReconciler) cleanupOldDaemonsets(ctx context.Context, namespace s
 	dsList := &appsv1.DaemonSetList{}
 	err := r.Client.List(ctx, dsList, client.InNamespace(namespace))
 	if err != nil {
-		klog.Errorf("could not list daemonsets: %v", err)
+		klog.ErrorS(err, "could not list daemonsets")
 		return err
 	}
 	appNameList := make([]string, 0)
@@ -126,8 +124,7 @@ func (r *DaemonReconciler) cleanupOldDaemonsets(ctx context.Context, namespace s
 			// delete daemonset
 			err = r.Client.Delete(ctx, &ds)
 			if err != nil && !(errors.IsNotFound(err) || errors.IsGone(err)) {
-				klog.Errorf("could not delete daemonset %q: %v",
-					ds.Name, err)
+				klog.ErrorS(err, "could not delete daemonset", "dsName", ds.Name)
 				return err
 			}
 		}
@@ -137,16 +134,14 @@ func (r *DaemonReconciler) cleanupOldDaemonsets(ctx context.Context, namespace s
 	provisioner := &appsv1.DaemonSet{}
 	err = r.Client.Get(ctx, types.NamespacedName{Name: oldProvisionerName, Namespace: namespace}, provisioner)
 	if err == nil { // provisioner daemonset found
-		klog.Infof("old daemonset %q found, cleaning up", oldProvisionerName)
+		klog.InfoS("old daemonset found, cleaning up", "oldProvisionerName", oldProvisionerName)
 		err = r.Client.Delete(ctx, provisioner)
 		if err != nil && !(errors.IsNotFound(err) || errors.IsGone(err)) {
-			klog.Errorf("could not delete daemonset %q: %v",
-				oldProvisionerName, err)
+			klog.ErrorS(err, "could not delete daemonset", "oldProvisionerName", oldProvisionerName)
 			return err
 		}
 	} else if !(errors.IsNotFound(err) || errors.IsGone(err)) { // unknown error
-		klog.Errorf("could not fetch daemonset %q to clean it up: %v",
-			oldProvisionerName, err)
+		klog.ErrorS(err, "could not fetch daemonset to clean it up", "oldProvisionerName", oldProvisionerName)
 		return err
 	}
 
@@ -164,8 +159,8 @@ func (r *DaemonReconciler) cleanupOldDaemonsets(ctx context.Context, namespace s
 		appNameList = append(appNameList, oldProvisionerName)
 		requirement, err := labels.NewRequirement(appLabelKey, selection.In, appNameList)
 		if err != nil {
-			klog.Errorf("failed to compose labelselector requirement "+
-				"%q in (%v): %v", appLabelKey, appNameList, err)
+			klog.ErrorS(err, "failed to compose labelselector requirement",
+				"appLabelKey", appLabelKey, "appNameList", appNameList)
 			return false, err
 		}
 		selector := labels.NewSelector().Add(*requirement)
@@ -180,7 +175,7 @@ func (r *DaemonReconciler) cleanupOldDaemonsets(ctx context.Context, namespace s
 		return allGone, nil
 	})
 	if err != nil {
-		klog.Errorf("could not determine that old provisioner pods were deleted: %v", err)
+		klog.ErrorS(err, "could not determine that old provisioner pods were deleted")
 		return err
 	}
 	r.deletedStaticProvisioner = true
