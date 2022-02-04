@@ -33,7 +33,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	v1helper "k8s.io/component-helpers/scheduling/corev1"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -66,8 +66,7 @@ type LocalVolumeDiscoveryReconciler struct {
 // The Controller will requeue the Request to be processed again if the returned error is non-nil or
 // Result.Requeue is true, otherwise upon completion it will remove the work from the queue.
 func (r *LocalVolumeDiscoveryReconciler) Reconcile(ctx context.Context, request ctrl.Request) (ctrl.Result, error) {
-	klog.Infof("Reconciling LocalVolumeDiscovery, namespace = %s, name = %s",
-		request.Namespace, request.Name)
+	klog.InfoS("Reconciling LocalVolumeDiscovery", "namespace", request.Namespace, "name", request.Name)
 
 	// Fetch the LocalVolumeDiscovery instance
 	instance := &localv1alpha1.LocalVolumeDiscovery{}
@@ -88,8 +87,7 @@ func (r *LocalVolumeDiscoveryReconciler) Reconcile(ctx context.Context, request 
 	metricsExportor := localmetrics.NewExporter(ctx, r.Client, common.DiscoveryServiceName, instance.Namespace, common.DiscoveryMetricsServingCert,
 		getOwnerRefs(instance), serviceLabels)
 	if err := metricsExportor.EnableMetricsExporter(); err != nil {
-		klog.Errorf("failed to create service and servicemonitors, "+
-			"object %s: %v", instance.Name, err)
+		klog.ErrorS(err, "failed to create service and servicemonitors", "object", instance.Name)
 		return ctrl.Result{}, err
 	}
 
@@ -106,12 +104,12 @@ func (r *LocalVolumeDiscoveryReconciler) Reconcile(ctx context.Context, request 
 			return ctrl.Result{}, err
 		}
 	} else if opResult == controllerutil.OperationResultUpdated || opResult == controllerutil.OperationResultCreated {
-		klog.Infof("daemonset %s changed with result %s", ds.GetName(), opResult)
+		klog.InfoS("daemonset changed", "daemonset.Name", ds.GetName(), "op.Result", opResult)
 	}
 
 	desiredDaemons, readyDaemons, err := r.getDaemonSetStatus(ctx, instance.Namespace)
 	if err != nil {
-		klog.Errorf("failed to get discovery daemonset: %v", err)
+		klog.ErrorS(err, "failed to get discovery daemonset")
 		return ctrl.Result{}, err
 	}
 
@@ -145,7 +143,7 @@ func (r *LocalVolumeDiscoveryReconciler) Reconcile(ctx context.Context, request 
 	klog.Info("deleting orphan discovery result instances")
 	err = r.deleteOrphanDiscoveryResults(ctx, instance)
 	if err != nil {
-		klog.Errorf("failed to delete orphan discovery results: %v", err)
+		klog.ErrorS(err, "failed to delete orphan discovery results")
 		return ctrl.Result{}, err
 	}
 

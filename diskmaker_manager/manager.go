@@ -17,7 +17,7 @@ import (
 	apiruntime "k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/manager/signals"
@@ -62,7 +62,7 @@ func startManager(cmd *cobra.Command, args []string) error {
 
 	namespace, err := common.GetWatchNamespace()
 	if err != nil {
-		klog.Errorf("failed to get watch namespace: %v", err)
+		klog.ErrorS(err, "failed to get watch namespace")
 		return err
 	}
 
@@ -73,7 +73,7 @@ func startManager(cmd *cobra.Command, args []string) error {
 		LeaderElection:     false,
 	})
 	if err != nil {
-		klog.Errorf("failed to create controller manager: %v", err)
+		klog.ErrorS(err, "failed to create controller manager")
 		return err
 	}
 
@@ -81,7 +81,7 @@ func startManager(cmd *cobra.Command, args []string) error {
 		Client: mgr.GetClient(),
 		Scheme: mgr.GetScheme(),
 	}).SetupWithManager(mgr, &provDeleter.CleanupStatusTracker{ProcTable: provDeleter.NewProcTable()}, provCache.NewVolumeCache()); err != nil {
-		klog.Errorf("unable to create LocalVolume diskmaker controller: %v", err)
+		klog.ErrorS(err, "unable to create LocalVolume diskmaker controller")
 		return err
 	}
 
@@ -89,7 +89,7 @@ func startManager(cmd *cobra.Command, args []string) error {
 		Client: mgr.GetClient(),
 		Scheme: mgr.GetScheme(),
 	}).SetupWithManager(mgr, &provDeleter.CleanupStatusTracker{ProcTable: provDeleter.NewProcTable()}, provCache.NewVolumeCache()); err != nil {
-		klog.Errorf("unable to create LocalVolumeSet diskmaker controller: %v", err)
+		klog.ErrorS(err, "unable to create LocalVolumeSet diskmaker controller")
 		return err
 	}
 
@@ -97,7 +97,7 @@ func startManager(cmd *cobra.Command, args []string) error {
 		Client: mgr.GetClient(),
 		Scheme: mgr.GetScheme(),
 	}).SetupWithManager(mgr, &provDeleter.CleanupStatusTracker{ProcTable: provDeleter.NewProcTable()}, provCache.NewVolumeCache()); err != nil {
-		klog.Errorf("unable to create Deleter diskmaker controller: %v", err)
+		klog.ErrorS(err, "unable to create Deleter diskmaker controller: %v")
 		return err
 	}
 
@@ -112,7 +112,7 @@ func startManager(cmd *cobra.Command, args []string) error {
 	// Start the Cmd
 	stopChan := signals.SetupSignalHandler()
 	if err := mgr.Start(stopChan); err != nil {
-		klog.Errorf("manager exited non-zero: %v", err)
+		klog.ErrorS(err, "manager exited non-zero")
 		return err
 	}
 	return nil

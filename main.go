@@ -25,7 +25,7 @@ import (
 	// to ensure that exec-entrypoint and run can make use of them.
 
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 
 	localv1 "github.com/openshift/local-storage-operator/api/v1"
 	localv1alpha1 "github.com/openshift/local-storage-operator/api/v1alpha1"
@@ -91,7 +91,7 @@ func main() {
 
 	namespace, err := common.GetWatchNamespace()
 	if err != nil {
-		klog.Errorf("Failed to get watch namespace: %v", err)
+		klog.ErrorS(err, "Failed to get watch namespace")
 		os.Exit(1)
 	}
 
@@ -111,7 +111,7 @@ func main() {
 		LeaderElectionID:       "98d5776d.storage.openshift.io",
 	})
 	if err != nil {
-		klog.Errorf("unable to start manager: %v", err)
+		klog.ErrorS(err, "unable to start manager")
 		os.Exit(1)
 	}
 
@@ -120,14 +120,14 @@ func main() {
 		LvMap:  &common.StorageClassOwnerMap{},
 		Scheme: mgr.GetScheme(),
 	}).SetupWithManager(mgr); err != nil {
-		klog.Errorf("unable to create LocalVolume controller: %v", err)
+		klog.ErrorS(err, "unable to create LocalVolume controller")
 		os.Exit(1)
 	}
 	if err = (&lvdcontroller.LocalVolumeDiscoveryReconciler{
 		Client: mgr.GetClient(),
 		Scheme: mgr.GetScheme(),
 	}).SetupWithManager(mgr); err != nil {
-		klog.Errorf("unable to create LocalVolumeDiscovery controller: %v", err)
+		klog.ErrorS(err, "unable to create LocalVolumeDiscovery controller")
 		os.Exit(1)
 	}
 	if err = (&lvscontroller.LocalVolumeSetReconciler{
@@ -135,7 +135,7 @@ func main() {
 		LvSetMap: &common.StorageClassOwnerMap{},
 		Scheme:   mgr.GetScheme(),
 	}).SetupWithManager(mgr); err != nil {
-		klog.Errorf("unable to create LocalVolumeSet controller: %v", err)
+		klog.ErrorS(err, "unable to create LocalVolumeSet controller")
 		os.Exit(1)
 	}
 
@@ -143,23 +143,23 @@ func main() {
 		Client: mgr.GetClient(),
 		Scheme: mgr.GetScheme(),
 	}).SetupWithManager(mgr); err != nil {
-		klog.Errorf("unable to create NodeDaemon controller: %v", err)
+		klog.ErrorS(err, "unable to create NodeDaemon controller")
 		os.Exit(1)
 	}
 	//+kubebuilder:scaffold:builder
 
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
-		klog.Errorf("unable to set up health check: %v", err)
+		klog.ErrorS(err, "unable to set up health check")
 		os.Exit(1)
 	}
 	if err := mgr.AddReadyzCheck("readyz", healthz.Ping); err != nil {
-		klog.Errorf("unable to set up ready check: %v", err)
+		klog.ErrorS(err, "unable to set up ready check")
 		os.Exit(1)
 	}
 
 	klog.Info("starting manager")
 	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
-		klog.Errorf("problem running manager: %v", err)
+		klog.ErrorS(err, "problem running manager")
 		os.Exit(1)
 	}
 }

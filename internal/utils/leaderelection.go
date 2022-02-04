@@ -7,7 +7,7 @@ import (
 	"github.com/openshift/library-go/pkg/config/clusterstatus"
 	"github.com/openshift/library-go/pkg/config/leaderelection"
 	"k8s.io/client-go/rest"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 )
 
 // GetLeaderElectionConfig returns leader election configs defaults based on the cluster topology
