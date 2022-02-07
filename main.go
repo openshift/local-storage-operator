@@ -18,7 +18,6 @@ package main
 
 import (
 	"flag"
-	"fmt"
 	"os"
 	"runtime"
 
@@ -26,6 +25,7 @@ import (
 	// to ensure that exec-entrypoint and run can make use of them.
 
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
+	"k8s.io/klog/v2"
 
 	localv1 "github.com/openshift/local-storage-operator/api/v1"
 	localv1alpha1 "github.com/openshift/local-storage-operator/api/v1alpha1"
@@ -37,6 +37,7 @@ import (
 	"github.com/openshift/local-storage-operator/internal/utils"
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	zaplog "go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 	apiruntime "k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -47,9 +48,8 @@ import (
 )
 
 var (
-	scheme   = apiruntime.NewScheme()
-	setupLog = ctrl.Log.WithName("setup")
-	version  = "unknown"
+	scheme  = apiruntime.NewScheme()
+	version = "unknown"
 )
 
 func init() {
@@ -61,9 +61,9 @@ func init() {
 }
 
 func printVersion() {
-	setupLog.Info(fmt.Sprintf("Go Version: %s", runtime.Version()))
-	setupLog.Info(fmt.Sprintf("Go OS/Arch: %s/%s", runtime.GOOS, runtime.GOARCH))
-	setupLog.Info(fmt.Sprintf("local-storage-operator Version: %s", version))
+	klog.Infof("Go Version: %s", runtime.Version())
+	klog.Infof("Go OS/Arch: %s/%s", runtime.GOOS, runtime.GOARCH)
+	klog.Infof("local-storage-diskmaker Version: %v", version)
 }
 
 func main() {
@@ -76,21 +76,22 @@ func main() {
 	flag.BoolVar(&enableLeaderElection, "leader-elect", false,
 		"Enable leader election for controller manager. "+
 			"Enabling this will ensure there is only one active controller manager.")
+	klogFlags := flag.NewFlagSet("local-storage-operator", flag.ExitOnError)
+	klog.InitFlags(klogFlags)
 	opts := zap.Options{
 		Development: true,
 		ZapOpts:     []zaplog.Option{zaplog.AddCaller()},
+		TimeEncoder: zapcore.ISO8601TimeEncoder,
 	}
 
 	opts.BindFlags(flag.CommandLine)
 	flag.Parse()
-
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
-
 	printVersion()
 
 	namespace, err := common.GetWatchNamespace()
 	if err != nil {
-		setupLog.Error(err, "Failed to get watch namespace")
+		klog.ErrorS(err, "Failed to get watch namespace")
 		os.Exit(1)
 	}
 
@@ -110,59 +111,55 @@ func main() {
 		LeaderElectionID:       "98d5776d.storage.openshift.io",
 	})
 	if err != nil {
-		setupLog.Error(err, "unable to start manager")
+		klog.ErrorS(err, "unable to start manager")
 		os.Exit(1)
 	}
 
 	if err = (&lvcontroller.LocalVolumeReconciler{
 		Client: mgr.GetClient(),
-		Log:    ctrl.Log.WithName("controllers").WithName("LocalVolume"),
 		LvMap:  &common.StorageClassOwnerMap{},
 		Scheme: mgr.GetScheme(),
 	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "LocalVolume")
+		klog.ErrorS(err, "unable to create LocalVolume controller")
 		os.Exit(1)
 	}
 	if err = (&lvdcontroller.LocalVolumeDiscoveryReconciler{
 		Client: mgr.GetClient(),
-		Log:    ctrl.Log.WithName("controllers").WithName("LocalVolumeDiscovery"),
 		Scheme: mgr.GetScheme(),
 	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "LocalVolumeDiscovery")
+		klog.ErrorS(err, "unable to create LocalVolumeDiscovery controller")
 		os.Exit(1)
 	}
 	if err = (&lvscontroller.LocalVolumeSetReconciler{
 		Client:   mgr.GetClient(),
-		Log:      ctrl.Log.WithName("controllers").WithName("LocalVolumeSet"),
 		LvSetMap: &common.StorageClassOwnerMap{},
 		Scheme:   mgr.GetScheme(),
 	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "LocalVolumeSet")
+		klog.ErrorS(err, "unable to create LocalVolumeSet controller")
 		os.Exit(1)
 	}
 
 	if err = (&nodedaemoncontroller.DaemonReconciler{
 		Client: mgr.GetClient(),
-		Log:    ctrl.Log.WithName("controllers").WithName("NodeDaemon"),
 		Scheme: mgr.GetScheme(),
 	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "NodeDaemon")
+		klog.ErrorS(err, "unable to create NodeDaemon controller")
 		os.Exit(1)
 	}
 	//+kubebuilder:scaffold:builder
 
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
-		setupLog.Error(err, "unable to set up health check")
+		klog.ErrorS(err, "unable to set up health check")
 		os.Exit(1)
 	}
 	if err := mgr.AddReadyzCheck("readyz", healthz.Ping); err != nil {
-		setupLog.Error(err, "unable to set up ready check")
+		klog.ErrorS(err, "unable to set up ready check")
 		os.Exit(1)
 	}
 
-	setupLog.Info("starting manager")
+	klog.Info("starting manager")
 	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
-		setupLog.Error(err, "problem running manager")
+		klog.ErrorS(err, "problem running manager")
 		os.Exit(1)
 	}
 }

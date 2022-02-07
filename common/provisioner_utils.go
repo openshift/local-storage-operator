@@ -6,14 +6,13 @@ import (
 	"hash/fnv"
 	"path/filepath"
 
-	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/sets"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
@@ -43,7 +42,6 @@ func CreateLocalPV(
 	obj runtime.Object,
 	runtimeConfig *provCommon.RuntimeConfig,
 	cleanupTracker *provDeleter.CleanupStatusTracker,
-	devLogger logr.Logger,
 	storageClass storagev1.StorageClass,
 	mountPointMap sets.String,
 	client client.Client,
@@ -60,8 +58,6 @@ func CreateLocalPV(
 	}
 
 	pvName := GeneratePVName(filepath.Base(symLinkPath), runtimeConfig.Node.Name, storageClass.Name)
-
-	pvLogger := devLogger.WithValues("pv.Name", pvName)
 
 	nodeAffinity := &corev1.VolumeNodeAffinity{
 		Required: &corev1.NodeSelector{
@@ -92,13 +88,13 @@ func CreateLocalPV(
 	}
 
 	if cleanupTracker.InProgress(pvName, useJob) {
-		pvLogger.Info("PV is still being cleaned, not going to recreate it")
+		klog.InfoS("PV is still being cleaned, not going to recreate it", "pvName", pvName)
 		return nil
 	}
 
 	_, _, err = cleanupTracker.RemoveStatus(pvName, useJob)
 	if err != nil {
-		pvLogger.Error(err, "expected status exists and fail to remove cleanup status")
+		klog.ErrorS(err, "failed to remove cleanup status for PV", "pvName", pvName)
 		return err
 	}
 
@@ -162,7 +158,8 @@ func CreateLocalPV(
 
 	var reclaimPolicy corev1.PersistentVolumeReclaimPolicy
 	if storageClass.ReclaimPolicy == nil {
-		devLogger.Error(fmt.Errorf("no ReclaimPolicy set in storageclass"), "defaulting to delete")
+		klog.InfoS("no ReclaimPolicy set in storageclass, defaulting to delete",
+			"storageClass", storageClass.Name)
 		reclaimPolicy = corev1.PersistentVolumeReclaimDelete
 	} else {
 		reclaimPolicy = *storageClass.ReclaimPolicy
@@ -194,7 +191,7 @@ func CreateLocalPV(
 
 	existingPV := &corev1.PersistentVolume{ObjectMeta: metav1.ObjectMeta{Name: pvName}}
 
-	pvLogger.Info("creating")
+	klog.InfoS("creating PV", "pvName", pvName)
 	opRes, err := controllerutil.CreateOrUpdate(context.TODO(), client, existingPV, func() error {
 		if existingPV.CreationTimestamp.IsZero() {
 			// operations for create
@@ -205,8 +202,8 @@ func CreateLocalPV(
 		// pv object says block, but the path is fs (the oppposite is fine)
 		if existingPV.Spec.VolumeMode != nil &&
 			*existingPV.Spec.VolumeMode == corev1.PersistentVolumeBlock && actualVolumeMode == corev1.PersistentVolumeFilesystem {
-			err := fmt.Errorf("incorrect Volume Mode: PV requires block mode but path was in fs mode")
-			pvLogger.Error(err, "pvName", pvName, "filePath", symLinkPath)
+			err := fmt.Errorf("PV requires block mode but path was in fs mode")
+			klog.ErrorS(err, "incorrect VolumeMode", "pvName", pvName, "symLinkPath", symLinkPath)
 			runtimeConfig.Recorder.Eventf(existingPV, corev1.EventTypeWarning, provCommon.EventVolumeFailedDelete, err.Error())
 		}
 
@@ -233,7 +230,7 @@ func CreateLocalPV(
 		return nil
 	})
 	if opRes != controllerutil.OperationResultNone {
-		pvLogger.Info("pv changed", "operation", opRes)
+		klog.InfoS("PV changed", "pvName", pvName, "status", opRes)
 	}
 
 	return err
