@@ -102,7 +102,7 @@ func (r *LocalVolumeSetReconciler) addAvailabilityConditions(ctx context.Context
 	if err != nil {
 		if kerrors.IsNotFound(err) {
 			r.LvSetMap.DeregisterStorageClassOwner(lvSet.Spec.StorageClassName, request.NamespacedName)
-			return result, err
+			return result, reconcileError
 		}
 		return result, fmt.Errorf("failed to get localvolumeset: %w", err)
 	}
