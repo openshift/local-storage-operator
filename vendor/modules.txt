@@ -782,7 +782,7 @@ sigs.k8s.io/controller-runtime/pkg/webhook/internal/metrics
 sigs.k8s.io/kube-storage-version-migrator/pkg/apis/migration/v1alpha1
 # sigs.k8s.io/sig-storage-lib-external-provisioner/v6 v6.3.0
 sigs.k8s.io/sig-storage-lib-external-provisioner/v6/util
-# sigs.k8s.io/sig-storage-local-static-provisioner v0.0.0-20210414025242-c96e27d784e2
+# sigs.k8s.io/sig-storage-local-static-provisioner v0.0.0-20210414025242-c96e27d784e2 => github.com/openshift/sig-storage-local-static-provisioner v0.0.0-20220225145136-3b8b7b586be4
 ## explicit
 sigs.k8s.io/sig-storage-local-static-provisioner/pkg/cache
 sigs.k8s.io/sig-storage-local-static-provisioner/pkg/common
@@ -825,3 +825,4 @@ sigs.k8s.io/yaml
 # k8s.io/sample-apiserver => k8s.io/sample-apiserver v0.22.1
 # github.com/docker/docker => github.com/moby/moby v0.7.3-0.20190826074503-38ab9da00309
 # bitbucket.org/ww/goautoneg => github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822
+# sigs.k8s.io/sig-storage-local-static-provisioner => github.com/openshift/sig-storage-local-static-provisioner v0.0.0-20220225145136-3b8b7b586be4
