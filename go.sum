@@ -487,6 +487,8 @@ github.com/openshift/client-go v0.0.0-20210831095141-e19a065e79f7 h1:iKVU5Tga76k
 github.com/openshift/client-go v0.0.0-20210831095141-e19a065e79f7/go.mod h1:D6P8RkJzwdkBExQdYUnkWcePMLBiTeCCr8eQIQ7y8Dk=
 github.com/openshift/library-go v0.0.0-20210831102543-1a08f0c3bd9a h1:6g4CJQBz+mcxdFk19QBplFf6y1xqe1LaUNzTqMOpCS0=
 github.com/openshift/library-go v0.0.0-20210831102543-1a08f0c3bd9a/go.mod h1:ymWf1TnfDo0LgjihlqHzYoy81pTY5wBL+bl3XdHNEYI=
+github.com/openshift/sig-storage-local-static-provisioner v0.0.0-20220225145136-3b8b7b586be4 h1:o0itOuTBB6f7FiZav2oZhcbmo+GsgWxickVxgeVTJUk=
+github.com/openshift/sig-storage-local-static-provisioner v0.0.0-20220225145136-3b8b7b586be4/go.mod h1:9IxtMY+/rQNK7aQ3MMjrcMOF8M/ej8ql9493/24p/KU=
 github.com/opentracing/opentracing-go v1.1.0/go.mod h1:UkNAQd3GIcIGf0SeVgPpRdFStlNbqXla1AfSYxPUl2o=
 github.com/pascaldekloe/goe v0.0.0-20180627143212-57f6aae5913c/go.mod h1:lzWF7FIEvWOWxwDKqyGYQf6ZUaNfKdP144TG7ZOy1lc=
 github.com/pborman/uuid v1.2.1 h1:+ZZIw58t/ozdjRaXh/3awHfmWRbzYxJoAdNJxe/3pvw=
@@ -1102,8 +1104,6 @@ sigs.k8s.io/kustomize/kustomize/v4 v4.2.0/go.mod h1:MOkR6fmhwG7hEDRXBYELTi5GSFcL
 sigs.k8s.io/kustomize/kyaml v0.11.0/go.mod h1:GNMwjim4Ypgp/MueD3zXHLRJEjz7RvtPae0AwlvEMFM=
 sigs.k8s.io/sig-storage-lib-external-provisioner/v6 v6.3.0 h1:IKsKAnscMyIOqyl8s8V7guTcx0QBEa6OT57EPgAgpmM=
 sigs.k8s.io/sig-storage-lib-external-provisioner/v6 v6.3.0/go.mod h1:DhZ52sQMJHW21+JXyA2LRUPRIxKnrNrwh+QFV+2tVA4=
-sigs.k8s.io/sig-storage-local-static-provisioner v0.0.0-20210414025242-c96e27d784e2 h1:Vc+R6zCUygflwVMuNdFhmKPFBclAQhSTVxGZ/eoJJdI=
-sigs.k8s.io/sig-storage-local-static-provisioner v0.0.0-20210414025242-c96e27d784e2/go.mod h1:9IxtMY+/rQNK7aQ3MMjrcMOF8M/ej8ql9493/24p/KU=
 sigs.k8s.io/structured-merge-diff/v4 v4.0.2/go.mod h1:bJZC9H9iH24zzfZ/41RGcq60oK1F7G282QMXDPYydCw=
 sigs.k8s.io/structured-merge-diff/v4 v4.1.2 h1:Hr/htKFmJEbtMgS/UD0N+gtgctAqz81t3nu+sPzynno=
 sigs.k8s.io/structured-merge-diff/v4 v4.1.2/go.mod h1:j/nl6xW8vLS49O8YvXW1ocPhZawJtm+Yrr7PPRQ0Vg4=
