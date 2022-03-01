@@ -1,8 +1,8 @@
 approvers:
   - jsafrane
   - tsmetana
+  - dobsonj
   - gnufied
   - bertinatto
-  - dobsonj
 component: "Storage"
 subcomponent: "Local Storage Operator"
