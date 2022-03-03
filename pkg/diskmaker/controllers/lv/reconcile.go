@@ -15,14 +15,25 @@ import (
 	"github.com/openshift/local-storage-operator/pkg/common"
 	"github.com/openshift/local-storage-operator/pkg/internal"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/client-go/util/workqueue"
+	"k8s.io/kubernetes/pkg/util/mount"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller"
+	"sigs.k8s.io/controller-runtime/pkg/event"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+	"sigs.k8s.io/controller-runtime/pkg/source"
+	provCache "sigs.k8s.io/sig-storage-local-static-provisioner/pkg/cache"
 	staticProvisioner "sigs.k8s.io/sig-storage-local-static-provisioner/pkg/common"
+	provDeleter "sigs.k8s.io/sig-storage-local-static-provisioner/pkg/deleter"
+	provUtil "sigs.k8s.io/sig-storage-local-static-provisioner/pkg/util"
 
 	localv1 "github.com/openshift/local-storage-operator/pkg/apis/local/v1"
 	storagev1 "k8s.io/api/storage/v1"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/klog"
@@ -52,14 +63,30 @@ type DiskLocation struct {
 	blockDevice      internal.BlockDevice
 }
 
-func (r *ReconcileLocalVolume) createSymlink(
+type LocalVolumeReconciler struct {
+	Client          client.Client
+	Scheme          *runtime.Scheme
+	symlinkLocation string
+	localVolume     *localv1.LocalVolume
+	eventSync       *eventReporter
+	cacheSynced     bool
+
+	// static-provisioner stuff
+	cleanupTracker *provDeleter.CleanupStatusTracker
+	runtimeConfig  *provCommon.RuntimeConfig
+	deleter        *provDeleter.Deleter
+	fsInterface    FileSystemInterface
+	firstRunOver   bool
+}
+
+func (r *LocalVolumeReconciler) createSymlink(
 	deviceNameLocation DiskLocation,
 	symLinkSource string,
 	symLinkTarget string,
 	devLogger logr.Logger,
 	idExists bool,
 ) bool {
-	diskDevPath, err := filepath.EvalSymlinks(symLinkSource)
+	diskDevPath, err := r.fsInterface.evalSymlink(symLinkSource)
 	if err != nil {
 		klog.ErrorS(err, "failed to evaluated symlink", "symlinkSource", symLinkSource)
 		return false
@@ -451,7 +478,9 @@ func (r *ReconcileLocalVolume) findMatchingDisks(diskConfig *DiskConfig, blockDe
 				//   /dev/sda
 				//   /dev/sandbox/local
 				//   /dev/disk/by-path/ww-xx
-				diskDevPath, err := filepath.EvalSymlinks(devicePath)
+
+				// Evaluate symlink in case the device is a LVM device or something else
+				diskDevPath, err := r.fsInterface.evalSymlink(devicePath)
 				if err != nil {
 					msg := fmt.Sprintf("unable to add disk %s to local disk pool: %v", devicePath, err)
 					r.eventSync.Report(r.localVolume, newDiskEvent(ErrorFindingMatchingDisk, msg, devicePath, corev1.EventTypeWarning))
@@ -472,26 +501,7 @@ func (r *ReconcileLocalVolume) findMatchingDisks(diskConfig *DiskConfig, blockDe
 					addDiskToMap(storageClass, matchedDeviceID, diskDevPath, devicePath, blockDevice)
 					continue
 				} else {
-					if !fileExists(diskDevPath) {
-						klog.InfoS("no file exists for device", "diskName", diskDevPath)
-						continue
-					}
-					fileMode, err := os.Stat(diskDevPath)
-					if err != nil {
-						klog.ErrorS(err, "error attempting to stat", "diskName", diskDevPath)
-						continue
-					}
-					msg := ""
-					switch mode := fileMode.Mode(); {
-					case mode.IsDir():
-						msg = fmt.Sprintf("unable to use directory %v for local storage. Use an existing block device.", diskDevPath)
-					case mode.IsRegular():
-						msg = fmt.Sprintf("unable to use regular file %v for local storage. Use an existing block device.", diskDevPath)
-					default:
-						msg = fmt.Sprintf("unable to find matching disk %v", diskDevPath)
-					}
-					r.eventSync.Report(r.localVolume, newDiskEvent(ErrorFindingMatchingDisk, msg, diskDevPath, corev1.EventTypeWarning))
-					klog.Info(msg)
+					r.logDeviceError(diskDevPath)
 				}
 			}
 		}
@@ -500,9 +510,32 @@ func (r *ReconcileLocalVolume) findMatchingDisks(diskConfig *DiskConfig, blockDe
 	return blockDeviceMap, nil
 }
 
+func (r *LocalVolumeReconciler) logDeviceError(diskDevPath string) {
+	if !fileExists(diskDevPath) {
+		klog.InfoS("no file exists for device", "diskName", diskDevPath)
+		return
+	}
+	fileMode, err := os.Stat(diskDevPath)
+	if err != nil {
+		klog.ErrorS(err, "error attempting to stat", "diskName", diskDevPath)
+		return
+	}
+	msg := ""
+	switch mode := fileMode.Mode(); {
+	case mode.IsDir():
+		msg = fmt.Sprintf("unable to use directory %v for local storage. Use an existing block device.", diskDevPath)
+	case mode.IsRegular():
+		msg = fmt.Sprintf("unable to use regular file %v for local storage. Use an existing block device.", diskDevPath)
+	default:
+		msg = fmt.Sprintf("unable to find matching disk %v", diskDevPath)
+	}
+	r.eventSync.Report(r.localVolume, newDiskEvent(ErrorFindingMatchingDisk, msg, diskDevPath, corev1.EventTypeWarning))
+	klog.Info(msg)
+}
+
 // findDeviceByID finds device ID and return device name(such as sda, sdb) and complete deviceID path
-func (r *ReconcileLocalVolume) findDeviceByID(deviceID string) (string, string, error) {
-	diskDevPath, err := filepath.EvalSymlinks(deviceID)
+func (r *LocalVolumeReconciler) findDeviceByID(deviceID string) (string, string, error) {
+	diskDevPath, err := r.fsInterface.evalSymlink(deviceID)
 	if err != nil {
 		return "", "", fmt.Errorf("unable to find device at path %s: %v", deviceID, err)
 	}
@@ -511,7 +544,7 @@ func (r *ReconcileLocalVolume) findDeviceByID(deviceID string) (string, string, 
 
 func (r *ReconcileLocalVolume) findStableDeviceID(diskName string, allDisks []string) (string, error) {
 	for _, diskIDPath := range allDisks {
-		diskDevPath, err := filepath.EvalSymlinks(diskIDPath)
+		diskDevPath, err := r.fsInterface.evalSymlink(diskIDPath)
 		if err != nil {
 			continue
 		}
@@ -539,4 +572,105 @@ func fileExists(filename string) bool {
 		return false
 	}
 	return true
+}
+
+type LocalVolumeReconciler struct {
+	Client          client.Client
+	Scheme          *runtime.Scheme
+	symlinkLocation string
+	localVolume     *localv1.LocalVolume
+	eventSync       *eventReporter
+
+	// static-provisioner stuff
+	cleanupTracker *provDeleter.CleanupStatusTracker
+	runtimeConfig  *provCommon.RuntimeConfig
+	deleter        *provDeleter.Deleter
+	firstRunOver   bool
+}
+
+func (r *LocalVolumeReconciler) SetupWithManager(mgr ctrl.Manager, cleanupTracker *provDeleter.CleanupStatusTracker, pvCache *provCache.VolumeCache) error {
+	clientSet := provCommon.SetupClient()
+	runtimeConfig := &provCommon.RuntimeConfig{
+		UserConfig: &provCommon.UserConfig{
+			Node: &corev1.Node{},
+		},
+		Cache:    pvCache,
+		VolUtil:  provUtil.NewVolumeUtil(),
+		APIUtil:  provUtil.NewAPIUtil(clientSet),
+		Client:   clientSet,
+		Recorder: mgr.GetEventRecorderFor(ComponentName),
+		Mounter:  mount.New("" /* defaults to /bin/mount */),
+		// InformerFactory: , // unused
+
+	}
+
+	r.runtimeConfig = runtimeConfig
+	r.eventSync = newEventReporter(mgr.GetEventRecorderFor(ComponentName))
+	r.symlinkLocation = common.GetLocalDiskLocationPath()
+	r.deleter = provDeleter.NewDeleter(runtimeConfig, cleanupTracker)
+	r.cleanupTracker = cleanupTracker
+	r.fsInterface = NixFileSystemInterface{}
+
+	return ctrl.NewControllerManagedBy(mgr).
+		// set to 1 explicitly, despite it being the default, as the reconciler is not thread-safe.
+		WithOptions(controller.Options{MaxConcurrentReconciles: 1}).
+		For(&localv1.LocalVolume{}).
+		Watches(&source.Kind{Type: &corev1.ConfigMap{}}, &handler.EnqueueRequestForOwner{
+			OwnerType: &localv1.LocalVolume{},
+		}).
+		// TODO enqueue for the PV based on labels
+		// update owned-pv cache used by provisioner/deleter libs and enequeue owning lvset
+		// only the cache is touched by
+		Watches(&source.Kind{Type: &corev1.PersistentVolume{}}, &handler.Funcs{
+			GenericFunc: func(e event.GenericEvent, q workqueue.RateLimitingInterface) {
+				pv, ok := e.Object.(*corev1.PersistentVolume)
+				if ok {
+					handlePVChange(runtimeConfig, pv, q, false)
+				}
+			},
+			CreateFunc: func(e event.CreateEvent, q workqueue.RateLimitingInterface) {
+				pv, ok := e.Object.(*corev1.PersistentVolume)
+				if ok {
+					handlePVChange(runtimeConfig, pv, q, false)
+				}
+			},
+			UpdateFunc: func(e event.UpdateEvent, q workqueue.RateLimitingInterface) {
+				pv, ok := e.ObjectNew.(*corev1.PersistentVolume)
+				if ok {
+					handlePVChange(runtimeConfig, pv, q, false)
+				}
+			},
+			DeleteFunc: func(e event.DeleteEvent, q workqueue.RateLimitingInterface) {
+				pv, ok := e.Object.(*corev1.PersistentVolume)
+				if ok {
+					handlePVChange(runtimeConfig, pv, q, true)
+				}
+			},
+		}).
+		Complete(r)
+}
+
+func handlePVChange(runtimeConfig *provCommon.RuntimeConfig, pv *corev1.PersistentVolume, q workqueue.RateLimitingInterface, isDelete bool) {
+	// skip non-owned PVs
+	name, found := pv.Annotations[provCommon.AnnProvisionedBy]
+	if !found || name != runtimeConfig.Name {
+		return
+	}
+
+	// enqueue owner
+	ownerName, found := pv.Labels[common.PVOwnerNameLabel]
+	if !found {
+		return
+	}
+	ownerNamespace, found := pv.Labels[common.PVOwnerNamespaceLabel]
+	if !found {
+		return
+	}
+	ownerKind, found := pv.Labels[common.PVOwnerKindLabel]
+	if ownerKind != localv1.LocalVolumeKind || !found {
+		return
+	}
+
+	q.Add(reconcile.Request{NamespacedName: types.NamespacedName{Name: ownerName, Namespace: ownerNamespace}})
+
 }
