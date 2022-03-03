@@ -76,6 +76,22 @@ type DiskLocation struct {
 	blockDevice      internal.BlockDevice
 }
 
+type LocalVolumeReconciler struct {
+	Client          client.Client
+	Scheme          *runtime.Scheme
+	symlinkLocation string
+	localVolume     *localv1.LocalVolume
+	eventSync       *eventReporter
+	cacheSynced     bool
+
+	// static-provisioner stuff
+	cleanupTracker *provDeleter.CleanupStatusTracker
+	runtimeConfig  *provCommon.RuntimeConfig
+	deleter        *provDeleter.Deleter
+	fsInterface    FileSystemInterface
+	firstRunOver   bool
+}
+
 func (r *LocalVolumeReconciler) createSymlink(
 	deviceNameLocation DiskLocation,
 	symLinkSource string,
@@ -83,7 +99,7 @@ func (r *LocalVolumeReconciler) createSymlink(
 	devLogger logr.Logger,
 	idExists bool,
 ) bool {
-	diskDevPath, err := filepath.EvalSymlinks(symLinkSource)
+	diskDevPath, err := r.fsInterface.evalSymlink(symLinkSource)
 	if err != nil {
 		klog.ErrorS(err, "failed to evaluated symlink", "symlinkSource", symLinkSource)
 		return false
@@ -508,7 +524,9 @@ func (r *LocalVolumeReconciler) findMatchingDisks(diskConfig *DiskConfig, blockD
 				//   /dev/sda
 				//   /dev/sandbox/local
 				//   /dev/disk/by-path/ww-xx
-				diskDevPath, err := filepath.EvalSymlinks(devicePath)
+
+				// Evaluate symlink in case the device is a LVM device or something else
+				diskDevPath, err := r.fsInterface.evalSymlink(devicePath)
 				if err != nil {
 					msg := fmt.Sprintf("unable to add disk %s to local disk pool: %v", devicePath, err)
 					r.eventSync.Report(r.localVolume, newDiskEvent(ErrorFindingMatchingDisk, msg, devicePath, corev1.EventTypeWarning))
@@ -529,26 +547,7 @@ func (r *LocalVolumeReconciler) findMatchingDisks(diskConfig *DiskConfig, blockD
 					addDiskToMap(storageClass, matchedDeviceID, diskDevPath, devicePath, blockDevice)
 					continue
 				} else {
-					if !fileExists(diskDevPath) {
-						klog.InfoS("no file exists for device", "diskName", diskDevPath)
-						continue
-					}
-					fileMode, err := os.Stat(diskDevPath)
-					if err != nil {
-						klog.ErrorS(err, "error attempting to stat", "diskName", diskDevPath)
-						continue
-					}
-					msg := ""
-					switch mode := fileMode.Mode(); {
-					case mode.IsDir():
-						msg = fmt.Sprintf("unable to use directory %v for local storage. Use an existing block device.", diskDevPath)
-					case mode.IsRegular():
-						msg = fmt.Sprintf("unable to use regular file %v for local storage. Use an existing block device.", diskDevPath)
-					default:
-						msg = fmt.Sprintf("unable to find matching disk %v", diskDevPath)
-					}
-					r.eventSync.Report(r.localVolume, newDiskEvent(ErrorFindingMatchingDisk, msg, diskDevPath, corev1.EventTypeWarning))
-					klog.Info(msg)
+					r.logDeviceError(diskDevPath)
 				}
 			}
 		}
@@ -557,9 +556,32 @@ func (r *LocalVolumeReconciler) findMatchingDisks(diskConfig *DiskConfig, blockD
 	return blockDeviceMap, nil
 }
 
+func (r *LocalVolumeReconciler) logDeviceError(diskDevPath string) {
+	if !fileExists(diskDevPath) {
+		klog.InfoS("no file exists for device", "diskName", diskDevPath)
+		return
+	}
+	fileMode, err := os.Stat(diskDevPath)
+	if err != nil {
+		klog.ErrorS(err, "error attempting to stat", "diskName", diskDevPath)
+		return
+	}
+	msg := ""
+	switch mode := fileMode.Mode(); {
+	case mode.IsDir():
+		msg = fmt.Sprintf("unable to use directory %v for local storage. Use an existing block device.", diskDevPath)
+	case mode.IsRegular():
+		msg = fmt.Sprintf("unable to use regular file %v for local storage. Use an existing block device.", diskDevPath)
+	default:
+		msg = fmt.Sprintf("unable to find matching disk %v", diskDevPath)
+	}
+	r.eventSync.Report(r.localVolume, newDiskEvent(ErrorFindingMatchingDisk, msg, diskDevPath, corev1.EventTypeWarning))
+	klog.Info(msg)
+}
+
 // findDeviceByID finds device ID and return device name(such as sda, sdb) and complete deviceID path
 func (r *LocalVolumeReconciler) findDeviceByID(deviceID string) (string, string, error) {
-	diskDevPath, err := filepath.EvalSymlinks(deviceID)
+	diskDevPath, err := r.fsInterface.evalSymlink(deviceID)
 	if err != nil {
 		return "", "", fmt.Errorf("unable to find device at path %s: %v", deviceID, err)
 	}
@@ -568,7 +590,7 @@ func (r *LocalVolumeReconciler) findDeviceByID(deviceID string) (string, string,
 
 func (r *LocalVolumeReconciler) findStableDeviceID(diskName string, allDisks []string) (string, error) {
 	for _, diskIDPath := range allDisks {
-		diskDevPath, err := filepath.EvalSymlinks(diskIDPath)
+		diskDevPath, err := r.fsInterface.evalSymlink(diskIDPath)
 		if err != nil {
 			continue
 		}
@@ -633,6 +655,7 @@ func (r *LocalVolumeReconciler) SetupWithManager(mgr ctrl.Manager, cleanupTracke
 	r.symlinkLocation = common.GetLocalDiskLocationPath()
 	r.deleter = provDeleter.NewDeleter(runtimeConfig, cleanupTracker)
 	r.cleanupTracker = cleanupTracker
+	r.fsInterface = NixFileSystemInterface{}
 
 	return ctrl.NewControllerManagedBy(mgr).
 		// set to 1 explicitly, despite it being the default, as the reconciler is not thread-safe.
