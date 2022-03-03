@@ -15,25 +15,14 @@ import (
 	"github.com/openshift/local-storage-operator/pkg/common"
 	"github.com/openshift/local-storage-operator/pkg/internal"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/client-go/util/workqueue"
-	"k8s.io/kubernetes/pkg/util/mount"
-	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/controller"
-	"sigs.k8s.io/controller-runtime/pkg/event"
-	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
-	"sigs.k8s.io/controller-runtime/pkg/source"
-	provCache "sigs.k8s.io/sig-storage-local-static-provisioner/pkg/cache"
 	staticProvisioner "sigs.k8s.io/sig-storage-local-static-provisioner/pkg/common"
-	provDeleter "sigs.k8s.io/sig-storage-local-static-provisioner/pkg/deleter"
-	provUtil "sigs.k8s.io/sig-storage-local-static-provisioner/pkg/util"
 
 	localv1 "github.com/openshift/local-storage-operator/pkg/apis/local/v1"
 	storagev1 "k8s.io/api/storage/v1"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/klog"
@@ -63,23 +52,7 @@ type DiskLocation struct {
 	blockDevice      internal.BlockDevice
 }
 
-type LocalVolumeReconciler struct {
-	Client          client.Client
-	Scheme          *runtime.Scheme
-	symlinkLocation string
-	localVolume     *localv1.LocalVolume
-	eventSync       *eventReporter
-	cacheSynced     bool
-
-	// static-provisioner stuff
-	cleanupTracker *provDeleter.CleanupStatusTracker
-	runtimeConfig  *provCommon.RuntimeConfig
-	deleter        *provDeleter.Deleter
-	fsInterface    FileSystemInterface
-	firstRunOver   bool
-}
-
-func (r *LocalVolumeReconciler) createSymlink(
+func (r *ReconcileLocalVolume) createSymlink(
 	deviceNameLocation DiskLocation,
 	symLinkSource string,
 	symLinkTarget string,
@@ -88,7 +61,7 @@ func (r *LocalVolumeReconciler) createSymlink(
 ) bool {
 	diskDevPath, err := r.fsInterface.evalSymlink(symLinkSource)
 	if err != nil {
-		klog.ErrorS(err, "failed to evaluated symlink", "symlinkSource", symLinkSource)
+		klog.Errorf("failed to evaluated symlink %s: %v+", symLinkSource, err)
 		return false
 	}
 
@@ -372,7 +345,8 @@ func (r *ReconcileLocalVolume) Reconcile(request reconcile.Request) (reconcile.R
 
 	for storageClassName, deviceArray := range deviceMap {
 		for _, deviceNameLocation := range deviceArray {
-			blockDeviceList = append(blockDeviceList, deviceNameLocation.blockDevice)
+			devLogger := reqLogger.WithValues("Device.Name", deviceNameLocation.diskNamePath)
+			symLinkDirPath := path.Join(r.symlinkLocation, storageClassName)
 			source, target, idExists, err := getSymlinkSourceAndTarget(deviceNameLocation, symLinkDirPath)
 			if err != nil {
 				reqLogger.Error(err, "failed to get symlink source and target")
@@ -493,8 +467,7 @@ func (r *ReconcileLocalVolume) findMatchingDisks(diskConfig *DiskConfig, blockDe
 					matchedDeviceID, err := r.findStableDeviceID(baseDeviceName, allDiskIds)
 					// This means no /dev/disk/by-id entry was created for requested device.
 					if err != nil {
-						klog.ErrorS(err, "unable to find disk ID for local pool",
-							"diskName", diskDevPath)
+						klog.Errorf("unable to find disk ID for local pool %s: %+v", diskDevPath, err)
 						addDiskToMap(storageClass, "", diskDevPath, devicePath, blockDevice)
 						continue
 					}
@@ -510,14 +483,14 @@ func (r *ReconcileLocalVolume) findMatchingDisks(diskConfig *DiskConfig, blockDe
 	return blockDeviceMap, nil
 }
 
-func (r *LocalVolumeReconciler) logDeviceError(diskDevPath string) {
+func (r *ReconcileLocalVolume) logDeviceError(diskDevPath string) {
 	if !fileExists(diskDevPath) {
-		klog.InfoS("no file exists for device", "diskName", diskDevPath)
+		klog.Infof("no file exists for device %s", diskDevPath)
 		return
 	}
 	fileMode, err := os.Stat(diskDevPath)
 	if err != nil {
-		klog.ErrorS(err, "error attempting to stat", "diskName", diskDevPath)
+		klog.Errorf("error attempting to stat %s: %+v", diskDevPath, err)
 		return
 	}
 	msg := ""
@@ -534,7 +507,7 @@ func (r *LocalVolumeReconciler) logDeviceError(diskDevPath string) {
 }
 
 // findDeviceByID finds device ID and return device name(such as sda, sdb) and complete deviceID path
-func (r *LocalVolumeReconciler) findDeviceByID(deviceID string) (string, string, error) {
+func (r *ReconcileLocalVolume) findDeviceByID(deviceID string) (string, string, error) {
 	diskDevPath, err := r.fsInterface.evalSymlink(deviceID)
 	if err != nil {
 		return "", "", fmt.Errorf("unable to find device at path %s: %v", deviceID, err)
@@ -572,105 +545,4 @@ func fileExists(filename string) bool {
 		return false
 	}
 	return true
-}
-
-type LocalVolumeReconciler struct {
-	Client          client.Client
-	Scheme          *runtime.Scheme
-	symlinkLocation string
-	localVolume     *localv1.LocalVolume
-	eventSync       *eventReporter
-
-	// static-provisioner stuff
-	cleanupTracker *provDeleter.CleanupStatusTracker
-	runtimeConfig  *provCommon.RuntimeConfig
-	deleter        *provDeleter.Deleter
-	firstRunOver   bool
-}
-
-func (r *LocalVolumeReconciler) SetupWithManager(mgr ctrl.Manager, cleanupTracker *provDeleter.CleanupStatusTracker, pvCache *provCache.VolumeCache) error {
-	clientSet := provCommon.SetupClient()
-	runtimeConfig := &provCommon.RuntimeConfig{
-		UserConfig: &provCommon.UserConfig{
-			Node: &corev1.Node{},
-		},
-		Cache:    pvCache,
-		VolUtil:  provUtil.NewVolumeUtil(),
-		APIUtil:  provUtil.NewAPIUtil(clientSet),
-		Client:   clientSet,
-		Recorder: mgr.GetEventRecorderFor(ComponentName),
-		Mounter:  mount.New("" /* defaults to /bin/mount */),
-		// InformerFactory: , // unused
-
-	}
-
-	r.runtimeConfig = runtimeConfig
-	r.eventSync = newEventReporter(mgr.GetEventRecorderFor(ComponentName))
-	r.symlinkLocation = common.GetLocalDiskLocationPath()
-	r.deleter = provDeleter.NewDeleter(runtimeConfig, cleanupTracker)
-	r.cleanupTracker = cleanupTracker
-	r.fsInterface = NixFileSystemInterface{}
-
-	return ctrl.NewControllerManagedBy(mgr).
-		// set to 1 explicitly, despite it being the default, as the reconciler is not thread-safe.
-		WithOptions(controller.Options{MaxConcurrentReconciles: 1}).
-		For(&localv1.LocalVolume{}).
-		Watches(&source.Kind{Type: &corev1.ConfigMap{}}, &handler.EnqueueRequestForOwner{
-			OwnerType: &localv1.LocalVolume{},
-		}).
-		// TODO enqueue for the PV based on labels
-		// update owned-pv cache used by provisioner/deleter libs and enequeue owning lvset
-		// only the cache is touched by
-		Watches(&source.Kind{Type: &corev1.PersistentVolume{}}, &handler.Funcs{
-			GenericFunc: func(e event.GenericEvent, q workqueue.RateLimitingInterface) {
-				pv, ok := e.Object.(*corev1.PersistentVolume)
-				if ok {
-					handlePVChange(runtimeConfig, pv, q, false)
-				}
-			},
-			CreateFunc: func(e event.CreateEvent, q workqueue.RateLimitingInterface) {
-				pv, ok := e.Object.(*corev1.PersistentVolume)
-				if ok {
-					handlePVChange(runtimeConfig, pv, q, false)
-				}
-			},
-			UpdateFunc: func(e event.UpdateEvent, q workqueue.RateLimitingInterface) {
-				pv, ok := e.ObjectNew.(*corev1.PersistentVolume)
-				if ok {
-					handlePVChange(runtimeConfig, pv, q, false)
-				}
-			},
-			DeleteFunc: func(e event.DeleteEvent, q workqueue.RateLimitingInterface) {
-				pv, ok := e.Object.(*corev1.PersistentVolume)
-				if ok {
-					handlePVChange(runtimeConfig, pv, q, true)
-				}
-			},
-		}).
-		Complete(r)
-}
-
-func handlePVChange(runtimeConfig *provCommon.RuntimeConfig, pv *corev1.PersistentVolume, q workqueue.RateLimitingInterface, isDelete bool) {
-	// skip non-owned PVs
-	name, found := pv.Annotations[provCommon.AnnProvisionedBy]
-	if !found || name != runtimeConfig.Name {
-		return
-	}
-
-	// enqueue owner
-	ownerName, found := pv.Labels[common.PVOwnerNameLabel]
-	if !found {
-		return
-	}
-	ownerNamespace, found := pv.Labels[common.PVOwnerNamespaceLabel]
-	if !found {
-		return
-	}
-	ownerKind, found := pv.Labels[common.PVOwnerKindLabel]
-	if ownerKind != localv1.LocalVolumeKind || !found {
-		return
-	}
-
-	q.Add(reconcile.Request{NamespacedName: types.NamespacedName{Name: ownerName, Namespace: ownerNamespace}})
-
 }

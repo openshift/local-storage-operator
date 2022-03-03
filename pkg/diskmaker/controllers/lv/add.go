@@ -61,6 +61,7 @@ func Add(mgr manager.Manager, cleanupTracker *provDeleter.CleanupStatusTracker, 
 		symlinkLocation: common.GetLocalDiskLocationPath(),
 		cleanupTracker:  cleanupTracker,
 		runtimeConfig:   runtimeConfig,
+		fsInterface:     NixFileSystemInterface{},
 		deleter:         provDeleter.NewDeleter(runtimeConfig, cleanupTracker),
 	}
 	// Create a new controller
@@ -147,6 +148,7 @@ type ReconcileLocalVolume struct {
 
 	// static-provisioner stuff
 	cleanupTracker *provDeleter.CleanupStatusTracker
+	fsInterface    FileSystemInterface
 	runtimeConfig  *provCommon.RuntimeConfig
 	deleter        *provDeleter.Deleter
 	firstRunOver   bool
