@@ -21,7 +21,7 @@ import (
 	localv1 "github.com/openshift/local-storage-operator/pkg/apis/local/v1"
 	storagev1 "k8s.io/api/storage/v1"
 
-	"k8s.io/apimachinery/pkg/api/errors"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -33,8 +33,9 @@ import (
 // It also ensures that only stable device names are used.
 
 var (
-	checkDuration = 60 * time.Second
-	diskByIDPath  = "/dev/disk/by-id/*"
+	checkDuration  = 60 * time.Second
+	diskByIDPath   = "/dev/disk/by-id/*"
+	diskByIDPrefix = "/dev/disk/by-id"
 )
 
 const (
@@ -45,8 +46,10 @@ const (
 type DiskLocation struct {
 	// diskNamePath stores full device name path - "/dev/sda"
 	diskNamePath string
-	diskID       string
-	blockDevice  internal.BlockDevice
+	// path that was supplied by the user in LocalVolume CR
+	userProvidedPath string
+	diskID           string
+	blockDevice      internal.BlockDevice
 }
 
 func (r *ReconcileLocalVolume) createSymlink(
@@ -56,9 +59,15 @@ func (r *ReconcileLocalVolume) createSymlink(
 	devLogger logr.Logger,
 	idExists bool,
 ) bool {
+	diskDevPath, err := filepath.EvalSymlinks(symLinkSource)
+	if err != nil {
+		klog.ErrorS(err, "failed to evaluated symlink", "symlinkSource", symLinkSource)
+		return false
+	}
+
 	// get PV creation lock which checks for existing symlinks to this device
 	pvLock, pvLocked, existingSymlinks, err := internal.GetPVCreationLock(
-		symLinkSource,
+		diskDevPath,
 		r.symlinkLocation,
 	)
 
@@ -178,7 +187,7 @@ func (r *ReconcileLocalVolume) Reconcile(request reconcile.Request) (reconcile.R
 	lv := &localv1.LocalVolume{}
 	err := r.client.Get(context.TODO(), request.NamespacedName, lv)
 	if err != nil {
-		if errors.IsNotFound(err) {
+		if apierrors.IsNotFound(err) {
 			// Request object not found, could have been deleted after reconcile request.
 			// Return and don't requeue
 			return reconcile.Result{}, nil
@@ -336,9 +345,8 @@ func (r *ReconcileLocalVolume) Reconcile(request reconcile.Request) (reconcile.R
 
 	for storageClassName, deviceArray := range deviceMap {
 		for _, deviceNameLocation := range deviceArray {
-			devLogger := reqLogger.WithValues("Device.Name", deviceNameLocation.diskNamePath)
-			symLinkDirPath := path.Join(r.symlinkLocation, storageClassName)
-			source, target, idExists, err := common.GetSymLinkSourceAndTarget(deviceNameLocation.blockDevice, symLinkDirPath)
+			blockDeviceList = append(blockDeviceList, deviceNameLocation.blockDevice)
+			source, target, idExists, err := getSymlinkSourceAndTarget(deviceNameLocation, symLinkDirPath)
 			if err != nil {
 				reqLogger.Error(err, "failed to get symlink source and target")
 				errors = append(errors, err)
@@ -383,6 +391,16 @@ func (r *ReconcileLocalVolume) Reconcile(request reconcile.Request) (reconcile.R
 	return reconcile.Result{Requeue: true, RequeueAfter: checkDuration}, nil
 }
 
+func getSymlinkSourceAndTarget(devLocation DiskLocation, symlinkDir string) (string, string, bool, error) {
+	if devLocation.diskID != "" {
+		target := path.Join(symlinkDir, filepath.Base(devLocation.diskID))
+		return devLocation.diskID, target, true, nil
+	} else {
+		target := path.Join(symlinkDir, filepath.Base(devLocation.userProvidedPath))
+		return devLocation.userProvidedPath, target, false, nil
+	}
+}
+
 func ignoreDevices(dev internal.BlockDevice) bool {
 	if hasBindMounts, _, err := dev.HasBindMounts(); err != nil || hasBindMounts {
 		klog.Infof("ignoring mount device %q", dev.Name)
@@ -401,76 +419,84 @@ func (r *ReconcileLocalVolume) findMatchingDisks(diskConfig *DiskConfig, blockDe
 
 	// blockDeviceMap is a map of storageclass and device locations
 	blockDeviceMap := make(map[string][]DiskLocation)
-
-	addDiskToMap := func(scName, stableDeviceID, diskName string, blockDevice internal.BlockDevice) {
+	addDiskToMap := func(scName, stableDeviceID, diskName, userDevicePath string, blockDevice internal.BlockDevice) {
 		deviceArray, ok := blockDeviceMap[scName]
 		if !ok {
 			deviceArray = []DiskLocation{}
 		}
-		deviceArray = append(deviceArray, DiskLocation{diskName, stableDeviceID, blockDevice})
+		deviceArray = append(deviceArray, DiskLocation{diskName, userDevicePath, stableDeviceID, blockDevice})
 		blockDeviceMap[scName] = deviceArray
 	}
-	for storageClass, disks := range diskConfig.Disks {
-		// handle diskNames
-		deviceNames := disks.DeviceNames().List()
-		for _, diskName := range deviceNames {
-			baseDeviceName := filepath.Base(diskName)
-			blockDevice, matched := hasExactDisk(blockDevices, baseDeviceName)
-			if matched {
-				matchedDeviceID, err := r.findStableDeviceID(baseDeviceName, allDiskIds)
-				// This means no /dev/disk/by-id entry was created for requested device.
-				if err != nil {
-					klog.V(4).Infof("unable to find disk ID %s for local pool %v", diskName, err)
-					addDiskToMap(storageClass, "", diskName, blockDevice)
-					continue
-				}
-				addDiskToMap(storageClass, matchedDeviceID, diskName, blockDevice)
-				continue
-			} else {
-				if !fileExists(diskName) {
-					msg := fmt.Sprintf("no file exists for specified device %v", diskName)
-					klog.Errorf(msg)
-					continue
-				}
-				fileMode, err := os.Stat(diskName)
-				if err != nil {
-					klog.Errorf("error attempting to examine %v, %v", diskName, err)
-					continue
-				}
-				msg := ""
-				switch mode := fileMode.Mode(); {
-				case mode.IsDir():
-					msg = fmt.Sprintf("unable to use directory %v for local storage. Use an existing block device.", diskName)
-				case mode.IsRegular():
-					msg = fmt.Sprintf("unable to use regular file %v for local storage. Use an existing block device.", diskName)
-				default:
-					msg = fmt.Sprintf("unable to find matching disk %v", diskName)
-				}
-				//	e := NewEvent(ErrorFindingMatchingDisk, msg, diskName)
-				r.eventSync.Report(r.localVolume, newDiskEvent(ErrorFindingMatchingDisk, msg, diskName, corev1.EventTypeWarning))
-				klog.Errorf(msg)
-			}
-		}
 
-		deviceIds := disks.DeviceIDs().List()
-		// handle DeviceIDs
-		for _, deviceID := range deviceIds {
-			matchedDeviceID, matchedDiskName, err := r.findDeviceByID(deviceID)
-			if err != nil {
-				msg := fmt.Sprintf("unable to add disk-id %s to local disk pool: %v", deviceID, err)
-				//	e := NewEvent(ErrorFindingMatchingDisk, msg, deviceID)
-				r.eventSync.Report(r.localVolume, newDiskEvent(ErrorFindingMatchingDisk, msg, deviceID, corev1.EventTypeWarning))
-				klog.Errorf(msg)
-				continue
-			}
-			baseDeviceName := filepath.Base(matchedDiskName)
-			// We need to make sure that requested device is not already mounted.
-			blockDevice, matched := hasExactDisk(blockDevices, baseDeviceName)
-			if matched {
-				addDiskToMap(storageClass, matchedDeviceID, matchedDiskName, blockDevice)
+	for storageClass, disks := range diskConfig.Disks {
+		devicePaths := disks.DevicePaths
+		for _, devicePath := range devicePaths {
+			// handle user provided device_ids first
+			if strings.HasPrefix(devicePath, diskByIDPrefix) {
+				matchedDeviceID, matchedDiskName, err := r.findDeviceByID(devicePath)
+				if err != nil {
+					msg := fmt.Sprintf("unable to add disk-id %s to local disk pool: %v", devicePath, err)
+					r.eventSync.Report(r.localVolume, newDiskEvent(ErrorFindingMatchingDisk, msg, devicePath, corev1.EventTypeWarning))
+					klog.Error(msg)
+					continue
+				}
+				baseDeviceName := filepath.Base(matchedDiskName)
+				// We need to make sure that requested device is not already mounted.
+				blockDevice, matched := hasExactDisk(blockDevices, baseDeviceName)
+				if matched {
+					addDiskToMap(storageClass, matchedDeviceID, matchedDiskName, devicePath, blockDevice)
+				}
+			} else {
+				// handle anything other than device ids here - such as:
+				//   /dev/sda
+				//   /dev/sandbox/local
+				//   /dev/disk/by-path/ww-xx
+				diskDevPath, err := filepath.EvalSymlinks(devicePath)
+				if err != nil {
+					msg := fmt.Sprintf("unable to add disk %s to local disk pool: %v", devicePath, err)
+					r.eventSync.Report(r.localVolume, newDiskEvent(ErrorFindingMatchingDisk, msg, devicePath, corev1.EventTypeWarning))
+					klog.Error(msg)
+					continue
+				}
+				baseDeviceName := filepath.Base(diskDevPath)
+				blockDevice, matched := hasExactDisk(blockDevices, baseDeviceName)
+				if matched {
+					matchedDeviceID, err := r.findStableDeviceID(baseDeviceName, allDiskIds)
+					// This means no /dev/disk/by-id entry was created for requested device.
+					if err != nil {
+						klog.ErrorS(err, "unable to find disk ID for local pool",
+							"diskName", diskDevPath)
+						addDiskToMap(storageClass, "", diskDevPath, devicePath, blockDevice)
+						continue
+					}
+					addDiskToMap(storageClass, matchedDeviceID, diskDevPath, devicePath, blockDevice)
+					continue
+				} else {
+					if !fileExists(diskDevPath) {
+						klog.InfoS("no file exists for device", "diskName", diskDevPath)
+						continue
+					}
+					fileMode, err := os.Stat(diskDevPath)
+					if err != nil {
+						klog.ErrorS(err, "error attempting to stat", "diskName", diskDevPath)
+						continue
+					}
+					msg := ""
+					switch mode := fileMode.Mode(); {
+					case mode.IsDir():
+						msg = fmt.Sprintf("unable to use directory %v for local storage. Use an existing block device.", diskDevPath)
+					case mode.IsRegular():
+						msg = fmt.Sprintf("unable to use regular file %v for local storage. Use an existing block device.", diskDevPath)
+					default:
+						msg = fmt.Sprintf("unable to find matching disk %v", diskDevPath)
+					}
+					r.eventSync.Report(r.localVolume, newDiskEvent(ErrorFindingMatchingDisk, msg, diskDevPath, corev1.EventTypeWarning))
+					klog.Info(msg)
+				}
 			}
 		}
 	}
+
 	return blockDeviceMap, nil
 }
 
