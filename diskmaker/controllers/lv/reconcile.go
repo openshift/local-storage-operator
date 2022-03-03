@@ -82,7 +82,6 @@ type LocalVolumeReconciler struct {
 	symlinkLocation string
 	localVolume     *localv1.LocalVolume
 	eventSync       *eventReporter
-	cacheSynced     bool
 
 	// static-provisioner stuff
 	cleanupTracker *provDeleter.CleanupStatusTracker
@@ -101,7 +100,7 @@ func (r *LocalVolumeReconciler) createSymlink(
 ) bool {
 	diskDevPath, err := r.fsInterface.evalSymlink(symLinkSource)
 	if err != nil {
-		klog.ErrorS(err, "failed to evaluated symlink", "symlinkSource", symLinkSource)
+		klog.Errorf("failed to evaluated symlink %s: %v+", symLinkSource, err)
 		return false
 	}
 
@@ -401,6 +400,7 @@ func (r *LocalVolumeReconciler) Reconcile(ctx context.Context, request ctrl.Requ
 		symLinkDirPath := path.Join(r.symlinkLocation, storageClassName)
 		for _, deviceNameLocation := range deviceArray {
 			blockDeviceList = append(blockDeviceList, deviceNameLocation.blockDevice)
+			devLogger := reqLogger.WithValues("Device.Name", deviceNameLocation.diskNamePath)
 			source, target, idExists, err := getSymlinkSourceAndTarget(deviceNameLocation, symLinkDirPath)
 			if err != nil {
 				reqLogger.Error(err, "failed to get symlink source and target")
@@ -539,8 +539,7 @@ func (r *LocalVolumeReconciler) findMatchingDisks(diskConfig *DiskConfig, blockD
 					matchedDeviceID, err := r.findStableDeviceID(baseDeviceName, allDiskIds)
 					// This means no /dev/disk/by-id entry was created for requested device.
 					if err != nil {
-						klog.ErrorS(err, "unable to find disk ID for local pool",
-							"diskName", diskDevPath)
+						klog.Errorf("unable to find disk ID for local pool %s: %+v", diskDevPath, err)
 						addDiskToMap(storageClass, "", diskDevPath, devicePath, blockDevice)
 						continue
 					}
@@ -558,12 +557,12 @@ func (r *LocalVolumeReconciler) findMatchingDisks(diskConfig *DiskConfig, blockD
 
 func (r *LocalVolumeReconciler) logDeviceError(diskDevPath string) {
 	if !fileExists(diskDevPath) {
-		klog.InfoS("no file exists for device", "diskName", diskDevPath)
+		klog.Infof("no file exists for device %s", diskDevPath)
 		return
 	}
 	fileMode, err := os.Stat(diskDevPath)
 	if err != nil {
-		klog.ErrorS(err, "error attempting to stat", "diskName", diskDevPath)
+		klog.Errorf("error attempting to stat %s: %+v", diskDevPath, err)
 		return
 	}
 	msg := ""
@@ -618,20 +617,6 @@ func fileExists(filename string) bool {
 		return false
 	}
 	return true
-}
-
-type LocalVolumeReconciler struct {
-	Client          client.Client
-	Scheme          *runtime.Scheme
-	symlinkLocation string
-	localVolume     *localv1.LocalVolume
-	eventSync       *eventReporter
-
-	// static-provisioner stuff
-	cleanupTracker *provDeleter.CleanupStatusTracker
-	runtimeConfig  *provCommon.RuntimeConfig
-	deleter        *provDeleter.Deleter
-	firstRunOver   bool
 }
 
 func (r *LocalVolumeReconciler) SetupWithManager(mgr ctrl.Manager, cleanupTracker *provDeleter.CleanupStatusTracker, pvCache *provCache.VolumeCache) error {
