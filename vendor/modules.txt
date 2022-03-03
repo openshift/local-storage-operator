@@ -210,7 +210,6 @@ github.com/openshift/api/webconsole
 github.com/openshift/api/webconsole/v1
 # github.com/openshift/client-go v0.0.0-20200116152001-92a2713fa240
 github.com/openshift/client-go/security/clientset/versioned/scheme
-github.com/openshift/client-go/security/clientset/versioned/typed/security/v1
 # github.com/openshift/library-go v0.0.0-20200314142707-3c25293448b0
 github.com/openshift/library-go/pkg/operator/events
 github.com/openshift/library-go/pkg/operator/resource/resourceapply
@@ -711,7 +710,7 @@ sigs.k8s.io/controller-runtime/pkg/webhook/internal/certwatcher
 sigs.k8s.io/controller-runtime/pkg/webhook/internal/metrics
 # sigs.k8s.io/sig-storage-lib-external-provisioner v4.1.0+incompatible
 sigs.k8s.io/sig-storage-lib-external-provisioner/util
-# sigs.k8s.io/sig-storage-local-static-provisioner v2.3.4+incompatible
+# sigs.k8s.io/sig-storage-local-static-provisioner v2.3.4+incompatible => github.com/openshift/sig-storage-local-static-provisioner v2.3.3-0.20220303011431-e4a18e425350+incompatible
 sigs.k8s.io/sig-storage-local-static-provisioner/pkg/cache
 sigs.k8s.io/sig-storage-local-static-provisioner/pkg/common
 sigs.k8s.io/sig-storage-local-static-provisioner/pkg/deleter
