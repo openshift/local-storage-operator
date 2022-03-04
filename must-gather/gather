@@ -1,40 +1,13 @@
 #!/bin/bash
 
-resources=()
-pods=()
 subscriptionName="local-storage-operator"
 
-for I in $(/usr/bin/oc get crd | grep local.storage.openshift.io | awk '{print $1}'); do
-  resources+=($I)
-done
-
 lsoNamespace=$(/usr/bin/oc get subscription --all-namespaces | grep ${subscriptionName} | awk '{print $1}')
-for I in $(oc get pod -n ${lsoNamespace} -o custom-columns=NAME:.metadata.name --no-headers); do
-  pods+=($I)
-done
+/usr/bin/oc adm inspect namespace/${lsoNamespace} --dest-dir=must-gather/
 
-object_collection_path=must-gather/namespaces/${lsoNamespace}/pods
-mkdir -p ${object_collection_path}
-
-for pod in ${pods[@]}; do
-  /usr/bin/oc logs ${pod} -n ${lsoNamespace}> ${object_collection_path}/${pod}.log
-done
-
-for resource in ${resources[@]}; do
-  /usr/bin/oc get ${resource} --all-namespaces -o custom-columns=NAME:.metadata.name,NAMESPACE:.metadata.namespace --no-headers 2> /dev/null | \
-  while read ocresource; do
-    ocobject=$(echo $ocresource | awk '{print $1}')
-    ocns=$(echo $ocresource | awk '{print $2}')
-    if [ -z "${ocns}" ]|[ "${ocns}" == "<none>" ]; then
-      object_collection_path=must-gather/cluster-scoped-resources/${resource}
-      mkdir -p ${object_collection_path}
-      /usr/bin/oc get ${resource} -o yaml ${ocobject} > ${object_collection_path}/${ocobject}.yaml
-    else
-      object_collection_path=must-gather/namespaces/${ocns}/crs/${resource}
-      mkdir -p ${object_collection_path}
-      /usr/bin/oc get ${resource} -n ${ocns} -o yaml ${ocobject} > ${object_collection_path}/${ocobject}.yaml
-    fi
-  done
+for I in $(/usr/bin/oc get crd | grep local.storage.openshift.io | awk '{print $1}'); do
+    echo "Gathering data for CRD $I"
+    /usr/bin/oc adm inspect $I --all-namespaces --dest-dir=must-gather/
 done
 
 exit 0
