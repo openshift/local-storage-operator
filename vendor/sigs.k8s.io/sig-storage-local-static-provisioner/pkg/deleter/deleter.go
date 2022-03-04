@@ -29,7 +29,7 @@ import (
 	"sigs.k8s.io/sig-storage-local-static-provisioner/pkg/common"
 	"sigs.k8s.io/sig-storage-local-static-provisioner/pkg/metrics"
 
-	v1 "k8s.io/api/core/v1"
+	"k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 )
 
@@ -70,6 +70,9 @@ func NewDeleter(config *common.RuntimeConfig, cleanupTracker *CleanupStatusTrack
 func (d *Deleter) DeletePVs() {
 	for _, pv := range d.Cache.ListPVs() {
 		if pv.Status.Phase != v1.VolumeReleased {
+			continue
+		}
+		if d.Cache.SuccessfullyCleanedPV(pv) {
 			continue
 		}
 		name := pv.Name
@@ -162,6 +165,7 @@ func (d *Deleter) deletePV(pv *v1.PersistentVolume) error {
 	switch state {
 	case CSSucceeded:
 		// Found a completed cleaning entry
+		d.Cache.CleanPV(pv)
 		klog.Infof("Deleting pv %s after successful cleanup", pv.Name)
 		if err = d.APIUtil.DeletePV(pv.Name); err != nil {
 			if !errors.IsNotFound(err) {
