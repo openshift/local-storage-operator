@@ -9,13 +9,16 @@ import (
 	localv1alpha1 "github.com/openshift/local-storage-operator/api/v1alpha1"
 	"github.com/openshift/local-storage-operator/common"
 	"github.com/openshift/local-storage-operator/localmetrics"
+	prometheusv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/selection"
 	"k8s.io/apimachinery/pkg/types"
+	errorutils "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/klog/v2"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -40,15 +43,18 @@ const (
 	controllerName = "localvolumesetdaemon-controller"
 
 	dataHashAnnotationKey = "local.storage.openshift.io/configMapDataHash"
+
+	orphanLSOServiceMonitorName = "local-storage-operator-metrics"
 )
 
 // DaemonReconciler reconciles all LocalVolumeSet objects at once
 type DaemonReconciler struct {
 	// This client, initialized using mgr.Client() above, is a split client
 	// that reads objects from the cache and writes to the apiserver
-	Client                   client.Client
-	Scheme                   *runtime.Scheme
-	deletedStaticProvisioner bool
+	Client                        client.Client
+	Scheme                        *runtime.Scheme
+	deletedStaticProvisioner      bool
+	deletedOrphanedServiceMonitor bool
 }
 
 // Reconcile reads that state of the cluster for a LocalVolumeSet object and makes changes based on the state read
@@ -57,8 +63,7 @@ type DaemonReconciler struct {
 // The Controller will requeue the Request to be processed again if the returned error is non-nil or
 // Result.Requeue is true, otherwise upon completion it will remove the work from the queue.
 func (r *DaemonReconciler) Reconcile(ctx context.Context, request ctrl.Request) (ctrl.Result, error) {
-	// do a one-time delete of the old static-provisioner daemonset
-	err := r.cleanupOldDaemonsets(ctx, request.Namespace)
+	err := r.cleanupOldObjects(ctx, request.Namespace)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -98,6 +103,20 @@ func (r *DaemonReconciler) Reconcile(ctx context.Context, request ctrl.Request) 
 	}
 
 	return ctrl.Result{}, err
+}
+
+// do a one-time delete of the old object that are not needed in this release
+func (r *DaemonReconciler) cleanupOldObjects(ctx context.Context, namespace string) error {
+	errs := make([]error, 0)
+	err := r.cleanupOldDaemonsets(ctx, namespace)
+	if err != nil {
+		errs = append(errs, err)
+	}
+	err = r.cleanupOrphanServiceMonitor(ctx, namespace)
+	if err != nil {
+		errs = append(errs, err)
+	}
+	return errorutils.NewAggregate(errs)
 }
 
 // do a one-time delete of the old static-provisioner daemonset
@@ -179,6 +198,30 @@ func (r *DaemonReconciler) cleanupOldDaemonsets(ctx context.Context, namespace s
 		return err
 	}
 	r.deletedStaticProvisioner = true
+	return nil
+}
+
+// do a one-time delete of the old LSO ServiceMonitor from 4.8
+func (r *DaemonReconciler) cleanupOrphanServiceMonitor(ctx context.Context, namespace string) error {
+	if r.deletedOrphanedServiceMonitor {
+		return nil
+	}
+
+	obj := prometheusv1.ServiceMonitor{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: namespace,
+			Name:      orphanLSOServiceMonitorName,
+		},
+	}
+
+	err := r.Client.Delete(ctx, &obj)
+	if err != nil && !errors.IsNotFound(err) {
+		klog.V(2).ErrorS(err, "Could not delete ServiceMonitor")
+		return err
+	}
+
+	klog.V(2).InfoS("Orphaned ServiceMonitor deleted", "namespace", obj.Namespace, "name", obj.Name)
+	r.deletedOrphanedServiceMonitor = true
 	return nil
 }
 
