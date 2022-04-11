@@ -177,14 +177,8 @@ func CreateLocalPV(
 		ProvisionerName: runtimeConfig.Name, // populate in runtimeconfig earlier
 		VolumeMode:      desiredVolumeMode,
 		MountOptions:    storageClass.MountOptions, // d.getMountOptionsFromStorageClass(class)
-		SetPVOwnerRef:   true,                      // set owner reference from node to PV
-		OwnerReference: &metav1.OwnerReference{
-			Kind:       runtimeConfig.Node.Kind,
-			APIVersion: runtimeConfig.Node.APIVersion,
-			Name:       runtimeConfig.Node.GetName(),
-			UID:        runtimeConfig.Node.GetUID(),
-		},
-		NodeAffinity: nodeAffinity,
+		SetPVOwnerRef:   false,                     // PV should not get deleted when node is removed
+		NodeAffinity:    nodeAffinity,
 	}
 	fsType := mountConfig.FsType
 	if desiredVolumeMode == corev1.PersistentVolumeFilesystem && fsType != "" {
