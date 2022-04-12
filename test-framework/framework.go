@@ -19,7 +19,6 @@ import (
 	goctx "context"
 	"flag"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -55,14 +54,12 @@ type Framework struct {
 	KubeConfig        *rest.Config
 	KubeClient        kubernetes.Interface
 	Scheme            *runtime.Scheme
-	NamespacedManPath *string
 	OperatorNamespace string
 	WatchNamespace    string
 
 	restMapper *restmapper.DeferredDiscoveryRESTMapper
 
 	projectRoot        string
-	globalManPath      string
 	localOperatorArgs  string
 	kubeconfigPath     string
 	schemeMutex        sync.Mutex
@@ -73,8 +70,6 @@ type Framework struct {
 type frameworkOpts struct {
 	projectRoot        string
 	kubeconfigPath     string
-	globalManPath      string
-	namespacedManPath  string
 	localOperatorArgs  string
 	isLocalOperator    bool
 	skipCleanupOnError bool
@@ -83,8 +78,6 @@ type frameworkOpts struct {
 const (
 	ProjRootFlag           = "root"
 	KubeConfigFlag         = "kubeconfig"
-	NamespacedManPathFlag  = "namespacedMan"
-	GlobalManPathFlag      = "globalMan"
 	LocalOperatorFlag      = "localOperator"
 	LocalOperatorArgs      = "localOperatorArgs"
 	SkipCleanupOnErrorFlag = "skipCleanupOnError"
@@ -95,10 +88,8 @@ const (
 
 func (opts *frameworkOpts) addToFlagSet(flagset *flag.FlagSet) {
 	flagset.StringVar(&opts.projectRoot, ProjRootFlag, "", "path to project root")
-	flagset.StringVar(&opts.namespacedManPath, NamespacedManPathFlag, "", "path to rbac manifest")
 	flagset.BoolVar(&opts.isLocalOperator, LocalOperatorFlag, false,
 		"enable if operator is running locally (not in cluster)")
-	flagset.StringVar(&opts.globalManPath, GlobalManPathFlag, "", "path to operator manifest")
 	flagset.StringVar(&opts.localOperatorArgs, LocalOperatorArgs, "",
 		"flags that the operator needs (while using --up-local). example: \"--flag1 value1 --flag2=value2\"")
 	flagset.BoolVar(&opts.skipCleanupOnError, SkipCleanupOnErrorFlag, false,
@@ -144,12 +135,10 @@ func newFramework(opts *frameworkOpts) (*Framework, error) {
 		KubeConfig:        kubeconfig,
 		KubeClient:        kubeclient,
 		Scheme:            scheme,
-		NamespacedManPath: &opts.namespacedManPath,
 		OperatorNamespace: operatorNamespace,
 		LocalOperator:     opts.isLocalOperator,
 
 		projectRoot:        opts.projectRoot,
-		globalManPath:      opts.globalManPath,
 		localOperatorArgs:  opts.localOperatorArgs,
 		kubeconfigPath:     opts.kubeconfigPath,
 		restMapper:         restMapper,
@@ -215,16 +204,6 @@ func (f *Framework) runM(m *testing.M) (int, error) {
 	err := os.Chdir(f.projectRoot)
 	if err != nil {
 		return 0, fmt.Errorf("failed to change directory to project root: %w", err)
-	}
-
-	// create crd
-	globalYAML, err := ioutil.ReadFile(f.globalManPath)
-	if err != nil {
-		return 0, fmt.Errorf("failed to read global resource manifest: %w", err)
-	}
-	err = ctx.createFromYAML(globalYAML, true, &CleanupOptions{TestContext: ctx})
-	if err != nil {
-		return 0, fmt.Errorf("failed to create resource(s) in global resource manifest: %w", err)
 	}
 
 	if !f.LocalOperator {

@@ -26,12 +26,9 @@ const (
 	WatchNamespaceEnv    = "TEST_WATCH_NAMESPACE"
 )
 
-var fakeNamespacedManPath string = "fakePath"
-
 func TestGetOperatorNamespace(t *testing.T) {
 	Global = &Framework{
-		NamespacedManPath: &fakeNamespacedManPath,
-		KubeClient:        fake.NewSimpleClientset(),
+		KubeClient: fake.NewSimpleClientset(),
 	}
 
 	t.Run("should create a non-empty new Operator Namespace when OperatorNamespace env is not set",
@@ -81,8 +78,7 @@ func TestGetOperatorNamespace(t *testing.T) {
 
 func TestGetWatchNamespace(t *testing.T) {
 	Global = &Framework{
-		NamespacedManPath: &fakeNamespacedManPath,
-		KubeClient:        fake.NewSimpleClientset(),
+		KubeClient: fake.NewSimpleClientset(),
 	}
 
 	t.Run("should return Watch Namespace (==Operator Namespace) WatchNamespace Env is not set",

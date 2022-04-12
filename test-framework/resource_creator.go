@@ -15,30 +15,14 @@
 package test
 
 import (
-	"bytes"
-	goctx "context"
 	"fmt"
-	"io/ioutil"
 	"os"
-	"time"
 
 	"golang.org/x/net/context"
 	core "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/util/wait"
-	"sigs.k8s.io/yaml"
 )
-
-// TODO: remove before 1.0.0
-// Deprecated: GetNamespace() exists for historical compatibility.
-// Use GetOperatorNamespace() or GetWatchNamespace() instead
-func (ctx *Context) GetNamespace() (string, error) {
-	var err error
-	ctx.namespace, err = ctx.getNamespace(ctx.namespace)
-	return ctx.namespace, err
-}
 
 // GetOperatorNamespace will return an Operator Namespace,
 // if the flag --operator-namespace  not be used (TestOpeatorNamespaceEnv not set)
@@ -92,66 +76,4 @@ func (ctx *Context) GetWatchNamespace() (string, error) {
 	}
 	ctx.watchNamespace = operatorNamespace
 	return ctx.watchNamespace, nil
-}
-
-func (ctx *Context) createFromYAML(yamlFile []byte, skipIfExists bool, cleanupOptions *CleanupOptions) error {
-	operatorNamespace, err := ctx.GetOperatorNamespace()
-	if err != nil {
-		return err
-	}
-	scanner := NewYAMLScanner(bytes.NewBuffer(yamlFile))
-	for scanner.Scan() {
-		yamlSpec := scanner.Bytes()
-
-		obj := &unstructured.Unstructured{}
-		jsonSpec, err := yaml.YAMLToJSON(yamlSpec)
-		if err != nil {
-			return fmt.Errorf("could not convert yaml file to json: %w", err)
-		}
-		if err := obj.UnmarshalJSON(jsonSpec); err != nil {
-			return fmt.Errorf("failed to unmarshal object spec: %w", err)
-		}
-		obj.SetNamespace(operatorNamespace)
-		err = ctx.client.Create(goctx.TODO(), obj, cleanupOptions)
-		if skipIfExists && apierrors.IsAlreadyExists(err) {
-			continue
-		}
-		if err != nil {
-			_, restErr := ctx.restMapper.RESTMappings(obj.GetObjectKind().GroupVersionKind().GroupKind())
-			if restErr == nil {
-				return err
-			}
-			// don't store error, as only error will be timeout. Error from runtime client will be easier for
-			// the user to understand than the timeout error, so just use that if we fail
-			_ = wait.PollImmediate(time.Second*1, time.Second*10, func() (bool, error) {
-				ctx.restMapper.Reset()
-				_, err := ctx.restMapper.RESTMappings(obj.GetObjectKind().GroupVersionKind().GroupKind())
-				if err != nil {
-					return false, nil
-				}
-				return true, nil
-			})
-			err = ctx.client.Create(goctx.TODO(), obj, cleanupOptions)
-			if skipIfExists && apierrors.IsAlreadyExists(err) {
-				continue
-			}
-			if err != nil {
-				return err
-			}
-		}
-	}
-
-	if err := scanner.Err(); err != nil {
-		return fmt.Errorf("failed to scan manifest: %w", err)
-	}
-	return nil
-}
-
-func (ctx *Context) InitializeClusterResources(cleanupOptions *CleanupOptions) error {
-	// create namespaced resources
-	namespacedYAML, err := ioutil.ReadFile(ctx.namespacedManPath)
-	if err != nil {
-		return fmt.Errorf("failed to read namespaced manifest: %w", err)
-	}
-	return ctx.createFromYAML(namespacedYAML, false, cleanupOptions)
 }

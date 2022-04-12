@@ -22,10 +22,7 @@ import (
 )
 
 func TestNewContextCreatesID(t *testing.T) {
-	fakeNamespacedManPath := "fakePath"
-	Global = &Framework{
-		NamespacedManPath: &fakeNamespacedManPath,
-	}
+	Global = &Framework{}
 
 	ctx := NewContext(t)
 

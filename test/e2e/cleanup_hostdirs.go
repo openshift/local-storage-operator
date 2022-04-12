@@ -21,7 +21,7 @@ func cleanupSymlinkDir(t *testing.T, ctx *framework.TestCtx, nodeEnv []nodeDisks
 	t.Logf("cleaning up hostdirs")
 	f := framework.Global
 	matcher := gomega.NewWithT(t)
-	namespace, err := ctx.GetNamespace()
+	namespace, err := ctx.GetOperatorNamespace()
 	if err != nil || namespace == "" {
 		return fmt.Errorf("could not determine namespace: %w", err)
 	}
@@ -188,10 +188,11 @@ set +x
 		Spec: batchv1.JobSpec{
 			Template: corev1.PodTemplateSpec{
 				Spec: corev1.PodSpec{
-					RestartPolicy: corev1.RestartPolicyOnFailure,
-					Containers:    containers,
-					Volumes:       volumes,
-					Affinity:      affinity,
+					RestartPolicy:      corev1.RestartPolicyOnFailure,
+					Containers:         containers,
+					Volumes:            volumes,
+					Affinity:           affinity,
+					ServiceAccountName: "local-storage-admin",
 				},
 			},
 		},
