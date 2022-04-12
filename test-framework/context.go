@@ -28,15 +28,11 @@ import (
 type Context struct {
 	id         string
 	cleanupFns []cleanupFn
-	// the  namespace is deprecated
-	// todo: remove before 1.0.0
-	// use operatorNamespace or watchNamespace  instead
-	namespace         string
+
 	operatorNamespace string
 	watchNamespace    string
 	t                 *testing.T
 
-	namespacedManPath  string
 	client             *frameworkClient
 	kubeclient         kubernetes.Interface
 	restMapper         *restmapper.DeferredDiscoveryRESTMapper
@@ -77,10 +73,8 @@ func (f *Framework) newContext(t *testing.T) *Context {
 	return &Context{
 		id:                 id,
 		t:                  t,
-		namespace:          operatorNamespace,
 		operatorNamespace:  operatorNamespace,
 		watchNamespace:     watchNamespace,
-		namespacedManPath:  *f.NamespacedManPath,
 		client:             f.Client,
 		kubeclient:         f.KubeClient,
 		restMapper:         f.restMapper,
