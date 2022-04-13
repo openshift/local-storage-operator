@@ -175,13 +175,7 @@ func addToCleanupFuncs(cleanupFuncs *[]cleanupFn, name string, fn func(*testing.
 }
 
 func waitForOperatorToBeReady(t *testing.T, ctx *framework.TestCtx) error {
-	t.Log("Initializing cluster resources...")
-	err := ctx.InitializeClusterResources(&framework.CleanupOptions{TestContext: ctx, Timeout: cleanupTimeout, RetryInterval: cleanupRetryInterval})
-	if err != nil {
-		return err
-	}
-	t.Log("Initialized cluster resources")
-	namespace, err := ctx.GetNamespace()
+	namespace, err := ctx.GetOperatorNamespace()
 	if err != nil {
 		return err
 	}
@@ -196,14 +190,4 @@ func waitForOperatorToBeReady(t *testing.T, ctx *framework.TestCtx) error {
 		return err
 	}
 	return nil
-}
-
-// env var config helpers
-
-func getOperatorImage() string {
-	return os.Getenv("IMAGE_LOCAL_DISKMAKER")
-}
-
-func getDiskMakerImage() string {
-	return os.Getenv("IMAGE_LOCAL_DISKMAKER")
 }
