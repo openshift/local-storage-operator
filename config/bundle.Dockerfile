@@ -7,5 +7,5 @@ LABEL operators.operatorframework.io.bundle.package.v1=local-storage-operator
 LABEL operators.operatorframework.io.bundle.channels.v1=preview
 LABEL operators.operatorframework.io.bundle.channel.default.v1=preview
 
-COPY manifests/4.11/*.yaml /manifests/
+COPY manifests/stable/*.yaml /manifests/
 COPY metadata/annotations.yaml /metadata/annotations.yaml
