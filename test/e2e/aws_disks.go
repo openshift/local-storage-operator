@@ -49,7 +49,7 @@ type disk struct {
 // not specific to any platform
 func populateDeviceInfo(t *testing.T, ctx *framework.TestCtx, nodeEnv []nodeDisks) []nodeDisks {
 	f := framework.Global
-	namespace, err := ctx.GetNamespace()
+	namespace, err := ctx.GetOperatorNamespace()
 	if err != nil {
 		t.Fatalf("error fetching namespace : %v", err)
 	}

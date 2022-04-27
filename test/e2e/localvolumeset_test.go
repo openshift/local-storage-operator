@@ -30,7 +30,7 @@ func LocalVolumeSetTest(ctx *framework.TestCtx, cleanupFuncs *[]cleanupFn) func(
 	return func(t *testing.T) {
 
 		f := framework.Global
-		namespace, err := ctx.GetNamespace()
+		namespace, err := ctx.GetOperatorNamespace()
 		if err != nil {
 			t.Fatalf("error fetching namespace : %v", err)
 		}
