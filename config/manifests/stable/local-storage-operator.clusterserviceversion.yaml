@@ -357,6 +357,10 @@ spec:
                     - local-storage-operator
                     args:
                     - --leader-elect
+                    resources:
+                      requests:
+                        memory: 50Mi
+                        cpu: 10m
                     env:
                       - name: WATCH_NAMESPACE
                         valueFrom:
