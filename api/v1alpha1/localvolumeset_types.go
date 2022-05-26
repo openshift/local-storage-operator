@@ -45,6 +45,8 @@ const (
 	Partition DeviceType = "part"
 	// Loop type device
 	Loop DeviceType = "loop"
+	// Multipath device type
+	MultiPath DeviceType = "mpath"
 )
 
 // DeviceInclusionSpec holds the inclusion filter spec

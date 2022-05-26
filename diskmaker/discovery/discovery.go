@@ -28,7 +28,7 @@ const (
 	resultCRName                  = "discovery-result-%s"
 )
 
-var supportedDeviceTypes = sets.NewString("disk", "part", "lvm")
+var supportedDeviceTypes = sets.NewString("disk", "part", "lvm", "mpath")
 
 // DeviceDiscovery instance
 type DeviceDiscovery struct {
