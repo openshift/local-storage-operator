@@ -53,6 +53,8 @@ spec:
                         enum:
                           - disk
                           - part
+                          - loop
+                          - mpath
                       type: array
                     maxSize:
                       description: MaxSize is the maximum size of the device which needs
