@@ -6,15 +6,21 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	batchv1 "k8s.io/api/batch/v1"
+	corev1 "k8s.io/api/core/v1"
+	kerrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/types"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 
+	"context"
 	"github.com/mitchellh/go-homedir"
 	"github.com/rogpeppe/go-internal/modfile"
 	log "github.com/sirupsen/logrus"
 	k8syaml "k8s.io/apimachinery/pkg/util/yaml"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 const (
@@ -320,4 +326,44 @@ func (s *Scanner) Err() error {
 		return nil
 	}
 	return s.err
+}
+
+type ApiUtil struct {
+	Client client.Client
+}
+
+// Create PersistentVolume object
+func (a ApiUtil) CreatePV(pv *corev1.PersistentVolume) (*corev1.PersistentVolume, error) {
+	return pv, a.Client.Create(context.TODO(), pv)
+}
+
+// Delete PersistentVolume object
+func (a ApiUtil) DeletePV(pvName string) error {
+	pv := &corev1.PersistentVolume{}
+	err := a.Client.Get(context.TODO(), types.NamespacedName{Name: pvName}, pv)
+	if kerrors.IsNotFound(err) {
+		return nil
+	} else if err != nil {
+		return err
+	}
+	err = a.Client.Delete(context.TODO(), pv)
+	return err
+}
+
+// CreateJob Creates a Job execution.
+func (a ApiUtil) CreateJob(job *batchv1.Job) error {
+	return a.Client.Create(context.TODO(), job)
+}
+
+// DeleteJob deletes specified Job by its name and namespace.
+func (a ApiUtil) DeleteJob(jobName string, namespace string) error {
+	job := &batchv1.Job{}
+	err := a.Client.Get(context.TODO(), types.NamespacedName{Name: jobName}, job)
+	if kerrors.IsNotFound(err) {
+		return nil
+	} else if err != nil {
+		return err
+	}
+	err = a.Client.Delete(context.TODO(), job)
+	return err
 }
