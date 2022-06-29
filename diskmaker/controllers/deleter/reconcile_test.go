@@ -195,17 +195,15 @@ func newFakeDeleteReconciler(t *testing.T, objs ...runtime.Object) (*DeleteRecon
 
 func TestDeleterReconcile(t *testing.T) {
 	tests := []struct {
-		name                      string
-		deviceName                string
-		dirEntries                []*provUtil.FakeDirEntry
-		nodeList                  *corev1.NodeList
-		targetNodeName            string
-		initialPVs                *corev1.PersistentVolumeList
-		expectedPVs               *corev1.PersistentVolumeList
-		provisionedByPVAnnotation string
+		name           string
+		dirEntries     []*provUtil.FakeDirEntry
+		nodeList       *corev1.NodeList
+		targetNodeName string
+		initialPVs     *corev1.PersistentVolumeList
+		expectedPVs    *corev1.PersistentVolumeList
 	}{
 		{
-			name:       "Reconcile does not delete a PV with Retain policy",
+			name:       "Reconcile does not delete a PV (Reclaim policy: Retain)",
 			dirEntries: nil,
 			nodeList: makeNodeList([]NodeConfigParams{
 				{
@@ -232,7 +230,7 @@ func TestDeleterReconcile(t *testing.T) {
 			}),
 		},
 		{
-			name: "Reconcile deletes only PVs on its node",
+			name: "Reconcile deletes only PVs that belong to its node (Reclaim policy: Delete)",
 			dirEntries: []*provUtil.FakeDirEntry{
 				{
 					Name:       "PV-1",
@@ -273,7 +271,7 @@ func TestDeleterReconcile(t *testing.T) {
 			}),
 		},
 		{
-			name: "Reconcile deletes a PV with Delete policy",
+			name: "Reconcile deletes a PV with UID (Reclaim policy: Delete)",
 			dirEntries: []*provUtil.FakeDirEntry{
 				{
 					Name:       "PV-1",
@@ -283,6 +281,54 @@ func TestDeleterReconcile(t *testing.T) {
 			nodeList: makeNodeList([]NodeConfigParams{
 				{
 					NodeName: "Node1", NodeUID: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+				},
+			}),
+			targetNodeName: "Node1",
+			initialPVs: makePersistentVolumeList([]PVConfigParams{
+				{
+					PVName:          "PV-1",
+					PVAnnotation:    "local-volume-provisioner-Node1-aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+					PVReclaimPolicy: corev1.PersistentVolumeReclaimDelete,
+					PVPhase:         corev1.VolumeReleased,
+				},
+			}),
+			expectedPVs: &corev1.PersistentVolumeList{},
+		},
+		{
+			name: "Reconcile deletes a PV without UID (Reclaim policy: Delete)",
+			dirEntries: []*provUtil.FakeDirEntry{
+				{
+					Name:       "PV-1",
+					VolumeType: provUtil.FakeEntryFile,
+				},
+			},
+			nodeList: makeNodeList([]NodeConfigParams{
+				{
+					NodeName: "Node1", NodeUID: "",
+				},
+			}),
+			targetNodeName: "Node1",
+			initialPVs: makePersistentVolumeList([]PVConfigParams{
+				{
+					PVName:          "PV-1",
+					PVAnnotation:    "local-volume-provisioner-Node1",
+					PVReclaimPolicy: corev1.PersistentVolumeReclaimDelete,
+					PVPhase:         corev1.VolumeReleased,
+				},
+			}),
+			expectedPVs: &corev1.PersistentVolumeList{},
+		},
+		{
+			name: "Reconcile deletes a PV if node UID does not match PV annotation (Reclaim policy: Delete)",
+			dirEntries: []*provUtil.FakeDirEntry{
+				{
+					Name:       "PV-1",
+					VolumeType: provUtil.FakeEntryFile,
+				},
+			},
+			nodeList: makeNodeList([]NodeConfigParams{
+				{
+					NodeName: "Node1", NodeUID: "5991475c-f876-11ec-b939-0242ac120002",
 				},
 			}),
 			targetNodeName: "Node1",
@@ -420,7 +466,6 @@ func evaluate(tc *testContext, expectedPVs *corev1.PersistentVolumeList) (bool, 
 				if reflect.DeepEqual(actualPV, expectedPV) {
 					expectedPVsValuesCopy = RemoveIndex(expectedPVsValuesCopy, e)
 				}
-
 			}
 		}
 	}
