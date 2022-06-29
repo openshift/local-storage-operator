@@ -543,8 +543,7 @@ func (r *LocalVolumeSetReconciler) SetupWithManager(mgr ctrl.Manager, cleanupTra
 
 func handlePVChange(runtimeConfig *provCommon.RuntimeConfig, pv *corev1.PersistentVolume, q workqueue.RateLimitingInterface, isDelete bool) {
 	// skip non-owned PVs
-	name, found := pv.Annotations[provCommon.AnnProvisionedBy]
-	if !found || name != runtimeConfig.Name {
+	if !common.PVMatchesProvisioner(*pv, runtimeConfig.Name) {
 		return
 	}
 
