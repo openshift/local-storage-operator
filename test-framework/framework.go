@@ -184,6 +184,7 @@ func (f *Framework) addToScheme(addToScheme addToSchemeFunc, obj client.ObjectLi
 		}
 		if err != nil {
 			f.restMapper.Reset()
+			log.Warn(err)
 			return false, nil
 		}
 		f.Client = &frameworkClient{Client: dynClient}
