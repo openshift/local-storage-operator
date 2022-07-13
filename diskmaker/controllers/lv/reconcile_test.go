@@ -33,34 +33,78 @@ import (
 )
 
 func TestFindMatchingDisk(t *testing.T) {
-	d, _ := getFakeDiskMaker(t, "/mnt/local-storage")
-	blockDevices := []internal.BlockDevice{
+	tests := []struct {
+		name                  string
+		availableBlockDevices []internal.BlockDevice
+		userSpecifiedDisk     []string
+		matchingDevices       []DiskLocation
+	}{
 		{
-			Name:  "sdb1",
-			KName: "sdb1",
-		},
-		{
-			Name:  "sdb2",
-			KName: "sdb2",
-		},
-	}
-	if len(blockDevices) != 2 {
-		t.Errorf("expected 2 devices got %d", len(blockDevices))
-	}
-	diskConfig := &DiskConfig{
-		Disks: map[string]*Disks{
-			"foo": &Disks{
-				DevicePaths: []string{"/dev/sdb1", "/dev/sdb2"},
+			name: "when devices match by their device names",
+			availableBlockDevices: []internal.BlockDevice{
+				{
+					Name:  "sdc1",
+					KName: "sdc1",
+				},
+				{
+					Name:  "sdc2",
+					KName: "sdc2",
+				},
+			},
+			userSpecifiedDisk: []string{"/dev/sdc1", "/dev/sdc2"},
+			matchingDevices: []DiskLocation{
+				{
+					diskNamePath:     "/dev/sdc1",
+					userProvidedPath: "/dev/sdc1",
+					diskID:           "",
+				},
+				{
+					diskNamePath:     "/dev/sdc2",
+					userProvidedPath: "/dev/sdc2",
+					diskID:           "",
+				},
 			},
 		},
 	}
-	allDiskIds := getDeiveIDs()
-	deviceMap, err := d.findMatchingDisks(diskConfig, blockDevices, allDiskIds)
-	if err != nil {
-		t.Fatalf("error finding matchin device %v", err)
-	}
-	if len(deviceMap) != 1 {
-		t.Errorf("expected 1 elements in map got %d", len(deviceMap))
+
+	for i := range tests {
+		test := tests[i]
+		t.Run(test.name, func(t *testing.T) {
+			d, _ := getFakeDiskMaker(t, "/mnt/local-storage")
+			var diskConfig = &DiskConfig{
+				Disks: map[string]*Disks{
+					"foo": {
+						DevicePaths: test.userSpecifiedDisk,
+					},
+				},
+			}
+			allDiskIds := getDeiveIDs()
+			d.fsInterface = FakeFileSystemInterface{}
+			deviceMap, err := d.findMatchingDisks(diskConfig, test.availableBlockDevices, allDiskIds)
+			if err != nil {
+				t.Fatalf("error finding matchin device %v", err)
+			}
+			if len(test.matchingDevices) > 0 {
+				foundDevices, ok := deviceMap["foo"]
+				if !ok {
+					t.Fatalf("expected devices for storageclass foo, found none")
+				}
+
+				for _, expectedDiskLocation := range test.matchingDevices {
+					matchFound := false
+					for _, foundLocation := range foundDevices {
+						if foundLocation.diskNamePath == expectedDiskLocation.diskNamePath &&
+							foundLocation.diskID == expectedDiskLocation.diskID &&
+							foundLocation.userProvidedPath == expectedDiskLocation.userProvidedPath {
+							matchFound = true
+						}
+					}
+					if !matchFound {
+						t.Errorf("expected device %v found none", expectedDiskLocation)
+					}
+				}
+			}
+		})
 	}
 }
 
@@ -69,7 +113,7 @@ func TestLoadConfig(t *testing.T) {
 	defer os.RemoveAll(tempDir)
 	diskConfig := &DiskConfig{
 		Disks: map[string]*Disks{
-			"foo": &Disks{
+			"foo": {
 				DevicePaths: []string{"xyz"},
 			},
 		},
@@ -139,7 +183,8 @@ func TestCreateSymLinkByDeviceID(t *testing.T) {
 		},
 	}
 	d, _ := getFakeDiskMaker(t, tmpSymLinkTargetDir, lv, sc)
-	diskLocation := DiskLocation{fakeDisk.Name(), fakeDiskByID.Name(), internal.BlockDevice{}}
+	d.fsInterface = FakeFileSystemInterface{}
+	diskLocation := DiskLocation{fakeDisk.Name(), fakeDiskByID.Name(), fakeDisk.Name(), internal.BlockDevice{}}
 
 	d.runtimeConfig = &provCommon.RuntimeConfig{
 		UserConfig: &provCommon.UserConfig{
@@ -185,7 +230,8 @@ func TestCreateSymLinkByDeviceName(t *testing.T) {
 	}
 
 	d, _ := getFakeDiskMaker(t, tmpSymLinkTargetDir, lv, sc)
-	diskLocation := DiskLocation{fakeDisk.Name(), "", internal.BlockDevice{}}
+	d.fsInterface = FakeFileSystemInterface{}
+	diskLocation := DiskLocation{fakeDisk.Name(), "", fakeDisk.Name(), internal.BlockDevice{}}
 	d.createSymlink(diskLocation, fakeDisk.Name(), path.Join(tmpSymLinkTargetDir, "diskName"), log, false)
 
 	// assert that target symlink is created for disk name when no disk ID is available
