@@ -86,10 +86,10 @@ func (r *DeleteReconciler) Reconcile(ctx context.Context, request ctrl.Request) 
 		if err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to initialize PV cache: %w", err)
 		}
+
 		for _, pv := range pvList.Items {
 			// skip non-owned PVs
-			name, found := pv.Annotations[provCommon.AnnProvisionedBy]
-			if !found || name != r.runtimeConfig.Name {
+			if !common.PVMatchesProvisioner(pv, r.runtimeConfig.Name) {
 				continue
 			}
 			addOrUpdatePV(r.runtimeConfig, pv)
@@ -189,13 +189,11 @@ func handlePVChange(runtimeConfig *provCommon.RuntimeConfig, pv *corev1.Persiste
 		return
 	}
 	// skip non-owned PVs
-	annotations := pv.GetAnnotations()
-	name, found := annotations[provCommon.AnnProvisionedBy]
-	// enqueue only if the proviiosner name matches,
-	// or the first run hasn't happened yet and e don't know the provisioner name to compare it to
-	if !found || name != runtimeConfig.Name {
+	if !common.PVMatchesProvisioner(*pv, runtimeConfig.Name) {
 		return
 	}
+	// enqueue only if the provisioner name matches,
+	// or the first run hasn't happened yet, and we don't know the provisioner name to compare it to
 
 	// update cache
 	if isDelete {
@@ -208,7 +206,7 @@ func handlePVChange(runtimeConfig *provCommon.RuntimeConfig, pv *corev1.Persiste
 	}
 
 	// enqueue owner
-	_, found = pv.Labels[common.PVOwnerNameLabel]
+	_, found := pv.Labels[common.PVOwnerNameLabel]
 	if !found {
 		return
 	}

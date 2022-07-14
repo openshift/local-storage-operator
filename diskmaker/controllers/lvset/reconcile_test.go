@@ -1,7 +1,7 @@
 package lvset
 
 import (
-	"context"
+	"github.com/openshift/local-storage-operator/test-framework"
 	"testing"
 
 	"github.com/openshift/client-go/security/clientset/versioned/scheme"
@@ -9,13 +9,9 @@ import (
 	v1alphav1api "github.com/openshift/local-storage-operator/api/v1alpha1"
 	"github.com/stretchr/testify/assert"
 	appsv1 "k8s.io/api/apps/v1"
-	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
-	v1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
-	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/utils/mount"
 
@@ -80,7 +76,7 @@ func newFakeLocalVolumeSetReconciler(t *testing.T, objs ...runtime.Object) (*Loc
 		},
 		Cache:    provCache.NewVolumeCache(),
 		VolUtil:  fakeVolUtil,
-		APIUtil:  apiUtil{client: fakeClient},
+		APIUtil:  test.ApiUtil{Client: fakeClient},
 		Recorder: fakeRecorder,
 		Mounter:  mounter,
 	}
@@ -104,44 +100,4 @@ func newFakeLocalVolumeSetReconciler(t *testing.T, objs ...runtime.Object) (*Loc
 		runtimeConfig:  runtimeConfig,
 		deleter:        provDeleter.NewDeleter(runtimeConfig, cleanupTracker),
 	}, tc
-}
-
-type apiUtil struct {
-	client client.Client
-}
-
-// Create PersistentVolume object
-func (a apiUtil) CreatePV(pv *v1.PersistentVolume) (*v1.PersistentVolume, error) {
-	return pv, a.client.Create(context.TODO(), pv)
-}
-
-// Delete PersistentVolume object
-func (a apiUtil) DeletePV(pvName string) error {
-	pv := &corev1.PersistentVolume{}
-	err := a.client.Get(context.TODO(), types.NamespacedName{Name: pvName}, pv)
-	if kerrors.IsNotFound(err) {
-		return nil
-	} else if err != nil {
-		return err
-	}
-	err = a.client.Delete(context.TODO(), pv)
-	return err
-}
-
-// CreateJob Creates a Job execution.
-func (a apiUtil) CreateJob(job *batchv1.Job) error {
-	return a.client.Create(context.TODO(), job)
-}
-
-// DeleteJob deletes specified Job by its name and namespace.
-func (a apiUtil) DeleteJob(jobName string, namespace string) error {
-	job := &batchv1.Job{}
-	err := a.client.Get(context.TODO(), types.NamespacedName{Name: jobName}, job)
-	if kerrors.IsNotFound(err) {
-		return nil
-	} else if err != nil {
-		return err
-	}
-	err = a.client.Delete(context.TODO(), job)
-	return err
 }
