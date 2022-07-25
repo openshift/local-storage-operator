@@ -22,7 +22,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/source"
 	provCache "sigs.k8s.io/sig-storage-local-static-provisioner/pkg/cache"
 	provCommon "sigs.k8s.io/sig-storage-local-static-provisioner/pkg/common"
-	staticProvisioner "sigs.k8s.io/sig-storage-local-static-provisioner/pkg/common"
 	provDeleter "sigs.k8s.io/sig-storage-local-static-provisioner/pkg/deleter"
 	provUtil "sigs.k8s.io/sig-storage-local-static-provisioner/pkg/util"
 )
@@ -44,45 +43,18 @@ func init() {
 // Result.Requeue is true, otherwise upon completion it will remove the work from the queue.
 func (r *DeleteReconciler) Reconcile(ctx context.Context, request ctrl.Request) (ctrl.Result, error) {
 	klog.InfoS("Looking for released PVs to cleanup", "namespace", request.Namespace, "name", request.Name)
-	// enqueue if cache is not initialized
-	// and if any pv has phase == Releaseds
 
-	// get associated provisioner config
-	cm := &corev1.ConfigMap{}
-	err := r.Client.Get(ctx, types.NamespacedName{Name: common.ProvisionerConfigMapName, Namespace: request.Namespace}, cm)
+	err := common.ReloadRuntimeConfig(ctx, r.Client, request, nodeName, r.runtimeConfig)
 	if err != nil {
-		klog.ErrorS(err, "could not get provisioner configmap")
 		return ctrl.Result{}, err
 	}
-
-	// read provisioner config
-	provisionerConfig := staticProvisioner.ProvisionerConfiguration{}
-	staticProvisioner.ConfigMapDataToVolumeConfig(cm.Data, &provisionerConfig)
-
-	r.runtimeConfig.DiscoveryMap = provisionerConfig.StorageClassConfig
-	r.runtimeConfig.NodeLabelsForPV = provisionerConfig.NodeLabelsForPV
-	r.runtimeConfig.Namespace = request.Namespace
-	r.runtimeConfig.SetPVOwnerRef = provisionerConfig.SetPVOwnerRef
-
-	// ignored by our implementation of static-provisioner,
-	// but not by deleter (if applicable)
-	r.runtimeConfig.UseNodeNameOnly = provisionerConfig.UseNodeNameOnly
-	r.runtimeConfig.MinResyncPeriod = provisionerConfig.MinResyncPeriod
-	r.runtimeConfig.UseAlphaAPI = provisionerConfig.UseAlphaAPI
-	r.runtimeConfig.LabelsForPV = provisionerConfig.LabelsForPV
 
 	// initialize the pv cache
 	// initialize the deleter's pv cache on the first run
 	if !r.firstRunOver {
-		r.runtimeConfig.Node = &corev1.Node{}
-		err = r.Client.Get(ctx, types.NamespacedName{Name: nodeName}, r.runtimeConfig.Node)
-		if err != nil {
-			return ctrl.Result{}, err
-		}
-		r.runtimeConfig.Name = common.GetProvisionedByValue(*r.runtimeConfig.Node)
 		klog.InfoS("first run, initializing PV cache", "provisionerName", r.runtimeConfig.Name)
 		pvList := &corev1.PersistentVolumeList{}
-		err := r.Client.List(context.TODO(), pvList)
+		err = r.Client.List(context.TODO(), pvList)
 		if err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to initialize PV cache: %w", err)
 		}
