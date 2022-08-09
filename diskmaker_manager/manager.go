@@ -2,6 +2,9 @@ package main
 
 import (
 	"flag"
+	corev1 "k8s.io/api/core/v1"
+	provCommon "sigs.k8s.io/sig-storage-local-static-provisioner/pkg/common"
+	provUtil "sigs.k8s.io/sig-storage-local-static-provisioner/pkg/util"
 
 	localv1 "github.com/openshift/local-storage-operator/api/v1"
 	localv1alpha1 "github.com/openshift/local-storage-operator/api/v1alpha1"
@@ -18,6 +21,7 @@ import (
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/klog/v2"
+	"k8s.io/utils/mount"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/manager/signals"
@@ -34,6 +38,20 @@ func init() {
 
 	utilruntime.Must(localv1.AddToScheme(scheme))
 	utilruntime.Must(localv1alpha1.AddToScheme(scheme))
+}
+
+func getRuntimeConfig(componentName string, mgr ctrl.Manager) *provCommon.RuntimeConfig {
+	return &provCommon.RuntimeConfig{
+		Recorder: mgr.GetEventRecorderFor(componentName),
+		UserConfig: &provCommon.UserConfig{
+			Node: &corev1.Node{},
+		},
+		Cache:   provCache.NewVolumeCache(),
+		VolUtil: provUtil.NewVolumeUtil(),
+		APIUtil: provUtil.NewAPIUtil(provCommon.SetupClient()),
+		Client:  provCommon.SetupClient(),
+		Mounter: mount.New("" /* defaults to /bin/mount */),
+	}
 }
 
 func startManager(cmd *cobra.Command, args []string) error {
@@ -93,10 +111,11 @@ func startManager(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	if err = (&diskmakerControllerDeleter.DeleteReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
-	}).SetupWithManager(mgr, &provDeleter.CleanupStatusTracker{ProcTable: provDeleter.NewProcTable()}, provCache.NewVolumeCache()); err != nil {
+	if err = diskmakerControllerDeleter.NewDeleteReconciler(
+		mgr.GetClient(),
+		&provDeleter.CleanupStatusTracker{ProcTable: provDeleter.NewProcTable()},
+		getRuntimeConfig(diskmakerControllerDeleter.ComponentName, mgr),
+	).WithManager(mgr); err != nil {
 		klog.ErrorS(err, "unable to create Deleter diskmaker controller: %v")
 		return err
 	}
