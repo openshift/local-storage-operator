@@ -16,9 +16,9 @@ type timeInterface interface {
 	getCurrentTime() time.Time
 }
 
-type wallTime struct{}
+type WallTime struct{}
 
-func (t *wallTime) getCurrentTime() time.Time {
+func (t *WallTime) getCurrentTime() time.Time {
 	return time.Now()
 }
 
