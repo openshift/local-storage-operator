@@ -247,7 +247,7 @@ func getFakeDiskMaker(t *testing.T, symlinkLocation string, objs ...runtime.Obje
 	fakeClient := fake.NewFakeClientWithScheme(scheme, objs...)
 
 	fakeRecorder := record.NewFakeRecorder(10)
-	fakeEventSync := newEventReporter(fakeRecorder)
+
 	mounter := &mount.FakeMounter{
 		MountPoints: []mount.MountPoint{},
 	}
@@ -272,16 +272,16 @@ func getFakeDiskMaker(t *testing.T, symlinkLocation string, objs ...runtime.Obje
 		runtimeConfig: runtimeConfig,
 		fakeVolUtil:   fakeVolUtil,
 	}
-	cleanupTracker := &provDeleter.CleanupStatusTracker{ProcTable: provDeleter.NewProcTable()}
-	return &LocalVolumeReconciler{
-		symlinkLocation: symlinkLocation,
-		Client:          fakeClient,
-		Scheme:          scheme,
-		eventSync:       fakeEventSync,
-		cleanupTracker:  cleanupTracker,
-		runtimeConfig:   runtimeConfig,
-		deleter:         provDeleter.NewDeleter(runtimeConfig, cleanupTracker),
-	}, tc
+
+	lvReconciler := NewLocalVolumeReconciler(
+		fakeClient,
+		scheme,
+		symlinkLocation,
+		&provDeleter.CleanupStatusTracker{ProcTable: provDeleter.NewProcTable()},
+		runtimeConfig,
+	)
+
+	return lvReconciler, tc
 
 }
 

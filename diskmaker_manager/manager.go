@@ -95,10 +95,13 @@ func startManager(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	if err = (&diskmakerControllerLv.LocalVolumeReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
-	}).SetupWithManager(mgr, &provDeleter.CleanupStatusTracker{ProcTable: provDeleter.NewProcTable()}, provCache.NewVolumeCache()); err != nil {
+	if err = diskmakerControllerLv.NewLocalVolumeReconciler(
+		mgr.GetClient(),
+		mgr.GetScheme(),
+		common.GetLocalDiskLocationPath(),
+		&provDeleter.CleanupStatusTracker{ProcTable: provDeleter.NewProcTable()},
+		getRuntimeConfig(diskmakerControllerLv.ComponentName, mgr),
+	).WithManager(mgr); err != nil {
 		klog.ErrorS(err, "unable to create LocalVolume diskmaker controller")
 		return err
 	}
