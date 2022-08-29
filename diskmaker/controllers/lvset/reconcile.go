@@ -21,7 +21,6 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/klog/v2"
-	"k8s.io/utils/mount"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
@@ -29,11 +28,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
-	provCache "sigs.k8s.io/sig-storage-local-static-provisioner/pkg/cache"
 	provCommon "sigs.k8s.io/sig-storage-local-static-provisioner/pkg/common"
-	staticProvisioner "sigs.k8s.io/sig-storage-local-static-provisioner/pkg/common"
 	provDeleter "sigs.k8s.io/sig-storage-local-static-provisioner/pkg/deleter"
-	provUtil "sigs.k8s.io/sig-storage-local-static-provisioner/pkg/util"
 )
 
 const (
@@ -51,9 +47,14 @@ const (
 func (r *LocalVolumeSetReconciler) Reconcile(ctx context.Context, request ctrl.Request) (ctrl.Result, error) {
 	klog.InfoS("Reconciling LocalVolumeSet", "namespace", request.Namespace, "name", request.Name)
 
+	err := common.ReloadRuntimeConfig(ctx, r.Client, request, r.nodeName, r.runtimeConfig)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+
 	// Fetch the LocalVolumeSet instance
 	lvset := &localv1alpha1.LocalVolumeSet{}
-	err := r.Client.Get(ctx, request.NamespacedName, lvset)
+	err = r.Client.Get(ctx, request.NamespacedName, lvset)
 	if err != nil {
 		if kerrors.IsNotFound(err) {
 			// Request object not found, could have been deleted after reconcile request.
@@ -67,13 +68,6 @@ func (r *LocalVolumeSetReconciler) Reconcile(ctx context.Context, request ctrl.R
 	// don't provision for deleted lvsets
 	if !lvset.DeletionTimestamp.IsZero() {
 		return ctrl.Result{}, nil
-	}
-
-	// get the node and determine if the localvolumeset selects this node
-	r.runtimeConfig.Node = &corev1.Node{}
-	err = r.Client.Get(ctx, types.NamespacedName{Name: r.nodeName}, r.runtimeConfig.Node)
-	if err != nil {
-		return ctrl.Result{}, err
 	}
 
 	// ignore LocalVolmeSets whose LabelSelector doesn't match this node
@@ -98,38 +92,10 @@ func (r *LocalVolumeSetReconciler) Reconcile(ctx context.Context, request ctrl.R
 		return ctrl.Result{}, err
 	}
 
-	// get associated provisioner config
-	cm := &corev1.ConfigMap{}
-	err = r.Client.Get(ctx, types.NamespacedName{Name: common.ProvisionerConfigMapName, Namespace: request.Namespace}, cm)
-	if err != nil {
-		klog.ErrorS(err, "could not get provisioner configmap")
-		return ctrl.Result{}, err
-	}
-
-	// read provisioner config
-	provisionerConfig := staticProvisioner.ProvisionerConfiguration{}
-	staticProvisioner.ConfigMapDataToVolumeConfig(cm.Data, &provisionerConfig)
-
-	r.runtimeConfig.DiscoveryMap = provisionerConfig.StorageClassConfig
-	r.runtimeConfig.NodeLabelsForPV = provisionerConfig.NodeLabelsForPV
-	r.runtimeConfig.Namespace = request.Namespace
-	r.runtimeConfig.SetPVOwnerRef = provisionerConfig.SetPVOwnerRef
-	r.runtimeConfig.Name = common.GetProvisionedByValue(*r.runtimeConfig.Node)
-
-	// ignored by our implementation of static-provisioner,
-	// but not by deleter (if applicable)
-	r.runtimeConfig.UseNodeNameOnly = provisionerConfig.UseNodeNameOnly
-	r.runtimeConfig.MinResyncPeriod = provisionerConfig.MinResyncPeriod
-	r.runtimeConfig.UseAlphaAPI = provisionerConfig.UseAlphaAPI
-	r.runtimeConfig.LabelsForPV = provisionerConfig.LabelsForPV
-
-	// unsupported
-	r.runtimeConfig.UseJobForCleaning = false
-
 	// get symlinkdir
-	symLinkConfig, ok := provisionerConfig.StorageClassConfig[storageClassName]
+	symLinkConfig, ok := r.runtimeConfig.DiscoveryMap[storageClassName]
 	if !ok {
-		return ctrl.Result{}, fmt.Errorf("could not find storageclass entry %q in provisioner config: %+v", storageClassName, provisionerConfig)
+		return ctrl.Result{}, fmt.Errorf("could not find storageclass entry %q in provisioner config: %+v", storageClassName, r.runtimeConfig.DiscoveryMap)
 	}
 	symLinkDir := symLinkConfig.HostDir
 
@@ -478,32 +444,25 @@ func init() {
 	watchNamespace, _ = common.GetWatchNamespace()
 }
 
-func (r *LocalVolumeSetReconciler) SetupWithManager(mgr ctrl.Manager, cleanupTracker *provDeleter.CleanupStatusTracker, pvCache *provCache.VolumeCache) error {
-
-	clientSet := provCommon.SetupClient()
-
-	runtimeConfig := &provCommon.RuntimeConfig{
-		UserConfig: &provCommon.UserConfig{
-			Node: &corev1.Node{},
-		},
-		Cache:    pvCache,
-		VolUtil:  provUtil.NewVolumeUtil(),
-		APIUtil:  provUtil.NewAPIUtil(clientSet),
-		Client:   clientSet,
-		Recorder: mgr.GetEventRecorderFor(ComponentName),
-		Mounter:  mount.New("" /* defaults to /bin/mount */),
-		// InformerFactory: , // unused
-
+func NewLocalVolumeSetReconciler(client client.Client, scheme *runtime.Scheme, time timeInterface, cleanupTracker *provDeleter.CleanupStatusTracker, rc *provCommon.RuntimeConfig) *LocalVolumeSetReconciler {
+	deleter := provDeleter.NewDeleter(rc, cleanupTracker)
+	eventReporter := newEventReporter(rc.Recorder)
+	lvsReconciler := &LocalVolumeSetReconciler{
+		Client:         client,
+		Scheme:         scheme,
+		nodeName:       nodeName,
+		eventReporter:  eventReporter,
+		deviceAgeMap:   newAgeMap(time),
+		cleanupTracker: cleanupTracker,
+		runtimeConfig:  rc,
+		deleter:        deleter,
 	}
-	clock := &wallTime{}
 
-	r.nodeName = nodeName
-	r.eventReporter = newEventReporter(mgr.GetEventRecorderFor(ComponentName))
-	r.deviceAgeMap = newAgeMap(clock)
-	r.cleanupTracker = cleanupTracker
-	r.runtimeConfig = runtimeConfig
-	r.deleter = provDeleter.NewDeleter(runtimeConfig, cleanupTracker)
-	return ctrl.NewControllerManagedBy(mgr).
+	return lvsReconciler
+}
+
+func (r *LocalVolumeSetReconciler) WithManager(mgr ctrl.Manager) error {
+	err := ctrl.NewControllerManagedBy(mgr).
 		// set to 1 explicitly, despite it being the default, as the reconciler is not thread-safe.
 		WithOptions(controller.Options{MaxConcurrentReconciles: 1}).
 		For(&localv1alpha1.LocalVolumeSet{}).
@@ -516,29 +475,31 @@ func (r *LocalVolumeSetReconciler) SetupWithManager(mgr ctrl.Manager, cleanupTra
 			GenericFunc: func(e event.GenericEvent, q workqueue.RateLimitingInterface) {
 				pv, ok := e.Object.(*corev1.PersistentVolume)
 				if ok {
-					handlePVChange(runtimeConfig, pv, q, false)
+					handlePVChange(r.runtimeConfig, pv, q, false)
 				}
 			},
 			CreateFunc: func(e event.CreateEvent, q workqueue.RateLimitingInterface) {
 				pv, ok := e.Object.(*corev1.PersistentVolume)
 				if ok {
-					handlePVChange(runtimeConfig, pv, q, false)
+					handlePVChange(r.runtimeConfig, pv, q, false)
 				}
 			},
 			UpdateFunc: func(e event.UpdateEvent, q workqueue.RateLimitingInterface) {
 				pv, ok := e.ObjectNew.(*corev1.PersistentVolume)
 				if ok {
-					handlePVChange(runtimeConfig, pv, q, false)
+					handlePVChange(r.runtimeConfig, pv, q, false)
 				}
 			},
 			DeleteFunc: func(e event.DeleteEvent, q workqueue.RateLimitingInterface) {
 				pv, ok := e.Object.(*corev1.PersistentVolume)
 				if ok {
-					handlePVChange(runtimeConfig, pv, q, true)
+					handlePVChange(r.runtimeConfig, pv, q, true)
 				}
 			},
 		}).
 		Complete(r)
+
+	return err
 }
 
 func handlePVChange(runtimeConfig *provCommon.RuntimeConfig, pv *corev1.PersistentVolume, q workqueue.RateLimitingInterface, isDelete bool) {

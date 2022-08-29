@@ -25,7 +25,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	provCache "sigs.k8s.io/sig-storage-local-static-provisioner/pkg/cache"
 	provCommon "sigs.k8s.io/sig-storage-local-static-provisioner/pkg/common"
-	"sigs.k8s.io/sig-storage-local-static-provisioner/pkg/deleter"
 	provDeleter "sigs.k8s.io/sig-storage-local-static-provisioner/pkg/deleter"
 	provUtil "sigs.k8s.io/sig-storage-local-static-provisioner/pkg/util"
 	"testing"
@@ -147,18 +146,12 @@ func newFakeDeleteReconciler(t *testing.T, objs ...runtime.Object) (*DeleteRecon
 	err = storagev1.AddToScheme(scheme)
 	assert.NoErrorf(t, err, "adding storagev1 to scheme")
 
-	fakeClient := crFake.NewFakeClientWithScheme(scheme, objs...)
-
 	fakeRecorder := record.NewFakeRecorder(20)
-	eventChannel := fakeRecorder.Events
+	fakeClient := crFake.NewFakeClientWithScheme(scheme, objs...)
+	fakeVolUtil := provUtil.NewFakeVolumeUtil(false /*deleteShouldFail*/, map[string][]*provUtil.FakeDirEntry{})
 	mounter := &mount.FakeMounter{
 		MountPoints: []mount.MountPoint{},
 	}
-
-	fakeVolUtil := provUtil.NewFakeVolumeUtil(false /*deleteShouldFail*/, map[string][]*provUtil.FakeDirEntry{})
-
-	//Caution: runtimeConfig actually gets rewritten in Reconcile()!
-	//TODO: refactor DeleteReconciler to have a proper constructor
 	runtimeConfig := &provCommon.RuntimeConfig{
 		UserConfig: &provCommon.UserConfig{
 			Node: &corev1.Node{},
@@ -171,26 +164,23 @@ func newFakeDeleteReconciler(t *testing.T, objs ...runtime.Object) (*DeleteRecon
 	}
 
 	cleanupTracker := &provDeleter.CleanupStatusTracker{ProcTable: provDeleter.NewProcTable()}
+	deleteReconciler := NewDeleteReconciler(
+		fakeClient,
+		&provDeleter.CleanupStatusTracker{ProcTable: provDeleter.NewProcTable()},
+		runtimeConfig,
+	)
 
 	tc := &testContext{
 		fakeClient:     fakeClient,
 		fakeRecorder:   fakeRecorder,
-		eventStream:    eventChannel,
+		eventStream:    fakeRecorder.Events,
 		fakeMounter:    mounter,
 		runtimeConfig:  runtimeConfig,
 		fakeVolUtil:    fakeVolUtil,
 		cleanupTracker: cleanupTracker,
 	}
 
-	del := provDeleter.NewDeleter(runtimeConfig, cleanupTracker)
-
-	return &DeleteReconciler{ //TODO: use constructor here
-		Client:         fakeClient,
-		Scheme:         scheme,
-		cleanupTracker: &provDeleter.CleanupStatusTracker{ProcTable: deleter.NewProcTable()},
-		runtimeConfig:  runtimeConfig,
-		deleter:        del,
-	}, tc
+	return deleteReconciler, tc
 }
 
 func TestDeleterReconcile(t *testing.T) {

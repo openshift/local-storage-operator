@@ -19,7 +19,6 @@ import (
 	crFake "sigs.k8s.io/controller-runtime/pkg/client/fake"
 	provCache "sigs.k8s.io/sig-storage-local-static-provisioner/pkg/cache"
 	provCommon "sigs.k8s.io/sig-storage-local-static-provisioner/pkg/common"
-	"sigs.k8s.io/sig-storage-local-static-provisioner/pkg/deleter"
 	provDeleter "sigs.k8s.io/sig-storage-local-static-provisioner/pkg/deleter"
 	provUtil "sigs.k8s.io/sig-storage-local-static-provisioner/pkg/util"
 )
@@ -90,14 +89,13 @@ func newFakeLocalVolumeSetReconciler(t *testing.T, objs ...runtime.Object) (*Loc
 		fakeVolUtil:   fakeVolUtil,
 	}
 
-	cleanupTracker := &provDeleter.CleanupStatusTracker{ProcTable: provDeleter.NewProcTable()}
-	return &LocalVolumeSetReconciler{
-		Client:         fakeClient,
-		Scheme:         scheme,
-		eventReporter:  newEventReporter(fakeRecorder),
-		deviceAgeMap:   newAgeMap(fakeClock),
-		cleanupTracker: &provDeleter.CleanupStatusTracker{ProcTable: deleter.NewProcTable()},
-		runtimeConfig:  runtimeConfig,
-		deleter:        provDeleter.NewDeleter(runtimeConfig, cleanupTracker),
-	}, tc
+	lvsReconciler := NewLocalVolumeSetReconciler(
+		fakeClient,
+		scheme,
+		fakeClock,
+		&provDeleter.CleanupStatusTracker{ProcTable: provDeleter.NewProcTable()},
+		runtimeConfig,
+	)
+
+	return lvsReconciler, tc
 }
