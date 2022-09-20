@@ -125,7 +125,7 @@ func (r *Reservation) Delay() time.Duration {
 }
 
 // InfDuration is the duration returned by Delay when a Reservation is not OK.
-const InfDuration = time.Duration(1<<63 - 1)
+const InfDuration = time.Duration(math.MaxInt64)
 
 // DelayFrom returns the duration for which the reservation holder must wait
 // before taking the reserved action.  Zero duration means act immediately.
@@ -223,6 +223,18 @@ func (lim *Limiter) Wait(ctx context.Context) (err error) {
 // canceled, or the expected wait time exceeds the Context's Deadline.
 // The burst limit is ignored if the rate limit is Inf.
 func (lim *Limiter) WaitN(ctx context.Context, n int) (err error) {
+	// The test code calls lim.wait with a fake timer generator.
+	// This is the real timer generator.
+	newTimer := func(d time.Duration) (<-chan time.Time, func() bool, func()) {
+		timer := time.NewTimer(d)
+		return timer.C, timer.Stop, func() {}
+	}
+
+	return lim.wait(ctx, n, time.Now(), newTimer)
+}
+
+// wait is the internal implementation of WaitN.
+func (lim *Limiter) wait(ctx context.Context, n int, now time.Time, newTimer func(d time.Duration) (<-chan time.Time, func() bool, func())) error {
 	lim.mu.Lock()
 	burst := lim.burst
 	limit := lim.limit
@@ -238,7 +250,6 @@ func (lim *Limiter) WaitN(ctx context.Context, n int) (err error) {
 	default:
 	}
 	// Determine wait limit
-	now := time.Now()
 	waitLimit := InfDuration
 	if deadline, ok := ctx.Deadline(); ok {
 		waitLimit = deadline.Sub(now)
@@ -253,10 +264,11 @@ func (lim *Limiter) WaitN(ctx context.Context, n int) (err error) {
 	if delay == 0 {
 		return nil
 	}
-	t := time.NewTimer(delay)
-	defer t.Stop()
+	ch, stop, advance := newTimer(delay)
+	defer stop()
+	advance() // only has an effect when testing
 	select {
-	case <-t.C:
+	case <-ch:
 		// We can proceed.
 		return nil
 	case <-ctx.Done():
