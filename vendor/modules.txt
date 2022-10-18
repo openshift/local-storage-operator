@@ -979,7 +979,7 @@ sigs.k8s.io/kube-storage-version-migrator/pkg/apis/migration/v1alpha1
 # sigs.k8s.io/sig-storage-lib-external-provisioner/v6 v6.3.0
 ## explicit; go 1.13
 sigs.k8s.io/sig-storage-lib-external-provisioner/v6/util
-# sigs.k8s.io/sig-storage-local-static-provisioner v0.0.0-20220816120907-a856c67f2f68 => github.com/openshift/sig-storage-local-static-provisioner v0.0.0-20220208224017-4561a388c9eb
+# sigs.k8s.io/sig-storage-local-static-provisioner v0.0.0-20220816120907-a856c67f2f68 => github.com/openshift/sig-storage-local-static-provisioner v0.0.0-20221014091355-396d28cafaae
 ## explicit; go 1.13
 sigs.k8s.io/sig-storage-local-static-provisioner/pkg/cache
 sigs.k8s.io/sig-storage-local-static-provisioner/pkg/common
@@ -1021,5 +1021,5 @@ sigs.k8s.io/yaml
 # k8s.io/mount-utils => k8s.io/mount-utils v0.25.1
 # k8s.io/pod-security-admission => k8s.io/pod-security-admission v0.25.1
 # k8s.io/sample-apiserver => k8s.io/sample-apiserver v0.25.1
-# sigs.k8s.io/sig-storage-local-static-provisioner => github.com/openshift/sig-storage-local-static-provisioner v0.0.0-20220208224017-4561a388c9eb
+# sigs.k8s.io/sig-storage-local-static-provisioner => github.com/openshift/sig-storage-local-static-provisioner v0.0.0-20221014091355-396d28cafaae
 # github.com/dgrijalva/jwt-go => github.com/golang-jwt/jwt v3.2.1+incompatible
