@@ -32,7 +32,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/apimachinery/pkg/util/sets"
 	provDeleter "sigs.k8s.io/sig-storage-local-static-provisioner/pkg/deleter"
 )
 
@@ -374,23 +373,7 @@ func (r *LocalVolumeReconciler) Reconcile(ctx context.Context, request ctrl.Requ
 	}
 
 	if len(deviceMap) == 0 {
-		msg := ""
-		if len(diskConfig.Disks) == 0 {
-			// Note that this scenario shouldn't be possible, as diskConfig.Disks is a required attribute
-			msg = "devicePaths was left empty; this attribute must be defined in the LocalVolume spec"
-		} else {
-			// We go through and build up a set to display the differences between expected devices
-			// and invalid formatted entries (such as /tmp)
-			diff := sets.NewString()
-			for _, v := range diskConfig.Disks {
-				set := sets.NewString()
-				for _, devicePath := range v.DevicePaths {
-					set.Insert(devicePath)
-				}
-				diff = set.Difference(v.DeviceNames())
-			}
-			msg = strings.Join(diff.List(), ", ") + " was defined in devicePaths, but expected a path in /dev/"
-		}
+		msg := "found empty matching device list"
 		r.eventSync.Report(r.localVolume, newDiskEvent(ErrorFindingMatchingDisk, msg, "", corev1.EventTypeWarning))
 		klog.Info(msg)
 		return ctrl.Result{}, nil
