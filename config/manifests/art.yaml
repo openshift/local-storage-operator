@@ -3,7 +3,7 @@ updates:
     update_list:
     # replace metadata.name value
     - search: "local-storage-operator.v{MAJOR}.{MINOR}.0"
-      replace: "local-storage-operator.{FULL_VER}"
+      replace: "local-storage-operator.v{FULL_VER}"
     # replace entire version line, otherwise would replace 4.3.0 anywhere
     - search: "version: {MAJOR}.{MINOR}.0"
       replace: "version: {FULL_VER}"
