@@ -92,6 +92,11 @@ func (r *DaemonReconciler) Reconcile(ctx context.Context, request ctrl.Request) 
 		return ctrl.Result{}, err
 	}
 
+	if err := localmetrics.CreateOrUpdateAlertRules(ctx, r.Client, request.Namespace, ownerRefs); err != nil {
+		klog.ErrorS(err, "failed to create alerting rules")
+		return ctrl.Result{}, err
+	}
+
 	configMapDataHash := dataHash(configMap.Data)
 
 	diskMakerDSMutateFn := getDiskMakerDSMutateFn(request, tolerations, ownerRefs, nodeSelector, configMapDataHash)
