@@ -2,7 +2,7 @@ apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule
 metadata:
   name: local-storage-operator
-  namespace: openshift-local-storage
+  namespace: ${OBJECT_NAMESPACE}
   labels:
     app: local-storage-operator
 spec:
@@ -10,7 +10,7 @@ spec:
     - name: local-storage-operator.rules
       rules:
       - alert: LSONoDiskManagerReplicas
-        expr:  max_over_time(kube_daemonset_status_desired_number_scheduled{namespace="openshift-local-storage", daemonset="diskmaker-manager"}[5m]) == 0
+        expr:  max_over_time(kube_daemonset_status_desired_number_scheduled{namespace="${OBJECT_NAMESPACE}", daemonset="${DAEMONSET_NAME}"}[5m]) == 0
         for: 10m
         labels:
           severity: warning

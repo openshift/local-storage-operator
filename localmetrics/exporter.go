@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/openshift/local-storage-operator/assets"
 	"github.com/openshift/local-storage-operator/common"
@@ -23,18 +24,18 @@ type Exporter struct {
 	Name            string
 	Namespace       string
 	OwnerRefs       []metav1.OwnerReference
-	Labels          map[string]string
+	AppLabel        string
 	ServiceCertName string
 }
 
-func NewExporter(ctx context.Context, client client.Client, name, namespace, certName string, ownerRefs []metav1.OwnerReference, labels map[string]string) *Exporter {
+func NewExporter(ctx context.Context, client client.Client, name, namespace, certName string, ownerRefs []metav1.OwnerReference, appLabel string) *Exporter {
 	return &Exporter{
 		Ctx:             ctx,
 		Client:          client,
 		Name:            name,
 		Namespace:       namespace,
 		OwnerRefs:       ownerRefs,
-		Labels:          labels,
+		AppLabel:        appLabel,
 		ServiceCertName: certName,
 	}
 }
@@ -53,17 +54,19 @@ func (e *Exporter) EnableMetricsExporter() error {
 }
 
 func (e *Exporter) enableService() error {
-	service, err := getMetricsService()
+	replacer := strings.NewReplacer(
+		"${OBJECT_NAME}", e.Name,
+		"${OBJECT_NAMESPACE}", e.Namespace,
+		"${APP_LABEL}", e.AppLabel,
+		"${SERVICE_CERT_NAME}", e.ServiceCertName,
+	)
+
+	service, err := getMetricsService(replacer)
 	if err != nil {
 		return fmt.Errorf("failed to get service. %v", err)
 	}
 
-	service.SetName(e.Name)
-	service.SetNamespace(e.Namespace)
-	service.SetLabels(e.Labels)
 	service.SetOwnerReferences(e.OwnerRefs)
-	service.Spec.Selector = e.Labels
-	service.Annotations["service.beta.openshift.io/serving-cert-secret-name"] = e.ServiceCertName
 
 	if _, err = e.createOrUpdateService(service); err != nil {
 		return fmt.Errorf("failed to enable service monitor. %v", err)
@@ -73,18 +76,19 @@ func (e *Exporter) enableService() error {
 }
 
 func (e *Exporter) enableServiceMonitor() error {
-	serviceMonitor, err := getMetricsServiceMonitor()
+	replacer := strings.NewReplacer(
+		"${OBJECT_NAME}", e.Name,
+		"${OBJECT_NAMESPACE}", e.Namespace,
+		"${APP_LABEL}", e.AppLabel,
+		"${SERVICE_CERT_NAME}", e.ServiceCertName,
+	)
+
+	serviceMonitor, err := getMetricsServiceMonitor(replacer)
 	if err != nil {
 		return fmt.Errorf("failed to get service monitor. %v", err)
 	}
 
-	serviceMonitor.SetName(e.Name)
-	serviceMonitor.SetNamespace(e.Namespace)
-	serviceMonitor.SetLabels(e.Labels)
 	serviceMonitor.SetOwnerReferences(e.OwnerRefs)
-	serviceMonitor.Spec.NamespaceSelector.MatchNames = []string{e.Namespace}
-	serviceMonitor.Spec.Selector.MatchLabels = e.Labels
-	serviceMonitor.Spec.Endpoints[0].TLSConfig.ServerName = fmt.Sprintf("%s.%s.svc", e.Name, e.Namespace)
 
 	if _, err = e.createOrUpdateServiceMonitor(serviceMonitor); err != nil {
 		return fmt.Errorf("failed to enable service monitor. %v", err)
@@ -144,28 +148,31 @@ func (e *Exporter) createOrUpdateServiceMonitor(serviceMonitor *monitoringv1.Ser
 	return serviceMonitor, nil
 }
 
-func getMetricsServiceMonitor() (*monitoringv1.ServiceMonitor, error) {
+func getMetricsServiceMonitor(replacer *strings.Replacer) (*monitoringv1.ServiceMonitor, error) {
 	file, err := assets.ReadFile(common.MetricsServiceMonitorTemplate)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch service monitor file. %v", err)
 	}
 
+	serviceMonitorYaml := replacer.Replace(string(file))
+
 	var servicemonitor monitoringv1.ServiceMonitor
-	err = k8sYAML.NewYAMLOrJSONDecoder(bytes.NewBufferString(string(file)), 1000).Decode(&servicemonitor)
+	err = k8sYAML.NewYAMLOrJSONDecoder(bytes.NewBufferString(serviceMonitorYaml), 1000).Decode(&servicemonitor)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode service monitor")
 	}
 	return &servicemonitor, nil
 }
 
-func getMetricsService() (*corev1.Service, error) {
+func getMetricsService(replacer *strings.Replacer) (*corev1.Service, error) {
 	file, err := assets.ReadFile(common.MetricsServiceTemplate)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch service monitor file. %v", err)
 	}
 
+	serviceYaml := replacer.Replace(string(file))
 	var service corev1.Service
-	err = k8sYAML.NewYAMLOrJSONDecoder(bytes.NewBufferString(string(file)), 1000).Decode(&service)
+	err = k8sYAML.NewYAMLOrJSONDecoder(bytes.NewBufferString(serviceYaml), 1000).Decode(&service)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode service monitor")
 	}
