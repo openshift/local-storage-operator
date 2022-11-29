@@ -2,6 +2,7 @@ package main
 
 import (
 	"flag"
+
 	corev1 "k8s.io/api/core/v1"
 	provCommon "sigs.k8s.io/sig-storage-local-static-provisioner/pkg/common"
 	provUtil "sigs.k8s.io/sig-storage-local-static-provisioner/pkg/util"
@@ -41,13 +42,14 @@ func init() {
 }
 
 func getRuntimeConfig(componentName string, mgr ctrl.Manager) *provCommon.RuntimeConfig {
+	volUtil, _ := provUtil.NewVolumeUtil()
 	return &provCommon.RuntimeConfig{
 		Recorder: mgr.GetEventRecorderFor(componentName),
 		UserConfig: &provCommon.UserConfig{
 			Node: &corev1.Node{},
 		},
 		Cache:   provCache.NewVolumeCache(),
-		VolUtil: provUtil.NewVolumeUtil(),
+		VolUtil: volUtil,
 		APIUtil: provUtil.NewAPIUtil(provCommon.SetupClient()),
 		Client:  provCommon.SetupClient(),
 		Mounter: mount.New("" /* defaults to /bin/mount */),
