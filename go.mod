@@ -132,6 +132,6 @@ replace (
 	k8s.io/sample-apiserver => k8s.io/sample-apiserver v0.24.0
 )
 
-replace sigs.k8s.io/sig-storage-local-static-provisioner => github.com/openshift/sig-storage-local-static-provisioner v0.0.0-20220208224017-4561a388c9eb // for bug 2032924
+replace sigs.k8s.io/sig-storage-local-static-provisioner => github.com/openshift/sig-storage-local-static-provisioner v0.0.0-20221017170331-33a18b720643 // BUG: https://issues.redhat.com/browse/OCPBUGS-2450
 
 replace github.com/dgrijalva/jwt-go => github.com/golang-jwt/jwt v3.2.1+incompatible

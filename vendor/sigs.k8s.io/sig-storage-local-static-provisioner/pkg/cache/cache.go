@@ -100,6 +100,15 @@ func (cache *VolumeCache) CleanPV(pv *v1.PersistentVolume) {
 	klog.Infof("Marked pv %q as cleaned in the cache", pv.Name)
 }
 
+// UncleanPV marks the PV object as not cleaned in the cache
+func (cache *VolumeCache) UncleanPV(pv *v1.PersistentVolume) {
+	cache.mutex.Lock()
+	defer cache.mutex.Unlock()
+
+	cache.cleaned[pv.Name] = false
+	klog.Infof("Marked pv %q as not clean in the cache", pv.Name)
+}
+
 // SuccessfullyCleanedPV returns true if the PV was already cleaned once
 // since the cache entry was created, or if the cache entry no longer exists.
 func (cache *VolumeCache) SuccessfullyCleanedPV(pv *v1.PersistentVolume) bool {
