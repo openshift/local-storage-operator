@@ -59,3 +59,18 @@ func TestEnableServiceMonitor(t *testing.T) {
 	assert.Equal(t, fakeLabels, expectedServce.Labels)
 	assert.Equal(t, fakeLabels, expectedServce.Spec.Selector.MatchLabels)
 }
+
+func TestEnablePrometheusRule(t *testing.T) {
+	fakeExporter := NewExporter(context.TODO(), getFakeClient(t), "test-service-monitor", "test-ns", "test-cert", []metav1.OwnerReference{}, fakeLabels)
+	err := fakeExporter.enablePrometheusRule()
+	assert.NoError(t, err)
+
+	// assert that service monitor was created with correct parameters.
+	expectedRule := &monitoringv1.PrometheusRule{}
+
+	err = fakeExporter.Client.Get(fakeExporter.Ctx,
+		types.NamespacedName{Name: "test-service-monitor", Namespace: "test-ns"}, expectedRule)
+	assert.NoError(t, err)
+	assert.Equal(t, "test-service-monitor", expectedRule.Name)
+	assert.Equal(t, fakeLabels, expectedRule.Labels)
+}

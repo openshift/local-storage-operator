@@ -2,9 +2,10 @@ package common
 
 import (
 	"fmt"
-	"k8s.io/klog/v2"
 	"os"
 	"regexp"
+
+	"k8s.io/klog/v2"
 	provCommon "sigs.k8s.io/sig-storage-local-static-provisioner/pkg/common"
 
 	localv1 "github.com/openshift/local-storage-operator/api/v1"
@@ -41,6 +42,7 @@ const (
 	DiskMakerDiscoveryDaemonSetTemplate = "templates/diskmaker-discovery-daemonset.yaml"
 	MetricsServiceTemplate              = "templates/localmetrics/service.yaml"
 	MetricsServiceMonitorTemplate       = "templates/localmetrics/service-monitor.yaml"
+	PrometheusRuleTemplate              = "templates/localmetrics/prometheus-rule.yaml"
 
 	// DiskMakerServiceName is the name of the service created for the diskmaker daemon
 	DiskMakerServiceName = "local-storage-diskmaker-metrics"

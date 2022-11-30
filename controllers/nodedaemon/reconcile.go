@@ -84,11 +84,15 @@ func (r *DaemonReconciler) Reconcile(ctx context.Context, request ctrl.Request) 
 	}
 
 	// enable service and servicemonitor for diskmaker daemonset
-	serviceLabels := map[string]string{"app": DiskMakerName}
 	metricsExportor := localmetrics.NewExporter(ctx, r.Client, common.DiskMakerServiceName, request.Namespace, common.DiskMakerMetricsServingCert,
-		ownerRefs, serviceLabels)
+		ownerRefs, DiskMakerName)
 	if err := metricsExportor.EnableMetricsExporter(); err != nil {
 		klog.ErrorS(err, "failed to create service and servicemonitors for diskmaker daemonset")
+		return ctrl.Result{}, err
+	}
+
+	if err := localmetrics.CreateOrUpdateAlertRules(ctx, r.Client, request.Namespace, DiskMakerName, ownerRefs); err != nil {
+		klog.ErrorS(err, "failed to create alerting rules")
 		return ctrl.Result{}, err
 	}
 

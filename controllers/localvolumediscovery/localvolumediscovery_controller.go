@@ -83,9 +83,8 @@ func (r *LocalVolumeDiscoveryReconciler) Reconcile(ctx context.Context, request 
 	}
 
 	// enable service and service monitor for Local Volume Discovery
-	serviceLabels := map[string]string{"app": DiskMakerDiscovery}
 	metricsExportor := localmetrics.NewExporter(ctx, r.Client, common.DiscoveryServiceName, instance.Namespace, common.DiscoveryMetricsServingCert,
-		getOwnerRefs(instance), serviceLabels)
+		getOwnerRefs(instance), DiskMakerDiscovery)
 	if err := metricsExportor.EnableMetricsExporter(); err != nil {
 		klog.ErrorS(err, "failed to create service and servicemonitors", "object", instance.Name)
 		return ctrl.Result{}, err

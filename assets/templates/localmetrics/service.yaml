@@ -2,11 +2,11 @@ apiVersion: v1
 kind: Service
 metadata:
   annotations:
-    service.beta.openshift.io/serving-cert-secret-name: lso-metrics-serving-cert
-  name: lso-metrics-exporter
-  namespace: openshift-local-storage
+    service.beta.openshift.io/serving-cert-secret-name: ${SERVICE_CERT_NAME}
+  name: ${OBJECT_NAME}
+  namespace: ${OBJECT_NAMESPACE}
   labels:
-    app: lso-metrics-exporter
+    app: ${APP_LABEL}
 spec:
   type: ClusterIP
   ports:
@@ -15,4 +15,4 @@ spec:
     protocol: TCP
     targetPort: metrics
   selector:
-    app: lso-metrics-exporter
+    app: ${APP_LABEL}

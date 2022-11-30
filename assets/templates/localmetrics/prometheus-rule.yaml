@@ -1,0 +1,29 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: local-storage-operator
+  namespace: ${OBJECT_NAMESPACE}
+  labels:
+    app: local-storage-operator
+spec:
+  groups:
+    - name: local-storage-operator.rules
+      rules:
+      - alert: LSONoDiskManagerReplicas
+        expr:  max_over_time(kube_daemonset_status_desired_number_scheduled{namespace="${OBJECT_NAMESPACE}", daemonset="${DAEMONSET_NAME}"}[5m]) == 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "LocalVolume / LocalVolumeSet does not match any node"
+          description: |
+            Local Storage Operator disk-manager DaemonSet does not have any scheduled replicas.
+            This DaemonSet handles LocalVolume and LocalVolumeSet objects and creates
+            PersistentVolumes (PVs) for devices described in these objects. As result, Local
+            Storage Operator is not able to create the PVs.
+            Please check all LocalVolume and LocalVolumeSet objects and make sure that they have
+            correct "nodeSelector" and "tolerations" fields, and there are nodes that match the
+            nodeSelector and all taints of the matching nodes are tolerated.
+            A frequent issue is that nodes that run OpenShift Data Foundation (ODF) are tainted,
+            so only ODF runs on these nodes. In that case, LocalVolume / LocalVolumeSet objects
+            must tolerate such a taint to provide disks for ODF on the nodes.
