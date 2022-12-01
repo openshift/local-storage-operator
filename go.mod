@@ -32,7 +32,6 @@ require (
 	k8s.io/utils v0.0.0-20210930125809-cb0fa318a74b
 	sigs.k8s.io/controller-runtime v0.11.0
 	sigs.k8s.io/sig-storage-local-static-provisioner v0.0.0-20210414025242-c96e27d784e2
-	sigs.k8s.io/yaml v1.3.0
 )
 
 replace (
@@ -64,4 +63,4 @@ replace (
 	k8s.io/sample-apiserver => k8s.io/sample-apiserver v0.23.0
 )
 
-replace sigs.k8s.io/sig-storage-local-static-provisioner => github.com/openshift/sig-storage-local-static-provisioner v0.0.0-20220215091038-b6e8dca7c955 // for bug 2052756
+replace sigs.k8s.io/sig-storage-local-static-provisioner => github.com/openshift/sig-storage-local-static-provisioner v0.0.0-20221017170411-067d1a5bfbe1 // BUG: https://issues.redhat.com/browse/OCPBUGS-2450

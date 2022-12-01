@@ -169,6 +169,8 @@ func (d *Deleter) deletePV(pv *v1.PersistentVolume) error {
 		klog.Infof("Deleting pv %s after successful cleanup", pv.Name)
 		if err = d.APIUtil.DeletePV(pv.Name); err != nil {
 			if !errors.IsNotFound(err) {
+				// PV failed to delete in API server, flag the PV as not cleaned so next reconcile attempts the deletion again.
+				d.Cache.UncleanPV(pv)
 				d.RuntimeConfig.Recorder.Eventf(pv, v1.EventTypeWarning, common.EventVolumeFailedDelete,
 					err.Error())
 				return fmt.Errorf("Error deleting PV %q: %v", pv.Name, err.Error())
