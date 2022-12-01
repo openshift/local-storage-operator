@@ -117,7 +117,7 @@ func CreateLocalPV(
 		if !mountPointMap.Has(symLinkPath) {
 			return fmt.Errorf("path %q is not an actual mountpoint", symLinkPath)
 		}
-		capacityBytes, err = runtimeConfig.VolUtil.GetFsCapacityByte(symLinkPath)
+		capacityBytes, err = runtimeConfig.VolUtil.GetFsCapacityByte("", symLinkPath)
 		if err != nil {
 			return fmt.Errorf("path %q fs stats error: %w", symLinkPath, err)
 		}
