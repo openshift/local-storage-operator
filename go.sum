@@ -530,8 +530,8 @@ github.com/openshift/client-go v0.0.0-20220504114320-6aec01bb0754 h1:E/SORtM8rYR
 github.com/openshift/client-go v0.0.0-20220504114320-6aec01bb0754/go.mod h1:0KyRH70L+vAGs8wkOkqbsE9qR4lgjW2ugJsCzl1nj5w=
 github.com/openshift/library-go v0.0.0-20220512194226-3c66b317b110 h1:5lgF3YD1XwaJVtasYsWKFTwI3ZUwuVMcMAwJf2x4YSY=
 github.com/openshift/library-go v0.0.0-20220512194226-3c66b317b110/go.mod h1:1QSdymJBGXSOgBj7tWhj4cV+i1+AvkQ/Tq78ebWjXCU=
-github.com/openshift/sig-storage-local-static-provisioner v0.0.0-20220208224017-4561a388c9eb h1:3lWe/gOwI0oMBmVkacbKA/JA6JyRnZDFxQorMtRVifs=
-github.com/openshift/sig-storage-local-static-provisioner v0.0.0-20220208224017-4561a388c9eb/go.mod h1:9IxtMY+/rQNK7aQ3MMjrcMOF8M/ej8ql9493/24p/KU=
+github.com/openshift/sig-storage-local-static-provisioner v0.0.0-20221017170331-33a18b720643 h1:3BGcwHCByPSXWDwgEMLP+bx6EY7vH0RqDXPiLPcSHis=
+github.com/openshift/sig-storage-local-static-provisioner v0.0.0-20221017170331-33a18b720643/go.mod h1:9IxtMY+/rQNK7aQ3MMjrcMOF8M/ej8ql9493/24p/KU=
 github.com/opentracing/opentracing-go v1.1.0/go.mod h1:UkNAQd3GIcIGf0SeVgPpRdFStlNbqXla1AfSYxPUl2o=
 github.com/pascaldekloe/goe v0.0.0-20180627143212-57f6aae5913c/go.mod h1:lzWF7FIEvWOWxwDKqyGYQf6ZUaNfKdP144TG7ZOy1lc=
 github.com/pborman/uuid v1.2.1 h1:+ZZIw58t/ozdjRaXh/3awHfmWRbzYxJoAdNJxe/3pvw=
