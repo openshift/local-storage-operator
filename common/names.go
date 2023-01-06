@@ -2,7 +2,10 @@ package common
 
 import (
 	"fmt"
+	"k8s.io/klog/v2"
 	"os"
+	"regexp"
+	provCommon "sigs.k8s.io/sig-storage-local-static-provisioner/pkg/common"
 
 	localv1 "github.com/openshift/local-storage-operator/api/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -87,5 +90,34 @@ func LocalVolumeKey(lv *localv1.LocalVolume) string {
 // GetProvisionedByValue is the the annotation that indicates which node a PV was originally provisioned on
 // the key is provCommon.AnnProvisionedBy ("pv.kubernetes.io/provisioned-by")
 func GetProvisionedByValue(node corev1.Node) string {
-	return fmt.Sprintf("local-volume-provisioner-%v-%v", node.Name, node.UID)
+	return fmt.Sprintf("local-volume-provisioner-%v", node.Name)
+}
+
+func PVMatchesProvisioner(pv corev1.PersistentVolume, provisionerName string) bool {
+	PVAnnotation, found := pv.Annotations[provCommon.AnnProvisionedBy]
+	if !found {
+		klog.V(4).InfoS("PV annotation not found - skipping.", "pvName", pv.GetName(), "provisionerName", provisionerName)
+		return false
+	}
+
+	// Check if there is an exact match.
+	if provisionerName == PVAnnotation {
+		klog.V(4).InfoS("PV matches provisioner name.", "pvName", pv.GetName(), "pvAnnotation", PVAnnotation, "provisionerName", provisionerName)
+		return true
+	}
+
+	//If there is no exact match we want to also match those PVs that start with a name (from GetProvisionedByValue) and end with node UID.
+	endsWithUIDReg := regexp.MustCompile("(\\w{8}(-\\w{4}){3}-\\w{12}$)")
+	endsWithUID := endsWithUIDReg.Find([]byte(PVAnnotation))
+
+	startsWithRuntimeNameReg := regexp.MustCompile(fmt.Sprintf("^%v", provisionerName))
+	startsWithRuntimeName := startsWithRuntimeNameReg.Find([]byte(PVAnnotation))
+
+	if endsWithUID != nil && startsWithRuntimeName != nil {
+		klog.V(4).InfoS("PV matches provisioner name (UID is ignored).", "pvName", pv.GetName(), "pvAnnotation", PVAnnotation, "provisionerName", provisionerName, "UID", endsWithUID)
+		return true
+	}
+
+	klog.V(4).InfoS("PV does not match provisioner name - skipping.", "pvName", pv.GetName(), "pvAnnotation", PVAnnotation, "provisionerName", provisionerName)
+	return false
 }
