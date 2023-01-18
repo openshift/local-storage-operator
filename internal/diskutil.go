@@ -202,11 +202,11 @@ func PathEvalsToDiskLabel(path, devName string) (bool, error) {
 }
 
 // ListBlockDevices using the lsblk command
-func ListBlockDevices() ([]BlockDevice, []string, error) {
+func ListBlockDevices(devices []string) ([]BlockDevice, []string, error) {
 	// var output bytes.Buffer
 	var blockDevices []BlockDevice
 
-	deviceFSMap, err := GetDeviceFSMap()
+	deviceFSMap, err := GetDeviceFSMap(devices)
 	if err != nil {
 		return []BlockDevice{}, []string{}, errors.Wrap(err, "failed to list block devices")
 	}
@@ -280,12 +280,20 @@ func ListBlockDevices() ([]BlockDevice, []string, error) {
 // It parses the output of `blkid -s TYPE`. Sample ouput format before parsing
 // `/dev/sdc: TYPE="ext4"
 // /dev/sdd: TYPE="ext2"`
-func GetDeviceFSMap() (map[string]string, error) {
+// If devices is empty, it scans all disks, otherwise only devices.
+func GetDeviceFSMap(devices []string) (map[string]string, error) {
 	m := map[string]string{}
-	args := []string{"-s", "TYPE"}
+	args := append([]string{"-s", "TYPE"}, devices...)
 	cmd := ExecCommand("blkid", args...)
 	output, err := executeCmdWithCombinedOutput(cmd)
 	if err != nil {
+		// According to blkid man page, exit status 2 is returned
+		// if no device found.
+		if exiterr, ok := err.(*exec.ExitError); ok {
+			if exiterr.ExitCode() == 2 {
+				return map[string]string{}, nil
+			}
+		}
 		return map[string]string{}, err
 	}
 	lines := strings.Split(output, "\n")

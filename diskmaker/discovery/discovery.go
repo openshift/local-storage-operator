@@ -147,7 +147,7 @@ func (discovery *DeviceDiscovery) discoverDevices() error {
 
 // getValidBlockDevices fetchs all the block devices sutitable for discovery
 func getValidBlockDevices() ([]internal.BlockDevice, error) {
-	blockDevices, badRows, err := internal.ListBlockDevices()
+	blockDevices, badRows, err := internal.ListBlockDevices([]string{})
 	if err != nil {
 
 		return blockDevices, errors.Wrapf(err, "failed to list all the block devices in the node.")

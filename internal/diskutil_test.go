@@ -162,7 +162,7 @@ func TestListBlockDevices(t *testing.T) {
 		blkidOut = tc.blkIDOutput
 		ExecCommand = helperCommand
 		defer func() { ExecCommand = exec.Command }()
-		blockDevices, badRows, err := ListBlockDevices()
+		blockDevices, badRows, err := ListBlockDevices([]string{})
 		assert.NoError(t, err)
 		assert.Equalf(t, tc.totalBadRows, len(badRows), "[%s] total bad rows list didn't match", tc.label)
 		assert.Equalf(t, tc.totalBlockDevices, len(blockDevices), "[%s] total block device list didn't match", tc.label)
@@ -208,7 +208,7 @@ func TestGetDeviceFSMap(t *testing.T) {
 		ExecCommand = helperCommand
 		defer func() { ExecCommand = exec.Command }()
 
-		actual, err := GetDeviceFSMap()
+		actual, err := GetDeviceFSMap([]string{})
 		assert.NoError(t, err)
 		assert.Equalf(t, tc.expected, actual, "[%s]: failed to get device filesystem map", tc.label)
 	}
