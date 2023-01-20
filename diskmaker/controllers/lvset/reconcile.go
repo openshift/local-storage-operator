@@ -100,7 +100,7 @@ func (r *LocalVolumeSetReconciler) Reconcile(ctx context.Context, request ctrl.R
 	symLinkDir := symLinkConfig.HostDir
 
 	// list block devices
-	blockDevices, badRows, err := internal.ListBlockDevices()
+	blockDevices, badRows, err := internal.ListBlockDevices([]string{})
 	if err != nil {
 		msg := fmt.Sprintf("failed to list block devices: %v", err)
 		r.eventReporter.Report(lvset, newDiskEvent(diskmaker.ErrorRunningBlockList, msg, "", corev1.EventTypeWarning))

@@ -330,8 +330,17 @@ func (r *LocalVolumeReconciler) Reconcile(ctx context.Context, request ctrl.Requ
 		return ctrl.Result{}, err
 	}
 
+	// compose the list of devices from diskConfig
+	devices := make([]string, 0)
+	for _, disks := range diskConfig.Disks {
+		devicePaths := disks.DevicePaths
+		for _, devicePath := range devicePaths {
+			devices = append(devices, devicePath)
+		}
+	}
+
 	// list block devices
-	blockDevices, badRows, err := internal.ListBlockDevices()
+	blockDevices, badRows, err := internal.ListBlockDevices(devices)
 	if err != nil {
 		msg := fmt.Sprintf("failed to list block devices: %v", err)
 		r.eventSync.Report(r.localVolume, newDiskEvent(ErrorRunningBlockList, msg, "", corev1.EventTypeWarning))
