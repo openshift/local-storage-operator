@@ -247,11 +247,12 @@ func (opts GoCmdOptions) setCmdFields(c *exec.Cmd) {
 }
 
 // From https://github.com/golang/go/wiki/Modules:
-//	You can activate module support in one of two ways:
-//	- Invoke the go command in a directory with a valid go.mod file in the
-//      current directory or any parent of it and the environment variable
-//      GO111MODULE unset (or explicitly set to auto).
-//	- Invoke the go command with GO111MODULE=on environment variable set.
+//
+//		You can activate module support in one of two ways:
+//		- Invoke the go command in a directory with a valid go.mod file in the
+//	     current directory or any parent of it and the environment variable
+//	     GO111MODULE unset (or explicitly set to auto).
+//		- Invoke the go command with GO111MODULE=on environment variable set.
 //
 // GoModOn returns true if Go modules are on in one of the above two ways.
 func GoModOn() (bool, error) {
