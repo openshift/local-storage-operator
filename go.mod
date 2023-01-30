@@ -8,7 +8,7 @@ require (
 	github.com/go-logr/logr v1.2.3 // indirect
 	github.com/google/gofuzz v1.2.0 // indirect
 	github.com/mitchellh/go-homedir v1.1.0
-	github.com/onsi/gomega v1.23.0
+	github.com/onsi/gomega v1.24.1
 	github.com/openshift/api v0.0.0-20230120195050-6ba31fa438f2
 	github.com/openshift/client-go v0.0.0-20230120202327-72f107311084
 	github.com/openshift/library-go v0.0.0-20230130121854-13dc1e57ef79
@@ -20,7 +20,7 @@ require (
 	github.com/sirupsen/logrus v1.8.1
 	github.com/spf13/cobra v1.6.0
 	github.com/stretchr/testify v1.8.0
-	go.uber.org/zap v1.21.0
+	go.uber.org/zap v1.24.0
 	golang.org/x/net v0.5.0
 	golang.org/x/sys v0.4.0
 	k8s.io/api v0.26.1
@@ -29,8 +29,8 @@ require (
 	k8s.io/client-go v0.26.1
 	k8s.io/component-helpers v0.25.1
 	k8s.io/klog/v2 v2.80.1
-	k8s.io/utils v0.0.0-20221107191617-1a15be271d1d
-	sigs.k8s.io/controller-runtime v0.13.0
+	k8s.io/utils v0.0.0-20221128185143-99ec85e7a448
+	sigs.k8s.io/controller-runtime v0.14.2
 	sigs.k8s.io/sig-storage-local-static-provisioner v2.5.0+incompatible
 	sigs.k8s.io/yaml v1.3.0 // indirect
 )
@@ -79,7 +79,7 @@ require (
 	golang.org/x/oauth2 v0.0.0-20220909003341-f21342109be1 // indirect
 	golang.org/x/term v0.4.0 // indirect
 	golang.org/x/text v0.6.0 // indirect
-	golang.org/x/time v0.0.0-20220920022843-2ce7c2934d45 // indirect
+	golang.org/x/time v0.3.0 // indirect
 	gomodules.xyz/jsonpatch/v2 v2.2.0 // indirect
 	google.golang.org/appengine v1.6.7 // indirect
 	google.golang.org/genproto v0.0.0-20220502173005-c8bf987b8c21 // indirect
