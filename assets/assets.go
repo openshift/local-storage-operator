@@ -16,6 +16,7 @@ func ReadFile(name string) ([]byte, error) {
 // ReadFileAndReplace reads the file, replaces a set of strings, and
 // returns the resulting contents as a byte array. The pairs should be
 // provided as key/value pairs using an array of strings, i.e.:
+//
 //	pairs := []string{
 //		"${KEY_1}", "val_1",
 //		"${KEY_2}", "val_2",

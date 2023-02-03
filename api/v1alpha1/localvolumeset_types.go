@@ -113,8 +113,8 @@ type LocalVolumeSetStatus struct {
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
 }
 
-//+kubebuilder:object:root=true
-//+kubebuilder:subresource:status
+// +kubebuilder:object:root=true
+// +kubebuilder:subresource:status
 // +kubebuilder:resource:path=localvolumesets,scope=Namespaced
 // LocalVolumeSet is the Schema for the localvolumesets API
 type LocalVolumeSet struct {

@@ -114,7 +114,7 @@ type ConsoleCustomization struct {
 	// SVG format preferred
 	// +optional
 	CustomLogoFile configv1.ConfigMapFileReference `json:"customLogoFile,omitempty"`
-	// developerCatalog allows to configure the shown developer catalog categories.
+	// developerCatalog allows to configure the shown developer catalog categories (filters) and types (sub-catalogs).
 	// +kubebuilder:validation:Optional
 	// +optional
 	DeveloperCatalog DeveloperConsoleCatalogCustomization `json:"developerCatalog,omitempty"`
@@ -148,12 +148,55 @@ type ProjectAccess struct {
 	AvailableClusterRoles []string `json:"availableClusterRoles,omitempty"`
 }
 
+// CatalogTypesState defines the state of the catalog types based on which the types will be enabled or disabled.
+type CatalogTypesState string
+
+const (
+	CatalogTypeEnabled  CatalogTypesState = "Enabled"
+	CatalogTypeDisabled CatalogTypesState = "Disabled"
+)
+
+// DeveloperConsoleCatalogTypes defines the state of the sub-catalog types.
+// +kubebuilder:validation:XValidation:rule="self.state == 'Enabled' ? true : !has(self.enabled)",message="enabled is forbidden when state is not Enabled"
+// +kubebuilder:validation:XValidation:rule="self.state == 'Disabled' ? true : !has(self.disabled)",message="disabled is forbidden when state is not Disabled"
+// +union
+type DeveloperConsoleCatalogTypes struct {
+	// state defines if a list of catalog types should be enabled or disabled.
+	// +unionDiscriminator
+	// +kubebuilder:validation:Enum:="Enabled";"Disabled";
+	// +kubebuilder:default:="Enabled"
+	// +default="Enabled"
+	// +kubebuilder:validation:Required
+	State CatalogTypesState `json:"state,omitempty"`
+	// enabled is a list of developer catalog types (sub-catalogs IDs) that will be shown to users.
+	// Types (sub-catalogs) are added via console plugins, the available types (sub-catalog IDs) are available
+	// in the console on the cluster configuration page, or when editing the YAML in the console.
+	// Example: "Devfile", "HelmChart", "BuilderImage"
+	// If the list is non-empty, a new type will not be shown to the user until it is added to list.
+	// If the list is empty the complete developer catalog will be shown.
+	// +listType=set
+	// +unionMember,optional
+	Enabled *[]string `json:"enabled,omitempty"`
+	// disabled is a list of developer catalog types (sub-catalogs IDs) that are not shown to users.
+	// Types (sub-catalogs) are added via console plugins, the available types (sub-catalog IDs) are available
+	// in the console on the cluster configuration page, or when editing the YAML in the console.
+	// Example: "Devfile", "HelmChart", "BuilderImage"
+	// If the list is empty or all the available sub-catalog types are added, then the complete developer catalog should be hidden.
+	// +listType=set
+	// +unionMember,optional
+	Disabled *[]string `json:"disabled,omitempty"`
+}
+
 // DeveloperConsoleCatalogCustomization allow cluster admin to configure developer catalog.
 type DeveloperConsoleCatalogCustomization struct {
 	// categories which are shown in the developer catalog.
 	// +kubebuilder:validation:Optional
 	// +optional
 	Categories []DeveloperConsoleCatalogCategory `json:"categories,omitempty"`
+	// types allows enabling or disabling of sub-catalog types that user can see in the Developer catalog.
+	// When omitted, all the sub-catalog types will be shown.
+	// +optional
+	Types DeveloperConsoleCatalogTypes `json:"types,omitempty"`
 }
 
 // DeveloperConsoleCatalogCategoryMeta are the key identifiers of a developer catalog category.
@@ -213,16 +256,16 @@ type AddPage struct {
 type PerspectiveState string
 
 const (
-	Enabled      PerspectiveState = "Enabled"
-	Disabled     PerspectiveState = "Disabled"
-	AccessReview PerspectiveState = "AccessReview"
+	PerspectiveEnabled      PerspectiveState = "Enabled"
+	PerspectiveDisabled     PerspectiveState = "Disabled"
+	PerspectiveAccessReview PerspectiveState = "AccessReview"
 )
 
-// PerspectiveAccessReview defines the visibility of the perspective depending on the access review checks.
+// ResourceAttributesAccessReview defines the visibility of the perspective depending on the access review checks.
 // `required` and  `missing` can work together esp. in the case where the cluster admin
 // wants to show another perspective to users without specific permissions. Out of `required` and `missing` atleast one property should be non-empty.
 // +kubebuilder:validation:MinProperties:=1
-type PerspectiveAccessReview struct {
+type ResourceAttributesAccessReview struct {
 	// required defines a list of permission checks. The perspective will only be shown when all checks are successful. When omitted, the access review is skipped and the perspective will not be shown unless it is required to do so based on the configuration of the missing access review list.
 	// +optional
 	Required []authorizationv1.ResourceAttributes `json:"required"`
@@ -242,9 +285,12 @@ type PerspectiveVisibility struct {
 	State PerspectiveState `json:"state"`
 	// accessReview defines required and missing access review checks.
 	// +optional
-	AccessReview *PerspectiveAccessReview `json:"accessReview,omitempty"`
+	AccessReview *ResourceAttributesAccessReview `json:"accessReview,omitempty"`
 }
 
+// Perspective defines a perspective that cluster admins want to show/hide in the perspective switcher dropdown
+// +kubebuilder:validation:XValidation:rule="has(self.id) && self.id != 'dev'? !has(self.pinnedResources) : true",message="pinnedResources is allowed only for dev and forbidden for other perspectives"
+// +optional
 type Perspective struct {
 	// id defines the id of the perspective.
 	// Example: "dev", "admin".
@@ -255,6 +301,37 @@ type Perspective struct {
 	// visibility defines the state of perspective along with access review checks if needed for that perspective.
 	// +kubebuilder:validation:Required
 	Visibility PerspectiveVisibility `json:"visibility"`
+	// pinnedResources defines the list of default pinned resources that users will see on the perspective navigation if they have not customized these pinned resources themselves.
+	// The list of available Kubernetes resources could be read via `kubectl api-resources`.
+	// The console will also provide a configuration UI and a YAML snippet that will list the available resources that can be pinned to the navigation.
+	// Incorrect or unknown resources will be ignored.
+	// +kubebuilder:validation:MaxItems=100
+	// +optional
+	PinnedResources *[]PinnedResourceReference `json:"pinnedResources,omitempty"`
+}
+
+// PinnedResourceReference includes the group, version and type of resource
+type PinnedResourceReference struct {
+	// group is the API Group of the Resource.
+	// Enter empty string for the core group.
+	// This value should consist of only lowercase alphanumeric characters, hyphens and periods.
+	// Example: "", "apps", "build.openshift.io", etc.
+	// +kubebuilder:validation:Pattern:="^$|^[a-z0-9]([-a-z0-9]*[a-z0-9])?(.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$"
+	// +kubebuilder:validation:Required
+	Group string `json:"group"`
+	// version is the API Version of the Resource.
+	// This value should consist of only lowercase alphanumeric characters.
+	// Example: "v1", "v1beta1", etc.
+	// +kubebuilder:validation:Pattern:="^[a-z0-9]+$"
+	// +kubebuilder:validation:Required
+	Version string `json:"version"`
+	// resource is the type that is being referenced.
+	// It is normally the plural form of the resource kind in lowercase.
+	// This value should consist of only lowercase alphanumeric characters and hyphens.
+	// Example: "deployments", "deploymentconfigs", "pods", etc.
+	// +kubebuilder:validation:Pattern:="^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"
+	// +kubebuilder:validation:Required
+	Resource string `json:"resource"`
 }
 
 // Brand is a specific supported brand within the console.

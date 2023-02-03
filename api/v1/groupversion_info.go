@@ -15,8 +15,8 @@ limitations under the License.
 */
 
 // Package v1 contains API Schema definitions for the local v1 API group
-//+kubebuilder:object:generate=true
-//+groupName=local.storage.openshift.io
+// +kubebuilder:object:generate=true
+// +groupName=local.storage.openshift.io
 package v1
 
 import (

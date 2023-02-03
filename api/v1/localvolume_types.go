@@ -86,8 +86,8 @@ type LocalVolumeStatus struct {
 	Generations []operatorv1.GenerationStatus `json:"generations,omitempty"`
 }
 
-//+kubebuilder:object:root=true
-//+kubebuilder:subresource:status
+// +kubebuilder:object:root=true
+// +kubebuilder:subresource:status
 // +kubebuilder:resource:path=localvolumes,scope=Namespaced
 // LocalVolume is the Schema for the localvolumes API
 type LocalVolume struct {

@@ -69,7 +69,7 @@ type LocalVolumeDiscoveryStatus struct {
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
 }
 
-//+kubebuilder:object:root=true
+// +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:path=localvolumediscoveries,scope=Namespaced
 // LocalVolumeDiscovery is the Schema for the localvolumediscoveries API
