@@ -10,4 +10,7 @@ for I in $(/usr/bin/oc get crd | grep local.storage.openshift.io | awk '{print $
     /usr/bin/oc adm inspect $I --all-namespaces --dest-dir=must-gather/
 done
 
+# Nodes and PVs
+/usr/bin/oc adm inspect nodes,persistentvolumes --dest-dir=must-gather/
+
 exit 0
