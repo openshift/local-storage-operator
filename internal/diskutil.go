@@ -27,6 +27,8 @@ const (
 	StateSuspended = "suspended"
 	// DiskByIDDir is the path for symlinks to the device by id.
 	DiskByIDDir = "/dev/disk/by-id/"
+	// DiskDMDir is the path for symlinks of device mapper disks (e.g. mpath)
+	DiskDMDir = "/dev/mapper/"
 )
 
 // IDPathNotFoundError indicates that a symlink to the device was not found in /dev/disk/by-id/
@@ -146,11 +148,15 @@ func (b BlockDevice) HasBindMounts() (bool, string, error) {
 }
 
 // GetDevPath for block device (/dev/sdx)
-func (b BlockDevice) GetDevPath() (string, error) {
+func (b BlockDevice) GetDevPath() (path string, err error) {
 	if b.KName == "" {
-		return "", fmt.Errorf("empty KNAME")
+		path = ""
+		err = fmt.Errorf("empty KNAME")
 	}
-	return filepath.Join("/dev/", b.KName), nil
+
+	path = filepath.Join("/dev/", b.KName)
+
+	return
 }
 
 // GetPathByID check on BlockDevice
