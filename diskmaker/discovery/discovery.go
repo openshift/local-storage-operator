@@ -179,8 +179,12 @@ func getDiscoverdDevices(blockDevices []internal.BlockDevice) []v1alpha1.Discove
 			klog.Warningf("failed to parse size for the device %q. Error %v", blockDevice.Name, err)
 		}
 
+		path, err := blockDevice.GetDevPath()
+		if err != nil {
+			klog.Warningf("failed to parse path for the device %q. Error %v", blockDevice.KName, err)
+		}
 		discoveredDevice := v1alpha1.DiscoveredDevice{
-			Path:     fmt.Sprintf("/dev/%s", blockDevice.Name),
+			Path:     path,
 			Model:    blockDevice.Model,
 			Vendor:   blockDevice.Vendor,
 			FSType:   blockDevice.FSType,
@@ -308,6 +312,8 @@ func parseDeviceType(deviceType string) v1alpha1.DiscoveredDeviceType {
 		return v1alpha1.PartType
 	case deviceType == "lvm":
 		return v1alpha1.LVMType
+	case deviceType == "mpath":
+		return v1alpha1.MultiPathType
 	}
 
 	return ""

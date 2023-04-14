@@ -467,7 +467,7 @@ func TestGetDiscoveredDevices(t *testing.T) {
 				{
 					Name:       "sda",
 					KName:      "dm-0",
-					FSType:     "xfs",
+					FSType:     "",
 					Type:       "mpath",
 					Size:       "62913494528",
 					Model:      "",
@@ -487,15 +487,15 @@ func TestGetDiscoveredDevices(t *testing.T) {
 			expected: []v1alpha1.DiscoveredDevice{
 				{
 					DeviceID: "/dev/disk/by-id/dm-name-mpatha",
-					Path:     "/dev/mapper/mpatha",
+					Path:     "/dev/dm-0",
 					Model:    "",
 					Type:     "mpath",
 					Vendor:   "",
 					Serial:   "",
 					Size:     int64(62913494528),
 					Property: "NonRotational",
-					FSType:   "xfs",
-					Status:   v1alpha1.DeviceStatus{State: v1alpha1.NotAvailable},
+					FSType:   "",
+					Status:   v1alpha1.DeviceStatus{State: v1alpha1.Unknown},
 				},
 			},
 			fakeGlobfunc: func(name string) ([]string, error) {
