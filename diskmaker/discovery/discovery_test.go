@@ -151,6 +151,21 @@ func TestIgnoreDevices(t *testing.T) {
 			errMessage: fmt.Errorf("ignored wrong device"),
 		},
 		{
+			label: "don't ignore mpath type",
+			blockDevice: internal.BlockDevice{
+				Name:     "sdc",
+				KName:    "dm-0",
+				ReadOnly: "0",
+				State:    "running",
+				Type:     "mpath",
+			},
+			fakeGlobfunc: func(name string) ([]string, error) {
+				return []string{"removable", "subsytem"}, nil
+			},
+			expected:   false,
+			errMessage: fmt.Errorf("ignored wrong device"),
+		},
+		{
 			label: "ignore read only devices",
 			blockDevice: internal.BlockDevice{
 				Name:     "sdb",
