@@ -121,7 +121,7 @@ func TestIgnoreDevices(t *testing.T) {
 		errMessage   error
 	}{
 		{
-			label: "Case 1: don't ignore disk type",
+			label: "don't ignore disk type",
 			blockDevice: internal.BlockDevice{
 				Name:     "sdb",
 				KName:    "sdb",
@@ -136,7 +136,7 @@ func TestIgnoreDevices(t *testing.T) {
 			errMessage: fmt.Errorf("ignored wrong device"),
 		},
 		{
-			label: "Case 2: don't ignore lvm type",
+			label: "don't ignore lvm type",
 			blockDevice: internal.BlockDevice{
 				Name:     "sdb",
 				KName:    "sdb",
@@ -151,7 +151,7 @@ func TestIgnoreDevices(t *testing.T) {
 			errMessage: fmt.Errorf("ignored wrong device"),
 		},
 		{
-			label: "Case 3: ignore read only devices",
+			label: "ignore read only devices",
 			blockDevice: internal.BlockDevice{
 				Name:     "sdb",
 				KName:    "sdb",
@@ -166,7 +166,7 @@ func TestIgnoreDevices(t *testing.T) {
 			errMessage: fmt.Errorf("failed to ignore read only device"),
 		},
 		{
-			label: "Case 4: ignore devices in suspended state",
+			label: "ignore devices in suspended state",
 			blockDevice: internal.BlockDevice{
 				Name:     "sdb",
 				KName:    "sdb",
@@ -181,7 +181,7 @@ func TestIgnoreDevices(t *testing.T) {
 			errMessage: fmt.Errorf("ignored wrong suspended device"),
 		},
 		{
-			label: "Case 5: ignore root device with children",
+			label: "ignore root device with children",
 			blockDevice: internal.BlockDevice{
 				Name:     "sdb",
 				KName:    "sdb",
