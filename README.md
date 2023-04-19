@@ -22,3 +22,14 @@ Instructions to deploy on OCP >= 4.2 using OLM can be found [here](docs/deploy-w
 
 ## Using the must-gather image with the local storage operator
 Instructions for using the local storage's must-gather image can be found [here](docs/must-gather.md)
+
+## How does a user interact with LSO?
+```mermaid
+graph LR
+    User((User)) -->|Enables| LocalVolumeDiscovery
+    User -->|Creates| LocalVolumeSet
+    User -->|Creates| LocalVolume
+    LocalStorageOperator((LocalStorageOperator)) -->|Manages| LocalVolumeDiscovery
+    LocalStorageOperator -->|Manages| LocalVolume
+    LocalStorageOperator -->|Manages| StorageClass
+```
