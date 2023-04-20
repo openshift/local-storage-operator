@@ -240,7 +240,7 @@ must-gather:
 .PHONY: must-gather
 
 diskmaker-container:
-	docker build --no-cache -t $(DISKMAKER_IMAGE) -f $(CURPATH)/Dockerfile.diskmaker .
+	docker build --no-cache -t $(DISKMAKER_IMAGE) -f $(CURPATH)/Dockerfile.diskmaker.rhel7 .
 
 .PHONY: diskmaker-container
 
