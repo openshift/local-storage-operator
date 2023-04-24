@@ -461,6 +461,50 @@ func TestGetDiscoveredDevices(t *testing.T) {
 				return "/dev/disk/by-id/sda1", nil
 			},
 		},
+		{
+			label: "Case 5: discovering multipath device",
+			blockDevices: []internal.BlockDevice{
+				{
+					Name:       "sda",
+					KName:      "dm-0",
+					FSType:     "xfs",
+					Type:       "mpath",
+					Size:       "62913494528",
+					Model:      "",
+					Vendor:     "",
+					Serial:     "",
+					Rotational: "0",
+					ReadOnly:   "0",
+					Removable:  "0",
+					State:      "running",
+					PartLabel:  "",
+					// We're faking glob function in these test cases and this test would do globbing twice
+					// (first for getting by-id path and second for /dev/mapper path) so we pretend the by-id path is already set.
+					// That way we can test only /dev/mapper globbing and symlink evaluation.
+					PathByID: "/dev/disk/by-id/dm-name-mpatha",
+				},
+			},
+			expected: []v1alpha1.DiscoveredDevice{
+				{
+					DeviceID: "/dev/disk/by-id/dm-name-mpatha",
+					Path:     "/dev/mapper/mpatha",
+					Model:    "",
+					Type:     "mpath",
+					Vendor:   "",
+					Serial:   "",
+					Size:     int64(62913494528),
+					Property: "NonRotational",
+					FSType:   "xfs",
+					Status:   v1alpha1.DeviceStatus{State: v1alpha1.NotAvailable},
+				},
+			},
+			fakeGlobfunc: func(name string) ([]string, error) {
+				return []string{"/dev/mapper/mpatha"}, nil
+			},
+			fakeEvalSymlinkfunc: func(path string) (string, error) {
+				return "/dev/dm-0", nil
+			},
+		},
 	}
 
 	for _, tc := range testcases {
