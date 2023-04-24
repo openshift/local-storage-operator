@@ -194,7 +194,26 @@ func getDiscoverdDevices(blockDevices []internal.BlockDevice) []v1alpha1.Discove
 		discoveredDevices = append(discoveredDevices, discoveredDevice)
 	}
 
-	return discoveredDevices
+	return uniqueDevices(discoveredDevices)
+}
+
+// uniqueDevices removes duplicate devices from the list using DeviceID as a key
+// TODO: remove this and use lsblk with -M flag once base images are updated and lsblk v2.34 or higher is available
+// See: https://github.com/util-linux/util-linux/blob/3be31a106c52e093928afbea2cddbdbe44cfb357/Documentation/releases/v2.34-ReleaseNotes#L18
+func uniqueDevices(sample []v1alpha1.DiscoveredDevice) []v1alpha1.DiscoveredDevice {
+	var unique []v1alpha1.DiscoveredDevice
+	type key struct{ value string }
+	m := make(map[key]int)
+	for _, v := range sample {
+		k := key{v.DeviceID}
+		if i, ok := m[k]; ok {
+			unique[i] = v
+		} else {
+			m[k] = len(unique)
+			unique = append(unique, v)
+		}
+	}
+	return unique
 }
 
 // ignoreDevices checks if a device should be ignored during discovery
