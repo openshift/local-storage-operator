@@ -3,6 +3,8 @@ kind: Namespace
 metadata:
   labels:
     openshift.io/cluster-monitoring: "true"
+    pod-security.kubernetes.io/enforce: privileged
+    security.openshift.io/scc.podSecurityLabelSync: "false"
   name: openshift-local-storage
 ---
 apiVersion: operators.coreos.com/v1alpha2
