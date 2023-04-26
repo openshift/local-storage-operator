@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"k8s.io/klog/v2"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -214,9 +215,10 @@ func ListBlockDevices() ([]BlockDevice, []string, error) {
 	columns := "NAME,ROTA,TYPE,SIZE,MODEL,VENDOR,RO,RM,STATE,KNAME,SERIAL,PARTLABEL"
 	args := []string{"--pairs", "-b", "-o", columns}
 	cmd := ExecCommand("lsblk", args...)
+	klog.Infof("Executing command: %#v", cmd)
 	output, err := executeCmdWithCombinedOutput(cmd)
 	if err != nil {
-		return []BlockDevice{}, []string{}, err
+		return []BlockDevice{}, []string{output}, err
 	}
 	badRows := make([]string, 0)
 	// convert to json and then Marshal.
@@ -249,6 +251,9 @@ func ListBlockDevices() ([]BlockDevice, []string, error) {
 		if len(strings.Trim(name, " ")) == 0 {
 			badRows = append(badRows, row)
 			break
+		}
+		if len(badRows) > 0 {
+			klog.Warningf("failed to parse all the lsblk rows. Bad rows: %+v", badRows)
 		}
 
 		// Update device filesystem using `blkid`
@@ -433,7 +438,7 @@ func (e *ExclusiveFileLock) Unlock() error {
 func executeCmdWithCombinedOutput(cmd *exec.Cmd) (string, error) {
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return "", err
+		return string(output), err
 	}
 	return strings.TrimSpace(string(output)), nil
 }
