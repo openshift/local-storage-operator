@@ -25,7 +25,7 @@ graph LR
     User((User)) -->|Creates| LocalVolumeDiscovery
     User -->|Creates| LocalVolumeSet
     User -->|Creates| LocalVolume
-    LocalStorageOperator((LocalStorageOperator)) -->|Manages| LocalVolumeDiscovery
+    LocalStorageOperator((LocalStorageOperator)) -->|Creates/Manages| LocalVolumeDiscoveryResult
     LocalStorageOperator -->|Manages| LocalVolume
     LocalStorageOperator -->|Manages| StorageClass
 ```
