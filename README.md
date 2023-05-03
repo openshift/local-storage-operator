@@ -4,17 +4,13 @@ Operator for local storage
 ```mermaid
 graph LR
     PVC -->|Requests local storage using a StorageClass| StorageClass
-    StorageClass -->|Defines a LocalVolume| LocalVolume
-    LocalVolume -->|Represents a physical storage device already mounted on a node| Node
+    LocalVolume -->|Represents a physical storage device already mounted/existent on a node| Node
     Pod -->|References a PVC| PVC
     PV -->|References| LocalVolume
-    StorageClass -->|Creates| PV
-    VolumeAttachment -->|Correlates| Node
-    VolumeAttachment -->|Correlates| PV
     LSO((Local Storage Operator)) -->|Manages| LocalVolume
     LSO((Local Storage Operator)) -->|Manages| StorageClass
     LocalVolumeSet -->|Discovers local storage devices on node| Node
-    LocalVolumeSet -->|Automatically manages LocalVolume objects|LocalVolume
+    LocalVolumeSet -->|Creates| PV
 ```
 
 ## Deploying with OLM
@@ -26,7 +22,7 @@ Instructions for using the local storage's must-gather image can be found [here]
 ## How does a user interact with LSO?
 ```mermaid
 graph LR
-    User((User)) -->|Enables| LocalVolumeDiscovery
+    User((User)) -->|Creates| LocalVolumeDiscovery
     User -->|Creates| LocalVolumeSet
     User -->|Creates| LocalVolume
     LocalStorageOperator((LocalStorageOperator)) -->|Manages| LocalVolumeDiscovery
