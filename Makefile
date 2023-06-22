@@ -248,7 +248,7 @@ operator-container:
 	docker build --no-cache -t $(OPERATOR_IMAGE) -f $(CURPATH)/Dockerfile .
 
 bundle:
-	./hack/sync_bundle
+	go run ./hack/scripts/sync_bundle.go -v 5
 
 .PHONY: operator-container
 

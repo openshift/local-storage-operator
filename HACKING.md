@@ -37,36 +37,37 @@ oc scale --replicas=0 deployment.apps/local-storage-operator -n openshift-local-
 ~> ./_output/bin/local-storage-operator -kubeconfig=$KUBECONFIG
 ```
 
-## Automatic creation of operator, bundle and index images
+## Automatic creation of images
 
-All the images including operator, diskmaker, bundle and index images can be created in one shot using following command:
+All images including operator, diskmaker, bundle and index images can be created and pushed in one shot, this will also update LSO CSV file to point to newly created operator and diskmaker images:
 
-```
-~> ./hack/sync_bundle -o <operator_image> -d <diskmaker_image> -b <bundle_image> -i <index_image> bundle
-```
+> First make sure you're authenticated to private registry for pulling base images: `docker login registry.ci.openshift.org`
 
-This command also pushes the images to selected docker registry, so if you ran this command with following arguments:
-
-```
-~> ./hack/sync_bundle -o quay.io/gnufied/local-storage-operator:latest  \
-        -d quay.io/gnufied/local-storage-diskmaker:latest \
-        -b quay.io/gnufied/local-storage-bundle:v1 \
-        -i quay.io/gnufied/gnufied-index:v1 bundle
-```
-
-The command will create all of these images and push them to quay. Operator and diskmaker arguments to `sync_bundle` script can be skipped and in that case `quay.io/openshift/origin-local-storage-diskmaker:latest` and `quay.io/openshift/origin-local-storage-operator:latest` version of those images are used:
-
-
-```
-~> ./hack/sync_bundle -b quay.io/gnufied/local-storage-bundle:v1 \
-        -i quay.io/gnufied/gnufied-index:v1 bundle
+```bash
+export USER=<username>
+export HACK_BUNDLE_IMAGE=quay.io/$USER/test:bundle
+export HACK_INDEX_IMAGE=quay.io/$USER/test:index
+export HACK_DISKMAKER_IMAGE=quay.io/$USER/test:diskmaker 
+export HACK_OPERATOR_IMAGE=quay.io/$USER/test:operator
+docker login quay.io -u $USER
+make bundle
 ```
 
-This should give us index image `quay.io/gnufied/gnufied-index:v1`. Update the `CatalogSource` entry in `examples/olm/catalog-create-subscribe.yaml`
+Custom diskmaker and operator images are optional, default images will be used if omitted. In this case the CSV file will not be updated:
+
+```bash
+export USER=<username>
+export HACK_BUNDLE_IMAGE=quay.io/$USER/test:bundle
+export HACK_INDEX_IMAGE=quay.io/$USER/test:index
+docker login quay.io -u $USER
+make bundle
+```
+
+This should give us an index image `quay.io/username/test:index`. Update the `CatalogSource` entry in `examples/olm/catalog-create-subscribe.yaml`
 to point to your newly created index image. Once updated, we can install local-storage-operator via following command:
 
-```
-~> oc create -f examples/olm/catalog-create-subscribe.yaml
+```bash
+oc create -f examples/olm/catalog-create-subscribe.yaml
 ```
 
 ## Manual creation of bundle and index image.
