@@ -88,7 +88,7 @@ func CreateLocalPV(
 	}
 
 	if cleanupTracker.InProgress(pvName, useJob) {
-		klog.InfoS("PV is still being cleaned, not going to recreate it", "pvName", pvName)
+		klog.InfoS("PV is still being cleaned, not going to recreate it", "pvName", pvName, "disk", deviceName)
 		return nil
 	}
 
