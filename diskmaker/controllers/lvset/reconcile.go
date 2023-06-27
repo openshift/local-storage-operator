@@ -346,7 +346,7 @@ func (r *LocalVolumeSetReconciler) provisionPV(
 	unlockFunc := func() {
 		err := pvLock.Unlock()
 		if err != nil {
-			klog.ErrorS(err, "failed to unlock device")
+			klog.ErrorS(err, "failed to unlock device", "disk", devLabelPath)
 		}
 	}
 	defer unlockFunc()
@@ -369,9 +369,9 @@ func (r *LocalVolumeSetReconciler) provisionPV(
 		}
 		err := fmt.Errorf("found existing symlinks for device %s in %s", dev.KName, filepath.Dir(symLinkDir))
 		klog.ErrorS(err, "skipping provisioning of PV")
-		return err
+		return nil
 	} else if err != nil || !pvLocked { // locking failed for some other reasion
-		klog.ErrorS(err, "not provisioning, could not get lock")
+		klog.ErrorS(err, "not provisioning, could not get lock", "disk", devLabelPath)
 		return err
 	}
 
