@@ -367,7 +367,9 @@ func (r *LocalVolumeSetReconciler) provisionPV(
 				)
 			}
 		}
-		return nil
+		err := fmt.Errorf("found existing symlinks for device %s in %s", dev.KName, filepath.Dir(symLinkDir))
+		klog.ErrorS(err, "skipping provisioning of PV")
+		return err
 	} else if err != nil || !pvLocked { // locking failed for some other reasion
 		klog.ErrorS(err, "not provisioning, could not get lock")
 		return err
