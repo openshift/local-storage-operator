@@ -164,11 +164,10 @@ func (r *LocalVolumeSetReconciler) Reconcile(ctx context.Context, request ctrl.R
 		r.eventReporter.Report(lvset, newDiskEvent(diskmaker.FoundMatchingDisk, "provisioning matching disk", blockDevice.KName, corev1.EventTypeNormal))
 		err = r.provisionPV(lvset, blockDevice, *storageClass, mountPointMap, symlinkSourcePath, symlinkPath, idExists)
 		if err != nil {
-			msg := fmt.Sprintf("provisioning failed for %s: %v",
-				blockDevice.Name, err)
+			msg := fmt.Sprintf("provisioning failed for %s: %v", blockDevice.Name, err)
 			r.eventReporter.Report(lvset, newDiskEvent(diskmaker.ErrorProvisioningDisk, msg, blockDevice.KName, corev1.EventTypeWarning))
 			klog.Error(msg)
-			return ctrl.Result{}, fmt.Errorf("could not provision disk: %w", err)
+			continue
 		}
 
 		klog.InfoS("provisioning succeeded", "blockDevice", blockDevice.Name)
@@ -369,7 +368,7 @@ func (r *LocalVolumeSetReconciler) provisionPV(
 		}
 		err := fmt.Errorf("found existing symlinks for device %s in %s", dev.KName, filepath.Dir(symLinkDir))
 		klog.ErrorS(err, "skipping provisioning of PV")
-		return nil
+		return err
 	} else if err != nil || !pvLocked { // locking failed for some other reasion
 		klog.ErrorS(err, "not provisioning, could not get lock", "disk", devLabelPath)
 		return err
