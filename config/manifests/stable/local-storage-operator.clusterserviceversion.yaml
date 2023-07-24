@@ -13,6 +13,22 @@ metadata:
             "name": "example"
           },
           "spec": {
+            "nodeSelector": {
+              "nodeSelectorTerms": [
+                {
+                  "matchExpressions": [
+                    {
+                      "key": "kubernetes.io/hostname",
+                      "operator": "In",
+                      "values": [
+                        "worker-0",
+                        "worker-1"
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
             "storageClassDevices": [
               {
                 "devicePaths": [
