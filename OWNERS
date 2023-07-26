@@ -4,5 +4,6 @@ approvers:
   - gnufied
   - bertinatto
   - dobsonj
-component: "Storage"
-subcomponent: "Local Storage Operator"
+  - RomanBednar
+  - mpatlasov
+component: "Storage / Operators"
