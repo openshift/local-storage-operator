@@ -27,7 +27,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
-	"sigs.k8s.io/controller-runtime/pkg/source"
 )
 
 const (
@@ -234,7 +233,7 @@ func (r *DaemonReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	// The controller will ignore the name part of the enqueued request as
 	// every reconcile gathers multiple resources an acts on a few one-per-namespace objects.
 	enqueueOnlyNamespace := handler.EnqueueRequestsFromMapFunc(
-		func(obj client.Object) []reconcile.Request {
+		func(ctx context.Context, obj client.Object) []reconcile.Request {
 			req := reconcile.Request{
 				NamespacedName: types.NamespacedName{Namespace: obj.GetNamespace()},
 			}
@@ -243,11 +242,11 @@ func (r *DaemonReconciler) SetupWithManager(mgr ctrl.Manager) error {
 
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&v1.LocalVolume{}).
-		Watches(&source.Kind{Type: &localv1alpha1.LocalVolumeSet{}}, enqueueOnlyNamespace).
+		Watches(&localv1alpha1.LocalVolumeSet{}, enqueueOnlyNamespace).
 		// watch provisioner, diskmaker-manager daemonsets
-		Watches(&source.Kind{Type: &appsv1.DaemonSet{}}, enqueueOnlyNamespace, builder.WithPredicates(common.EnqueueOnlyLabeledSubcomponents(DiskMakerName, ProvisionerName))).
+		Watches(&appsv1.DaemonSet{}, enqueueOnlyNamespace, builder.WithPredicates(common.EnqueueOnlyLabeledSubcomponents(DiskMakerName, ProvisionerName))).
 		// watch provisioner configmap
-		Watches(&source.Kind{Type: &corev1.ConfigMap{}}, enqueueOnlyNamespace, builder.WithPredicates(common.EnqueueOnlyLabeledSubcomponents(common.ProvisionerConfigMapName))).
-		Watches(&source.Kind{Type: &v1.LocalVolume{}}, enqueueOnlyNamespace).
+		Watches(&corev1.ConfigMap{}, enqueueOnlyNamespace, builder.WithPredicates(common.EnqueueOnlyLabeledSubcomponents(common.ProvisionerConfigMapName))).
+		Watches(&v1.LocalVolume{}, enqueueOnlyNamespace).
 		Complete(r)
 }

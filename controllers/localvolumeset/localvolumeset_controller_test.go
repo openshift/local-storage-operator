@@ -42,7 +42,11 @@ func newFakeLocalVolumeSetReconciler(t *testing.T, objs ...runtime.Object) *Loca
 	err = storagev1.AddToScheme(scheme)
 	assert.NoErrorf(t, err, "adding appsv1 to scheme")
 
-	client := fake.NewClientBuilder().WithScheme(scheme).WithRuntimeObjects(objs...).WithIndex(&corev1.PersistentVolume{}, "spec.storageClassName", pvSCIndexer).Build()
+	crsWithStatus := []client.Object{
+		&localv1alpha1.LocalVolumeSet{},
+	}
+
+	client := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(crsWithStatus...).WithRuntimeObjects(objs...).WithIndex(&corev1.PersistentVolume{}, "spec.storageClassName", pvSCIndexer).Build()
 
 	return &LocalVolumeSetReconciler{
 		Client:   client,

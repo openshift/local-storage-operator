@@ -25,7 +25,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
-	"sigs.k8s.io/controller-runtime/pkg/source"
 	provCommon "sigs.k8s.io/sig-storage-local-static-provisioner/pkg/common"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -645,32 +644,32 @@ func (r *LocalVolumeReconciler) WithManager(mgr ctrl.Manager) error {
 		// set to 1 explicitly, despite it being the default, as the reconciler is not thread-safe.
 		WithOptions(controller.Options{MaxConcurrentReconciles: 1}).
 		For(&localv1.LocalVolume{}).
-		Watches(&source.Kind{Type: &corev1.ConfigMap{}}, &handler.EnqueueRequestForOwner{
-			OwnerType: &localv1.LocalVolume{},
-		}).
+		Watches(
+			&corev1.ConfigMap{},
+			handler.EnqueueRequestForOwner(mgr.GetScheme(), mgr.GetRESTMapper(), &localv1.LocalVolume{})).
 		// TODO enqueue for the PV based on labels
 		// update owned-pv cache used by provisioner/deleter libs and enequeue owning lvset
 		// only the cache is touched by
-		Watches(&source.Kind{Type: &corev1.PersistentVolume{}}, &handler.Funcs{
-			GenericFunc: func(e event.GenericEvent, q workqueue.RateLimitingInterface) {
+		Watches(&corev1.PersistentVolume{}, &handler.Funcs{
+			GenericFunc: func(ctx context.Context, e event.GenericEvent, q workqueue.RateLimitingInterface) {
 				pv, ok := e.Object.(*corev1.PersistentVolume)
 				if ok {
 					handlePVChange(r.runtimeConfig, pv, q, false)
 				}
 			},
-			CreateFunc: func(e event.CreateEvent, q workqueue.RateLimitingInterface) {
+			CreateFunc: func(ctx context.Context, e event.CreateEvent, q workqueue.RateLimitingInterface) {
 				pv, ok := e.Object.(*corev1.PersistentVolume)
 				if ok {
 					handlePVChange(r.runtimeConfig, pv, q, false)
 				}
 			},
-			UpdateFunc: func(e event.UpdateEvent, q workqueue.RateLimitingInterface) {
+			UpdateFunc: func(ctx context.Context, e event.UpdateEvent, q workqueue.RateLimitingInterface) {
 				pv, ok := e.ObjectNew.(*corev1.PersistentVolume)
 				if ok {
 					handlePVChange(r.runtimeConfig, pv, q, false)
 				}
 			},
-			DeleteFunc: func(e event.DeleteEvent, q workqueue.RateLimitingInterface) {
+			DeleteFunc: func(ctx context.Context, e event.DeleteEvent, q workqueue.RateLimitingInterface) {
 				pv, ok := e.Object.(*corev1.PersistentVolume)
 				if ok {
 					handlePVChange(r.runtimeConfig, pv, q, true)

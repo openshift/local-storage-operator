@@ -1,8 +1,9 @@
 package lvset
 
 import (
-	"github.com/openshift/local-storage-operator/test-framework"
 	"testing"
+
+	"github.com/openshift/local-storage-operator/test-framework"
 
 	"github.com/openshift/client-go/security/clientset/versioned/scheme"
 	v1api "github.com/openshift/local-storage-operator/api/v1"

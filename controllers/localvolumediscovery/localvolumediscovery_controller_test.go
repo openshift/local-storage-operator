@@ -128,7 +128,11 @@ func newFakeLocalVolumeDiscoveryReconciler(t *testing.T, objs ...runtime.Object)
 	err = monitoringv1.AddToScheme(scheme)
 	assert.NoErrorf(t, err, "adding corev1 to scheme")
 
-	client := fake.NewFakeClientWithScheme(scheme, objs...)
+	crsWithStatus := []client.Object{
+		&localv1alpha1.LocalVolumeDiscovery{},
+	}
+
+	client := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(crsWithStatus...).WithRuntimeObjects(objs...).Build()
 
 	return &LocalVolumeDiscoveryReconciler{
 		Client: client,
@@ -232,7 +236,6 @@ func TestDiscoveryReconciler(t *testing.T) {
 		assert.Equalf(t, tc.conditionType, discoveryObj.Status.Conditions[0].Type, "[%s] invalid condition type", tc.label)
 		assert.Equalf(t, tc.conditionStatus, discoveryObj.Status.Conditions[0].Status, "[%s] invalid condition status", tc.label)
 	}
-
 }
 
 func TestDeleteOrphanDiscoveryResults(t *testing.T) {

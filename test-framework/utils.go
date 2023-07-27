@@ -6,16 +6,18 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
-	batchv1 "k8s.io/api/batch/v1"
-	corev1 "k8s.io/api/core/v1"
-	kerrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/types"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 
+	batchv1 "k8s.io/api/batch/v1"
+	corev1 "k8s.io/api/core/v1"
+	kerrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/types"
+
 	"context"
+
 	"github.com/mitchellh/go-homedir"
 	"github.com/rogpeppe/go-internal/modfile"
 	log "github.com/sirupsen/logrus"
@@ -31,13 +33,13 @@ const (
 )
 
 var validVendorCmds = map[string]struct{}{
-	"build":   struct{}{},
-	"clean":   struct{}{},
-	"get":     struct{}{},
-	"install": struct{}{},
-	"list":    struct{}{},
-	"run":     struct{}{},
-	"test":    struct{}{},
+	"build":   {},
+	"clean":   {},
+	"get":     {},
+	"install": {},
+	"list":    {},
+	"run":     {},
+	"test":    {},
 }
 
 func getHomeDir() (string, error) {
