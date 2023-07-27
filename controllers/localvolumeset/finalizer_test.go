@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"testing"
-	"time"
 
 	localv1alpha1 "github.com/openshift/local-storage-operator/api/v1alpha1"
 	"github.com/openshift/local-storage-operator/common"
@@ -87,6 +86,9 @@ func TestPVProtectionFinalizer(t *testing.T) {
 		if deleted {
 			now := metav1.Now()
 			lvSet.SetDeletionTimestamp(&now)
+			// Fake client requires that object with DeletionTimestamp has also Finalizer.
+			// Otherwise the API server would delete it right away and informers would not see such object.
+			lvSet.Finalizers = append(lvSet.Finalizers, common.LocalVolumeProtectionFinalizer)
 		}
 
 		return lvSet
@@ -274,14 +276,6 @@ func TestPVProtectionFinalizer(t *testing.T) {
 
 			lvSetKey := types.NamespacedName{Name: result.lvSet.GetName(), Namespace: result.lvSet.GetNamespace()}
 
-			// to debug specific test cases uncomment this and change desc and lvset name and place breakpoints
-			if testCase.desc == "2a: deletion unblocked, simple" {
-				time.Sleep(0)
-				if result.lvSet.Name == "s" {
-					time.Sleep(0)
-				}
-			}
-
 			// reconcile successfully
 			_, err := reconciler.reconcile(context.TODO(), reconcile.Request{NamespacedName: lvSetKey})
 			assert.Nilf(t, err, "expected reconciler to reconciler successfully")
@@ -297,7 +291,5 @@ func TestPVProtectionFinalizer(t *testing.T) {
 			}
 
 		}
-
 	}
-
 }

@@ -44,7 +44,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
-	"sigs.k8s.io/controller-runtime/pkg/source"
 )
 
 type localDiskData map[string]map[string]string
@@ -392,10 +391,10 @@ func (r *LocalVolumeReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	r.LvMap = &common.StorageClassOwnerMap{}
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&localv1.LocalVolume{}).
-		Watches(&source.Kind{Type: &appsv1.DaemonSet{}}, &handler.EnqueueRequestForOwner{OwnerType: &localv1.LocalVolume{}}).
+		Watches(&appsv1.DaemonSet{}, handler.EnqueueRequestForOwner(mgr.GetScheme(), mgr.GetRESTMapper(), &localv1.LocalVolume{})).
 		//  watch for storageclass, enqueue owner
-		Watches(&source.Kind{Type: &corev1.PersistentVolume{}}, handler.EnqueueRequestsFromMapFunc(
-			func(obj client.Object) []reconcile.Request {
+		Watches(&corev1.PersistentVolume{}, handler.EnqueueRequestsFromMapFunc(
+			func(ctx context.Context, obj client.Object) []reconcile.Request {
 				pv, ok := obj.(*corev1.PersistentVolume)
 				if !ok {
 					return []reconcile.Request{}
@@ -410,8 +409,8 @@ func (r *LocalVolumeReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			})).
 		// Watch for changes to owned resource PersistentVolume and enqueue the LocalVolume
 		// so that the controller can update the status and finalizer based on the owned PVs
-		Watches(&source.Kind{Type: &corev1.PersistentVolume{}}, handler.EnqueueRequestsFromMapFunc(
-			func(obj client.Object) []reconcile.Request {
+		Watches(&corev1.PersistentVolume{}, handler.EnqueueRequestsFromMapFunc(
+			func(ctx context.Context, obj client.Object) []reconcile.Request {
 				pv, ok := obj.(*corev1.PersistentVolume)
 				if !ok {
 					return []reconcile.Request{}

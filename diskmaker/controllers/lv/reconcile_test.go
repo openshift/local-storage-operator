@@ -1,13 +1,14 @@
 package lv
 
 import (
-	"github.com/openshift/local-storage-operator/test-framework"
 	"io/ioutil"
 	"os"
 	"path"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/openshift/local-storage-operator/test-framework"
 
 	"github.com/openshift/local-storage-operator/internal"
 
@@ -185,7 +186,7 @@ func TestCreateSymLinkByDeviceID(t *testing.T) {
 	d.runtimeConfig = &provCommon.RuntimeConfig{
 		UserConfig: &provCommon.UserConfig{
 			DiscoveryMap: map[string]provCommon.MountConfig{
-				sc.ObjectMeta.Name: provCommon.MountConfig{
+				sc.ObjectMeta.Name: {
 					FsType: string(corev1.PersistentVolumeBlock),
 				},
 			},

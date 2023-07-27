@@ -54,7 +54,7 @@ var (
 func SetDiscoveredDevicesMetrics(nodeName string, deviceCount int) {
 	metricDiscoveredDevicesByLocalVolumeDiscovery.
 		With(prometheus.Labels{"nodeName": nodeName}).
-		Set(float64((deviceCount)))
+		Set(float64(deviceCount))
 }
 
 func SetLVSProvisionedPVMetric(nodeName, storageClassName string, count int) {

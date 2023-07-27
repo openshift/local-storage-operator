@@ -4,11 +4,11 @@ const (
 	// KiB is is 1024 bytes
 	KiB int64 = 1024
 	// MiB is is 1024 KiB
-	MiB int64 = 1024 * KiB
+	MiB = 1024 * KiB
 	// GiB is 1024 MiB
-	GiB int64 = 1024 * MiB
+	GiB = 1024 * MiB
 	// TiB is 1024 GiB
-	TiB int64 = 1024 * GiB
+	TiB = 1024 * GiB
 )
 
 // RoundDownCapacityPretty rounds down to either the closest GiB or Mib if the resulting value is more than 10 of the respective unit.

@@ -42,9 +42,9 @@ func (l *StorageClassOwnerMap) RegisterStorageClassOwner(storageClass string, na
 	}
 	names, found := l.storageClassMap[storageClass]
 	if !found {
-		l.storageClassMap[storageClass] = map[types.NamespacedName]struct{}{name: struct{}{}}
+		l.storageClassMap[storageClass] = map[types.NamespacedName]struct{}{name: {}}
 	} else if len(names) < 1 {
-		l.storageClassMap[storageClass] = map[types.NamespacedName]struct{}{name: struct{}{}}
+		l.storageClassMap[storageClass] = map[types.NamespacedName]struct{}{name: {}}
 	} else {
 		l.storageClassMap[storageClass][name] = struct{}{}
 	}

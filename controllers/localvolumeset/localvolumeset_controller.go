@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 
+	localv1alpha1 "github.com/openshift/local-storage-operator/api/v1alpha1"
 	"github.com/openshift/local-storage-operator/common"
 	"github.com/openshift/local-storage-operator/controllers/nodedaemon"
 	appsv1 "k8s.io/api/apps/v1"
@@ -35,9 +36,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
-	"sigs.k8s.io/controller-runtime/pkg/source"
-
-	localv1alpha1 "github.com/openshift/local-storage-operator/api/v1alpha1"
 )
 
 const (
@@ -161,10 +159,10 @@ func (r *LocalVolumeSetReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&localv1alpha1.LocalVolumeSet{}).
 		// watch provisioner, diskmaker-manager daemonsets and enqueue owning object to update status.conditions
-		Watches(&source.Kind{Type: &appsv1.DaemonSet{}}, &handler.EnqueueRequestForOwner{OwnerType: &localv1alpha1.LocalVolumeSet{}}, builder.WithPredicates(common.EnqueueOnlyLabeledSubcomponents(nodedaemon.DiskMakerName, nodedaemon.ProvisionerName))).
+		Watches(&appsv1.DaemonSet{}, handler.EnqueueRequestForOwner(mgr.GetScheme(), mgr.GetRESTMapper(), &localv1alpha1.LocalVolumeSet{}), builder.WithPredicates(common.EnqueueOnlyLabeledSubcomponents(nodedaemon.DiskMakerName, nodedaemon.ProvisionerName))).
 		//  watch for storageclass, enqueue owner
-		Watches(&source.Kind{Type: &corev1.PersistentVolume{}}, handler.EnqueueRequestsFromMapFunc(
-			func(obj client.Object) []reconcile.Request {
+		Watches(&corev1.PersistentVolume{}, handler.EnqueueRequestsFromMapFunc(
+			func(ctx context.Context, obj client.Object) []reconcile.Request {
 				pv, ok := obj.(*corev1.PersistentVolume)
 				if !ok {
 					return []reconcile.Request{}
@@ -178,8 +176,8 @@ func (r *LocalVolumeSetReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			})).
 		// Watch for changes to owned resource PersistentVolume and enqueue the LocalVolumeSet
 		// so that the controller can update the status and finalizer(TODO) based on the owned PVs
-		Watches(&source.Kind{Type: &corev1.PersistentVolume{}}, handler.EnqueueRequestsFromMapFunc(
-			func(obj client.Object) []reconcile.Request {
+		Watches(&corev1.PersistentVolume{}, handler.EnqueueRequestsFromMapFunc(
+			func(ctx context.Context, obj client.Object) []reconcile.Request {
 
 				pv, ok := obj.(*corev1.PersistentVolume)
 				if !ok {

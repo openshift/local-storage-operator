@@ -23,8 +23,10 @@ import (
 
 	operatorv1 "github.com/openshift/api/operator/v1"
 	"github.com/openshift/library-go/pkg/operator/resource/resourceread"
+	localv1alpha1 "github.com/openshift/local-storage-operator/api/v1alpha1"
 	"github.com/openshift/local-storage-operator/assets"
 	"github.com/openshift/local-storage-operator/common"
+	"github.com/openshift/local-storage-operator/controllers/nodedaemon"
 	"github.com/openshift/local-storage-operator/localmetrics"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -39,10 +41,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
-	"sigs.k8s.io/controller-runtime/pkg/source"
-
-	localv1alpha1 "github.com/openshift/local-storage-operator/api/v1alpha1"
-	"github.com/openshift/local-storage-operator/controllers/nodedaemon"
 )
 
 var (
@@ -294,6 +292,6 @@ func getEnvVars(objName, uid string) []corev1.EnvVar {
 func (r *LocalVolumeDiscoveryReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&localv1alpha1.LocalVolumeDiscovery{}).
-		Watches(&source.Kind{Type: &appsv1.DaemonSet{}}, &handler.EnqueueRequestForOwner{OwnerType: &localv1alpha1.LocalVolumeDiscovery{}}).
+		Watches(&appsv1.DaemonSet{}, handler.EnqueueRequestForOwner(mgr.GetScheme(), mgr.GetRESTMapper(), &localv1alpha1.LocalVolumeDiscovery{})).
 		Complete(r)
 }

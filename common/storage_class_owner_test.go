@@ -11,27 +11,27 @@ import (
 func TestStorageClassMap(t *testing.T) {
 	m := &StorageClassOwnerMap{}
 	values := map[string][]types.NamespacedName{
-		"fast": []types.NamespacedName{
+		"fast": {
 			{Name: "fastdisks", Namespace: "local-storage"},
 			{Name: "fastworkerdisks", Namespace: "local-storage"},
 		},
-		"slow": []types.NamespacedName{
+		"slow": {
 			{Name: "slowdisks", Namespace: "local-storage"},
 		},
-		"large": []types.NamespacedName{
+		"large": {
 			{Name: "largedisks", Namespace: "local-storage"},
 		},
-		"small": []types.NamespacedName{
+		"small": {
 			{Name: "smallerthanthirty", Namespace: "local-storage"},
 			{Name: "smallerthanfifty", Namespace: "local-storage-two"},
 		},
 	}
 
 	removeValues := map[string][]types.NamespacedName{
-		"fast": []types.NamespacedName{
+		"fast": {
 			{Name: "fastdisks", Namespace: "local-storage"},
 		},
-		"small": []types.NamespacedName{
+		"small": {
 			{Name: "smallerthanthirty", Namespace: "local-storage"},
 		},
 	}

@@ -4,6 +4,11 @@ import (
 	"context"
 	"embed"
 	"fmt"
+	"path/filepath"
+	"reflect"
+	"testing"
+	"time"
+
 	"github.com/openshift/client-go/security/clientset/versioned/scheme"
 	"github.com/openshift/library-go/pkg/operator/resource/resourceread"
 	v1api "github.com/openshift/local-storage-operator/api/v1"
@@ -18,8 +23,6 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/utils/mount"
-	"path/filepath"
-	"reflect"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	crFake "sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -27,8 +30,6 @@ import (
 	provCommon "sigs.k8s.io/sig-storage-local-static-provisioner/pkg/common"
 	provDeleter "sigs.k8s.io/sig-storage-local-static-provisioner/pkg/deleter"
 	provUtil "sigs.k8s.io/sig-storage-local-static-provisioner/pkg/util"
-	"testing"
-	"time"
 )
 
 //go:embed *

@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	localv1alpha1 "github.com/openshift/local-storage-operator/api/v1alpha1"
-	diskmaker "github.com/openshift/local-storage-operator/diskmaker"
+	"github.com/openshift/local-storage-operator/diskmaker"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/record"
