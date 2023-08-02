@@ -126,7 +126,7 @@ func (b BlockDevice) HasChildren() (bool, error) {
 
 // HasBindMounts checks for bind mounts and returns mount point for a device by parsing `proc/1/mountinfo`.
 // HostPID should be set to true inside the POD spec to get details of host's mount points inside `proc/1/mountinfo`.
-func (b BlockDevice) HasBindMounts() (bool, string, error) {
+func (b *BlockDevice) HasBindMounts() (bool, string, error) {
 	data, err := ioutil.ReadFile(mountFile)
 	if err != nil {
 		return false, "", fmt.Errorf("failed to read file %s: %v", mountFile, err)
@@ -161,7 +161,7 @@ func (b BlockDevice) GetDevPath() (path string, err error) {
 }
 
 // GetPathByID check on BlockDevice
-func (b BlockDevice) GetPathByID() (string, error) {
+func (b *BlockDevice) GetPathByID() (string, error) {
 
 	// return if previously populated value is valid
 	if len(b.PathByID) > 0 && strings.HasPrefix(b.PathByID, DiskByIDDir) {
@@ -171,21 +171,47 @@ func (b BlockDevice) GetPathByID() (string, error) {
 		}
 	}
 	b.PathByID = ""
-	diskByIDDir := filepath.Join(DiskByIDDir, "/*")
-	paths, err := FilePathGlob(diskByIDDir)
+	allDisks, err := FilePathGlob(filepath.Join(DiskByIDDir, "/*"))
 	if err != nil {
-		return "", fmt.Errorf("could not list files in %q: %w", DiskByIDDir, err)
+		return "", fmt.Errorf("error listing files in %s: %v", DiskByIDDir, err)
 	}
-	for _, path := range paths {
-		isMatch, err := PathEvalsToDiskLabel(path, b.KName)
-		if err != nil {
-			return "", err
+	preferredPatterns := []string{"wwn", "scsi", "nvme"}
+
+	// sortedSymlinks sorts symlinks in 4 buckets.
+	// 	- [0] - syminks that match wwn
+	//	- [1] - symlinks that match scsi
+	//	- [2] - symlinks that match nvme
+	//	- [3] - symlinks that does not any of these
+	sortedSymlinks := [4][]string{}
+
+	for _, path := range allDisks {
+		pathMatched := false
+		for i, pattern := range preferredPatterns {
+			symLinkName := filepath.Base(path)
+			if strings.HasPrefix(symLinkName, pattern) {
+				sortedSymlinks[i] = append(sortedSymlinks[i], path)
+				pathMatched = true
+				break
+			}
 		}
-		if isMatch {
-			b.PathByID = path
-			return path, nil
+		if !pathMatched {
+			sortedSymlinks[3] = append(sortedSymlinks[3], path)
 		}
 	}
+
+	for _, groupedLink := range sortedSymlinks {
+		for _, path := range groupedLink {
+			isMatch, err := PathEvalsToDiskLabel(path, b.KName)
+			if err != nil {
+				return "", err
+			}
+			if isMatch {
+				b.PathByID = path
+				return path, nil
+			}
+		}
+	}
+
 	devPath, err := b.GetDevPath()
 	if err != nil {
 		return "", err
