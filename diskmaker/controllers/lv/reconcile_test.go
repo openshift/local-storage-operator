@@ -32,11 +32,15 @@ func TestFindMatchingDisk(t *testing.T) {
 	tests := []struct {
 		name                  string
 		availableBlockDevices []internal.BlockDevice
+		fakeGlobFunc          func(string) ([]string, error)
 		userSpecifiedDisk     []string
 		matchingDevices       []DiskLocation
 	}{
 		{
 			name: "when devices match by their device names",
+			fakeGlobFunc: func(string) ([]string, error) {
+				return []string{"/dev/disk/by-id/abcde", "/dev/disk/by-id/wwn-abcde"}, nil
+			},
 			availableBlockDevices: []internal.BlockDevice{
 				{
 					Name:  "sdc1",
@@ -74,9 +78,8 @@ func TestFindMatchingDisk(t *testing.T) {
 					},
 				},
 			}
-			allDiskIds := getDeiveIDs()
 			d.fsInterface = FakeFileSystemInterface{}
-			deviceMap, err := d.findMatchingDisks(diskConfig, test.availableBlockDevices, allDiskIds)
+			deviceMap, err := d.findMatchingDisks(diskConfig, test.availableBlockDevices)
 			if err != nil {
 				t.Fatalf("error finding matchin device %v", err)
 			}
