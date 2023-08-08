@@ -167,27 +167,22 @@ func (b *BlockDevice) GetPathByID() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("error listing files in %s: %v", DiskByIDDir, err)
 	}
-	preferredPatterns := []string{"wwn", "scsi", "nvme"}
+	preferredPatterns := []string{"wwn", "scsi", "nvme", ""}
 
 	// sortedSymlinks sorts symlinks in 4 buckets.
 	// 	- [0] - syminks that match wwn
 	//	- [1] - symlinks that match scsi
 	//	- [2] - symlinks that match nvme
 	//	- [3] - symlinks that does not any of these
-	sortedSymlinks := [4][]string{}
+	sortedSymlinks := make([][]string, len(preferredPatterns))
 
 	for _, path := range allDisks {
-		pathMatched := false
 		for i, pattern := range preferredPatterns {
 			symLinkName := filepath.Base(path)
 			if strings.HasPrefix(symLinkName, pattern) {
 				sortedSymlinks[i] = append(sortedSymlinks[i], path)
-				pathMatched = true
 				break
 			}
-		}
-		if !pathMatched {
-			sortedSymlinks[3] = append(sortedSymlinks[3], path)
 		}
 	}
 
