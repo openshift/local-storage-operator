@@ -33,11 +33,30 @@ func TestFindMatchingDisk(t *testing.T) {
 	tests := []struct {
 		name                  string
 		availableBlockDevices []internal.BlockDevice
+		fakeGlobFunc          func(string) ([]string, error)
+		fakeEvalSymlink       func(string) (string, error)
 		userSpecifiedDisk     []string
 		matchingDevices       []DiskLocation
 	}{
 		{
 			name: "when devices match by their device names",
+			fakeGlobFunc: func(string) ([]string, error) {
+				return []string{
+					"/dev/disk/by-id/abcde",
+					"/dev/disk/by-id/wwn-abcde",
+					"/dev/disk/by-id/wwn-xyz",
+				}, nil
+			},
+			fakeEvalSymlink: func(path string) (string, error) {
+				switch path {
+				case "/dev/disk/by-id/wwn-abcde":
+					return "/dev/sdc1", nil
+				case "/dev/disk/by-id/wwn-xyz":
+					return "/dev/sdc2", nil
+				default:
+					return "", nil
+				}
+			},
 			availableBlockDevices: []internal.BlockDevice{
 				{
 					Name:  "sdc1",
@@ -53,12 +72,12 @@ func TestFindMatchingDisk(t *testing.T) {
 				{
 					diskNamePath:     "/dev/sdc1",
 					userProvidedPath: "/dev/sdc1",
-					diskID:           "",
+					diskID:           "/dev/disk/by-id/wwn-abcde",
 				},
 				{
 					diskNamePath:     "/dev/sdc2",
 					userProvidedPath: "/dev/sdc2",
-					diskID:           "",
+					diskID:           "/dev/disk/by-id/wwn-xyz",
 				},
 			},
 		},
@@ -75,9 +94,15 @@ func TestFindMatchingDisk(t *testing.T) {
 					},
 				},
 			}
-			allDiskIds := getDeiveIDs()
 			d.fsInterface = FakeFileSystemInterface{}
-			deviceMap, err := d.findMatchingDisks(diskConfig, test.availableBlockDevices, allDiskIds)
+			internal.FilePathGlob = test.fakeGlobFunc
+			internal.FilePathEvalSymLinks = test.fakeEvalSymlink
+			defer func() {
+				internal.FilePathGlob = filepath.Glob
+				internal.FilePathEvalSymLinks = filepath.EvalSymlinks
+			}()
+
+			deviceMap, err := d.findMatchingDisks(diskConfig, test.availableBlockDevices)
 			if err != nil {
 				t.Fatalf("error finding matchin device %v", err)
 			}

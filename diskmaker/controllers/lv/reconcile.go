@@ -364,15 +364,7 @@ func (r *LocalVolumeReconciler) Reconcile(ctx context.Context, request ctrl.Requ
 		return ctrl.Result{}, nil
 	}
 
-	allDiskIds, err := filepath.Glob(diskByIDPath)
-	if err != nil {
-		msg := fmt.Sprintf("error listing disks in /dev/disk/by-id: %v", err)
-		r.eventSync.Report(r.localVolume, newDiskEvent(ErrorListingDeviceID, msg, "", corev1.EventTypeWarning))
-		klog.Error(msg)
-		return ctrl.Result{}, nil
-	}
-
-	deviceMap, err := r.findMatchingDisks(diskConfig, validBlockDevices, allDiskIds)
+	deviceMap, err := r.findMatchingDisks(diskConfig, validBlockDevices)
 	if err != nil {
 		msg := fmt.Sprintf("error finding matching disks: %v", err)
 		r.eventSync.Report(r.localVolume, newDiskEvent(ErrorFindingMatchingDisk, msg, "", corev1.EventTypeWarning))
@@ -490,7 +482,7 @@ func ignoreDevices(dev internal.BlockDevice) bool {
 	return false
 }
 
-func (r *LocalVolumeReconciler) findMatchingDisks(diskConfig *DiskConfig, blockDevices []internal.BlockDevice, allDiskIds []string) (map[string][]DiskLocation, error) {
+func (r *LocalVolumeReconciler) findMatchingDisks(diskConfig *DiskConfig, blockDevices []internal.BlockDevice) (map[string][]DiskLocation, error) {
 
 	// blockDeviceMap is a map of storageclass and device locations
 	blockDeviceMap := make(map[string][]DiskLocation)
@@ -538,7 +530,7 @@ func (r *LocalVolumeReconciler) findMatchingDisks(diskConfig *DiskConfig, blockD
 				baseDeviceName := filepath.Base(diskDevPath)
 				blockDevice, matched := hasExactDisk(blockDevices, baseDeviceName)
 				if matched {
-					matchedDeviceID, err := r.findStableDeviceID(baseDeviceName, allDiskIds)
+					matchedDeviceID, err := blockDevice.GetPathByID()
 					// This means no /dev/disk/by-id entry was created for requested device.
 					if err != nil {
 						klog.ErrorS(err, "unable to find disk ID for local pool",
