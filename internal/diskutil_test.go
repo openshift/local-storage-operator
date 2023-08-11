@@ -351,7 +351,7 @@ func TestGetPathByID(t *testing.T) {
 		{
 			label:       "Case 1: pathByID is already available",
 			blockDevice: BlockDevice{Name: "sdb", KName: "sdb", PathByID: "/dev/disk/by-id/sdb"},
-			fakeGlobfunc: func(name string) ([]string, error) {
+			fakeGlobfunc: func(path string) ([]string, error) {
 				return []string{"/dev/disk/by-id/dm-home", "/dev/disk/by-id/dm-uuid-LVM-6p00g8KptCD", "/dev/disk/by-id/sdb"}, nil
 			},
 			fakeEvalSymlinkfunc: func(path string) (string, error) {
@@ -363,13 +363,37 @@ func TestGetPathByID(t *testing.T) {
 		{
 			label:       "Case 2: pathByID is not available",
 			blockDevice: BlockDevice{Name: "sdb", KName: "sdb", PathByID: ""},
-			fakeGlobfunc: func(name string) ([]string, error) {
+			fakeGlobfunc: func(path string) ([]string, error) {
 				return []string{"/dev/disk/by-id/sdb"}, nil
 			},
 			fakeEvalSymlinkfunc: func(path string) (string, error) {
 				return "/dev/disk/by-id/sdb", nil
 			},
 			expected: "/dev/disk/by-id/sdb",
+		},
+		{
+			label:       "Prefer wwn-paths if available",
+			blockDevice: BlockDevice{Name: "sdb", KName: "sdb", PathByID: ""},
+			fakeGlobfunc: func(path string) ([]string, error) {
+				return []string{"/dev/disk/by-id/abcde", "/dev/disk/by-id/wwn-abcde"}, nil
+
+			},
+			fakeEvalSymlinkfunc: func(string) (string, error) {
+				return "/dev/sdb", nil
+			},
+			expected: "/dev/disk/by-id/wwn-abcde",
+		},
+		{
+			label:       "Prefer wwn path even if scsi is if available",
+			blockDevice: BlockDevice{Name: "sdb", KName: "sdb", PathByID: ""},
+			fakeGlobfunc: func(path string) ([]string, error) {
+				return []string{"/dev/disk/by-id/abcde", "/dev/disk/by-id/wwn-abcde", "/dev/disk/by-id/scsi-abcde"}, nil
+
+			},
+			fakeEvalSymlinkfunc: func(string) (string, error) {
+				return "/dev/sdb", nil
+			},
+			expected: "/dev/disk/by-id/wwn-abcde",
 		},
 	}
 
