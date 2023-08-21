@@ -152,6 +152,9 @@ spec:
   minKubeVersion: 1.14.0
   provider:
     name: Red Hat
+  relatedImages:
+    - image: quay.io/openshift/origin-local-storage-mustgather:latest
+      name: local-storage-mustgather
   labels:
     alm-owner-metering: local-storage-operator
     alm-status-descriptors: local-storage-operator.v4.14.0
