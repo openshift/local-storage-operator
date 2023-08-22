@@ -152,9 +152,6 @@ spec:
   minKubeVersion: 1.14.0
   provider:
     name: Red Hat
-  relatedImages:
-    - image: quay.io/openshift/origin-local-storage-mustgather:latest
-      name: local-storage-mustgather
   labels:
     alm-owner-metering: local-storage-operator
     alm-status-descriptors: local-storage-operator.v4.14.0
@@ -392,6 +389,10 @@ spec:
                         value: quay.io/openshift/origin-kube-rbac-proxy:latest
                       - name: PRIORITY_CLASS_NAME
                         value: openshift-user-critical
+                      - name: MUSTGATHER_IMAGE
+                        # This env. var is not used by the operator.
+                        # It is here only to be matched by ART pipeline and added to related-images automatically.
+                        value: quay.io/openshift/origin-local-storage-mustgather:latest
   customresourcedefinitions:
     owned:
       - displayName: Local Volume
