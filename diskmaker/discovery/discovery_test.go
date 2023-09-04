@@ -121,7 +121,7 @@ func TestIgnoreDevices(t *testing.T) {
 		errMessage   error
 	}{
 		{
-			label: "Case 1: don't ignore disk type",
+			label: "don't ignore disk type",
 			blockDevice: internal.BlockDevice{
 				Name:     "sdb",
 				KName:    "sdb",
@@ -136,7 +136,7 @@ func TestIgnoreDevices(t *testing.T) {
 			errMessage: fmt.Errorf("ignored wrong device"),
 		},
 		{
-			label: "Case 2: don't ignore lvm type",
+			label: "don't ignore lvm type",
 			blockDevice: internal.BlockDevice{
 				Name:     "sdb",
 				KName:    "sdb",
@@ -151,7 +151,22 @@ func TestIgnoreDevices(t *testing.T) {
 			errMessage: fmt.Errorf("ignored wrong device"),
 		},
 		{
-			label: "Case 3: ignore read only devices",
+			label: "don't ignore mpath type",
+			blockDevice: internal.BlockDevice{
+				Name:     "sdc",
+				KName:    "dm-0",
+				ReadOnly: "0",
+				State:    "running",
+				Type:     "mpath",
+			},
+			fakeGlobfunc: func(name string) ([]string, error) {
+				return []string{"removable", "subsytem"}, nil
+			},
+			expected:   false,
+			errMessage: fmt.Errorf("ignored wrong device"),
+		},
+		{
+			label: "ignore read only devices",
 			blockDevice: internal.BlockDevice{
 				Name:     "sdb",
 				KName:    "sdb",
@@ -166,7 +181,7 @@ func TestIgnoreDevices(t *testing.T) {
 			errMessage: fmt.Errorf("failed to ignore read only device"),
 		},
 		{
-			label: "Case 4: ignore devices in suspended state",
+			label: "ignore devices in suspended state",
 			blockDevice: internal.BlockDevice{
 				Name:     "sdb",
 				KName:    "sdb",
@@ -181,7 +196,7 @@ func TestIgnoreDevices(t *testing.T) {
 			errMessage: fmt.Errorf("ignored wrong suspended device"),
 		},
 		{
-			label: "Case 5: ignore root device with children",
+			label: "ignore root device with children",
 			blockDevice: internal.BlockDevice{
 				Name:     "sdb",
 				KName:    "sdb",
@@ -446,6 +461,107 @@ func TestGetDiscoveredDevices(t *testing.T) {
 				return "/dev/disk/by-id/sda1", nil
 			},
 		},
+		{
+			label: "Case 5: discovering multipath device",
+			blockDevices: []internal.BlockDevice{
+				{
+					Name:       "sda",
+					KName:      "dm-0",
+					FSType:     "",
+					Type:       "mpath",
+					Size:       "62913494528",
+					Model:      "",
+					Vendor:     "",
+					Serial:     "",
+					Rotational: "0",
+					ReadOnly:   "0",
+					Removable:  "0",
+					State:      "running",
+					PartLabel:  "",
+					// We're faking glob function in these test cases and this test would do globbing twice
+					// (first for getting by-id path and second for /dev/mapper path) so we pretend the by-id path is already set.
+					// That way we can test only /dev/mapper globbing and symlink evaluation.
+					PathByID: "/dev/disk/by-id/dm-name-mpatha",
+				},
+			},
+			expected: []v1alpha1.DiscoveredDevice{
+				{
+					DeviceID: "/dev/disk/by-id/dm-name-mpatha",
+					Path:     "/dev/dm-0",
+					Model:    "",
+					Type:     "mpath",
+					Vendor:   "",
+					Serial:   "",
+					Size:     int64(62913494528),
+					Property: "NonRotational",
+					FSType:   "",
+					Status:   v1alpha1.DeviceStatus{State: v1alpha1.Unknown},
+				},
+			},
+			fakeGlobfunc: func(name string) ([]string, error) {
+				return []string{"/dev/mapper/mpatha"}, nil
+			},
+			fakeEvalSymlinkfunc: func(path string) (string, error) {
+				return "/dev/dm-0", nil
+			},
+		},
+		{
+			label: "Case 6: discovery result shows only unique devices by-id",
+			blockDevices: []internal.BlockDevice{
+				{
+					Name:       "mpatha",
+					KName:      "dm-0",
+					FSType:     "",
+					Type:       "mpath",
+					Size:       "62913494528",
+					Model:      "",
+					Vendor:     "",
+					Serial:     "",
+					Rotational: "0",
+					ReadOnly:   "0",
+					Removable:  "0",
+					State:      "running",
+					PartLabel:  "",
+					PathByID:   "/dev/disk/by-id/dm-name-mpatha",
+				},
+				{
+					Name:       "mpatha",
+					KName:      "dm-0",
+					FSType:     "",
+					Type:       "mpath",
+					Size:       "62913494528",
+					Model:      "",
+					Vendor:     "",
+					Serial:     "",
+					Rotational: "0",
+					ReadOnly:   "0",
+					Removable:  "0",
+					State:      "running",
+					PartLabel:  "",
+					PathByID:   "/dev/disk/by-id/dm-name-mpatha",
+				},
+			},
+			expected: []v1alpha1.DiscoveredDevice{
+				{
+					DeviceID: "/dev/disk/by-id/dm-name-mpatha",
+					Path:     "/dev/dm-0",
+					Model:    "",
+					Type:     "mpath",
+					Vendor:   "",
+					Serial:   "",
+					Size:     int64(62913494528),
+					Property: "NonRotational",
+					FSType:   "",
+					Status:   v1alpha1.DeviceStatus{State: v1alpha1.Unknown},
+				},
+			},
+			fakeGlobfunc: func(name string) ([]string, error) {
+				return []string{"/dev/mapper/mpatha"}, nil
+			},
+			fakeEvalSymlinkfunc: func(path string) (string, error) {
+				return "/dev/dm-0", nil
+			},
+		},
 	}
 
 	for _, tc := range testcases {
@@ -457,6 +573,11 @@ func TestGetDiscoveredDevices(t *testing.T) {
 		}()
 
 		actual := getDiscoverdDevices(tc.blockDevices)
+
+		if !assert.Equalf(t, len(tc.expected), len(actual), "Expected discovered device count: %v, but got: %v ", len(tc.expected), len(actual)) {
+			t.Errorf("\nExpected:\n%#v\nGot:\n%#v", tc.expected, actual)
+		}
+
 		for i := 0; i < len(tc.expected); i++ {
 			assert.Equalf(t, tc.expected[i].DeviceID, actual[i].DeviceID, "[%s: Discovered Device: %d]: invalid device ID", tc.label, i+1)
 			assert.Equalf(t, tc.expected[i].Path, actual[i].Path, "[%s: Discovered Device: %d]: invalid device path", tc.label, i+1)
