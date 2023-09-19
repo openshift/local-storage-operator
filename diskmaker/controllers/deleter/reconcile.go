@@ -66,7 +66,6 @@ func (r *DeleteReconciler) Reconcile(ctx context.Context, request ctrl.Request) 
 		r.firstRunOver = true
 	}
 
-	klog.Info("Deleting PVs through sig storage deleter")
 	r.deleter.DeletePVs()
 	return ctrl.Result{RequeueAfter: time.Second * 30}, nil
 }
