@@ -514,7 +514,7 @@ func handlePVChange(runtimeConfig *provCommon.RuntimeConfig, pv *corev1.Persiste
 	if !found {
 		return
 	}
-	ownerNamespace, found := pv.Labels[common.PVOwnerNameLabel]
+	ownerNamespace, found := pv.Labels[common.PVOwnerNamespaceLabel]
 	if !found {
 		return
 	}
