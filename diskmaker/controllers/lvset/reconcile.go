@@ -44,16 +44,10 @@ const (
 // The Controller will requeue the Request to be processed again if the returned error is non-nil or
 // Result.Requeue is true, otherwise upon completion it will remove the work from the queue.
 func (r *LocalVolumeSetReconciler) Reconcile(ctx context.Context, request ctrl.Request) (ctrl.Result, error) {
-	klog.InfoS("Reconciling LocalVolumeSet", "namespace", request.Namespace, "name", request.Name)
-
-	err := common.ReloadRuntimeConfig(ctx, r.Client, request, r.nodeName, r.runtimeConfig)
-	if err != nil {
-		return ctrl.Result{}, err
-	}
 
 	// Fetch the LocalVolumeSet instance
 	lvset := &localv1alpha1.LocalVolumeSet{}
-	err = r.Client.Get(ctx, request.NamespacedName, lvset)
+	err := r.Client.Get(ctx, request.NamespacedName, lvset)
 	if err != nil {
 		if kerrors.IsNotFound(err) {
 			// Request object not found, could have been deleted after reconcile request.
@@ -61,6 +55,13 @@ func (r *LocalVolumeSetReconciler) Reconcile(ctx context.Context, request ctrl.R
 			return ctrl.Result{}, nil
 		}
 		// Error reading the object - requeue the request.
+		return ctrl.Result{}, err
+	}
+
+	klog.InfoS("Reconciling LocalVolumeSet", "namespace", request.Namespace, "name", request.Name)
+
+	err = common.ReloadRuntimeConfig(ctx, r.Client, request, r.nodeName, r.runtimeConfig)
+	if err != nil {
 		return ctrl.Result{}, err
 	}
 
