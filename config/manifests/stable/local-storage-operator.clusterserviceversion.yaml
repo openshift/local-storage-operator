@@ -54,7 +54,7 @@ metadata:
                 "NonRotational"
               ],
               "deviceTypes": [
-                "RawDisk"
+                "disk"
               ],
               "maxSize": "100G",
               "minSize": "10G"
