@@ -255,9 +255,23 @@ func addOwnerLabels(meta *metav1.ObjectMeta, cr *localv1.LocalVolume) bool {
 //+kubebuilder:rbac:groups="";storage.k8s.io,resources=configmaps;storageclasses;persistentvolumeclaims;persistentvolumes,verbs=*
 
 func (r *LocalVolumeReconciler) Reconcile(ctx context.Context, request ctrl.Request) (ctrl.Result, error) {
+
+	lv := &localv1.LocalVolume{}
+	err := r.Client.Get(ctx, request.NamespacedName, lv)
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			// Request object not found, could have been deleted after reconcile request.
+			// Return and don't requeue
+			return ctrl.Result{}, nil
+		}
+		// Error reading the object - requeue the request.
+		return ctrl.Result{}, err
+	}
+	r.localVolume = lv
+
 	klog.InfoS("Reconciling LocalVolume", "namespace", request.Namespace, "name", request.Name)
 
-	err := common.ReloadRuntimeConfig(ctx, r.Client, request, os.Getenv("MY_NODE_NAME"), r.runtimeConfig)
+	err = common.ReloadRuntimeConfig(ctx, r.Client, request, os.Getenv("MY_NODE_NAME"), r.runtimeConfig)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -277,20 +291,6 @@ func (r *LocalVolumeReconciler) Reconcile(ctx context.Context, request ctrl.Requ
 		}
 		r.cacheSynced = true
 	}
-
-	lv := &localv1.LocalVolume{}
-	err = r.Client.Get(ctx, request.NamespacedName, lv)
-	if err != nil {
-		if apierrors.IsNotFound(err) {
-			// Request object not found, could have been deleted after reconcile request.
-			// Return and don't requeue
-			return ctrl.Result{}, nil
-		}
-		// Error reading the object - requeue the request.
-		return ctrl.Result{}, err
-	}
-
-	r.localVolume = lv
 
 	// don't provision for deleted lvs
 	if !lv.DeletionTimestamp.IsZero() {
