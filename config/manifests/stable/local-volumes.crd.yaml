@@ -62,6 +62,9 @@ spec:
                       fsType:
                         description: File system type to create on empty volumes, such as "ext4" or "xfs". Used only when volumeMode is "Filesystem". Leave blank when volumeMode is "Block".
                         type: string
+                      forceWipeDevicesAndDestroyAllData:
+                        description: This option will destroy all leftover data on the devices before they're used as PersistentVolumes. Use with care.
+                        type: boolean
                       devicePaths:
                         description: 'A list of devices which would be chosen for local storage.
                         For example - ["/dev/sda", "/dev/sdb", "/dev/disk/by-id/ata-crucial"].

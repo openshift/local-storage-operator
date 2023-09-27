@@ -206,7 +206,7 @@ func TestCreateSymLinkByDeviceID(t *testing.T) {
 	}
 	d, _ := getFakeDiskMaker(t, tmpSymLinkTargetDir, lv, sc)
 	d.fsInterface = FakeFileSystemInterface{}
-	diskLocation := DiskLocation{fakeDisk.Name(), fakeDiskByID.Name(), fakeDisk.Name(), internal.BlockDevice{}}
+	diskLocation := DiskLocation{fakeDisk.Name(), fakeDiskByID.Name(), fakeDisk.Name(), internal.BlockDevice{}, false}
 
 	d.runtimeConfig = &provCommon.RuntimeConfig{
 		UserConfig: &provCommon.UserConfig{
@@ -253,7 +253,7 @@ func TestCreateSymLinkByDeviceName(t *testing.T) {
 
 	d, _ := getFakeDiskMaker(t, tmpSymLinkTargetDir, lv, sc)
 	d.fsInterface = FakeFileSystemInterface{}
-	diskLocation := DiskLocation{fakeDisk.Name(), "", fakeDisk.Name(), internal.BlockDevice{}}
+	diskLocation := DiskLocation{fakeDisk.Name(), "", fakeDisk.Name(), internal.BlockDevice{}, false}
 	d.createSymlink(diskLocation, fakeDisk.Name(), path.Join(tmpSymLinkTargetDir, "diskName"), false)
 
 	// assert that target symlink is created for disk name when no disk ID is available

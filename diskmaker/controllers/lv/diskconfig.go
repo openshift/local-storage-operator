@@ -10,7 +10,8 @@ import (
 
 // Disks defines disks to be used for local volumes
 type Disks struct {
-	DevicePaths []string `json:"devicePaths,omitempty"`
+	DevicePaths                       []string `json:"devicePaths,omitempty"`
+	ForceWipeDevicesAndDestroyAllData bool     `json:"forceWipeDevicesAndDestroyAllData,omitempty"`
 }
 
 // DeviceNames returns devices which are used by name.
