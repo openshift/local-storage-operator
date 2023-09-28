@@ -1,11 +1,9 @@
-
 ---
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.4.1
-  creationTimestamp: null
+    controller-gen.kubebuilder.io/version: v0.12.1
   name: localvolumesets.local.storage.openshift.io
 spec:
   group: local.storage.openshift.io
@@ -179,10 +177,12 @@ spec:
                             type: object
                           type: array
                       type: object
+                      x-kubernetes-map-type: atomic
                     type: array
                 required:
                 - nodeSelectorTerms
                 type: object
+                x-kubernetes-map-type: atomic
               storageClassName:
                 description: StorageClassName to use for set of matched devices
                 type: string
@@ -271,9 +271,3 @@ spec:
     storage: true
     subresources:
       status: {}
-status:
-  acceptedNames:
-    kind: ""
-    plural: ""
-  conditions: []
-  storedVersions: []

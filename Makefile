@@ -85,10 +85,17 @@ endif
 
 ##@ Development
 
-diskmaker-rbac: controller-gen ## Generate ClusterRole and Role objects.
+update: rbac manifests generate fmt
+
+verify:
+	./hack/verify-manifests.sh
+
+rbac: controller-gen ## Generate ClusterRole and Role objects.
+	$(CONTROLLER_GEN) rbac:roleName=local-storage-operator webhook paths="./controllers/..." output:artifacts:config=config/rbac
 	$(CONTROLLER_GEN) rbac:roleName=local-storage-admin paths="./diskmaker/controllers/..."  output:artifacts:config=config/rbac/diskmaker
-manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole, Role and CustomResourceDefinition objects.
-	$(CONTROLLER_GEN) rbac:roleName=local-storage-operator webhook paths="./controllers/..." output:artifacts:config=config/crd/bases
+
+manifests: controller-gen ## Generate CustomResourceDefinition objects.
+	$(CONTROLLER_GEN) rbac:roleName=local-storage-operator crd paths="./api/..." output:artifacts:config=config/crd/bases
 
 generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
 	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./..."
@@ -101,7 +108,7 @@ fmt: ## Run go fmt against code.
 
 ENVTEST_ASSETS_DIR=$(shell pwd)/testbin
 
-test: manifests generate diskmaker-rbac fmt ## Run tests.
+test: manifests generate rbac fmt ## Run tests.
 	mkdir -p ${ENVTEST_ASSETS_DIR}
 	test -f ${ENVTEST_ASSETS_DIR}/setup-envtest.sh || curl -sSLo ${ENVTEST_ASSETS_DIR}/setup-envtest.sh https://raw.githubusercontent.com/kubernetes-sigs/controller-runtime/v0.7.2/hack/setup-envtest.sh
 	source ${ENVTEST_ASSETS_DIR}/setup-envtest.sh; fetch_envtest_tools $(ENVTEST_ASSETS_DIR); setup_envtest_env $(ENVTEST_ASSETS_DIR)
@@ -112,7 +119,7 @@ test: manifests generate diskmaker-rbac fmt ## Run tests.
 # build: generate fmt vet ## Build manager binary.
 # 	go build -o bin/manager main.go
 
-# run: manifests generate diskmaker-rbac fmt vet ## Run a controller from your host.
+# run: manifests generate rbac fmt vet ## Run a controller from your host.
 # 	go run ./main.go
 
 # docker-build: test ## Build docker image with the manager.
@@ -123,13 +130,13 @@ test: manifests generate diskmaker-rbac fmt ## Run tests.
 
 ##@ Deployment
 
-install: manifests diskmaker-rbac kustomize ## Install CRDs into the K8s cluster specified in ~/.kube/config.
+install: manifests rbac kustomize ## Install CRDs into the K8s cluster specified in ~/.kube/config.
 	$(KUSTOMIZE) build config/crd | kubectl apply -f -
 
-uninstall: manifests diskmaker-rbac kustomize ## Uninstall CRDs from the K8s cluster specified in ~/.kube/config.
+uninstall: manifests rbac kustomize ## Uninstall CRDs from the K8s cluster specified in ~/.kube/config.
 	$(KUSTOMIZE) build config/crd | kubectl delete -f -
 
-deploy: manifests diskmaker-rbac kustomize ## Deploy controller to the K8s cluster specified in ~/.kube/config.
+deploy: manifests rbac kustomize ## Deploy controller to the K8s cluster specified in ~/.kube/config.
 	cd config/manager && $(KUSTOMIZE) edit set image controller=${IMG}
 	$(KUSTOMIZE) build config/default | oc apply -f -
 
