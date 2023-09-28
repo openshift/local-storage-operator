@@ -73,7 +73,7 @@ func TestDaemonSetCondition(t *testing.T) {
 
 		for _, lvset := range lvsets {
 			lvsetKey := types.NamespacedName{Name: lvset.GetName(), Namespace: lvset.GetNamespace()}
-			req := reconcile.Request{lvsetKey}
+			req := reconcile.Request{NamespacedName: lvsetKey}
 
 			err := fakeReconciler.updateDaemonSetsCondition(context.TODO(), req)
 			assert.NoErrorf(t, err, "updateDaemonSetsCondition")

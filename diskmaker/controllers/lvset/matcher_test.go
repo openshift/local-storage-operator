@@ -140,7 +140,7 @@ func TestNotSuspended(t *testing.T) {
 	}
 	assertAll(t, results)
 }
-func TestnoBiosBootInPartLabel(t *testing.T) {
+func TestNoBiosBootInPartLabel(t *testing.T) {
 	matcherMap := FilterMap
 	matcher := noBiosBootInPartLabel
 	results := []knownMatcherResult{

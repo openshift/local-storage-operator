@@ -43,7 +43,7 @@ type DiskConfig struct {
 	OwnerNamespace  string            `json:"ownerNamespace,omitempty"`
 	OwnerKind       string            `json:"ownerKind,omitempty"`
 	OwnerUID        string            `json:"ownerUID,omitempty"`
-	OwnerAPIVersion string            `json:ownerAPIVersion,omitempty`
+	OwnerAPIVersion string            `json:"ownerAPIVersion,omitempty"`
 }
 
 // ToYAML returns yaml representation of diskconfig

@@ -91,7 +91,7 @@ func TestLocalStorage(t *testing.T) {
 		runCleanup := getCleanupRunner(t, &cleanupFuncs)
 
 		// handle ctrl-c
-		stopChan := make(chan os.Signal)
+		stopChan := make(chan os.Signal, 1)
 		signal.Notify(stopChan, os.Interrupt, syscall.SIGTERM)
 		go func() {
 			t.Log("listening for interrupt")
