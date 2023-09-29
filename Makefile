@@ -87,8 +87,7 @@ endif
 
 diskmaker-rbac: controller-gen ## Generate ClusterRole and Role objects.
 	$(CONTROLLER_GEN) rbac:roleName=local-storage-admin paths="./diskmaker/controllers/..."  output:artifacts:config=config/rbac/diskmaker
-manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole, Role and CustomResourceDefinition objects.
-	$(CONTROLLER_GEN) rbac:roleName=local-storage-operator webhook paths="./controllers/..." output:artifacts:config=config/crd/bases
+manifests: ;
 
 generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
 	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./..."
