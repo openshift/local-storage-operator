@@ -14,10 +14,9 @@ import (
 	"github.com/onsi/gomega"
 	operatorv1 "github.com/openshift/api/operator/v1"
 	localv1 "github.com/openshift/local-storage-operator/api/v1"
-	"github.com/openshift/local-storage-operator/common"
-	commontypes "github.com/openshift/local-storage-operator/common"
-	"github.com/openshift/local-storage-operator/controllers/nodedaemon"
-	framework "github.com/openshift/local-storage-operator/test-framework"
+	"github.com/openshift/local-storage-operator/pkg/common"
+	"github.com/openshift/local-storage-operator/pkg/controllers/nodedaemon"
+	framework "github.com/openshift/local-storage-operator/test/framework"
 	corev1 "k8s.io/api/core/v1"
 	v1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
@@ -359,7 +358,7 @@ func checkLocalVolumeStatus(t *testing.T, lv *localv1.LocalVolume) error {
 }
 
 func deleteCreatedPV(t *testing.T, kubeClient kubernetes.Interface, lv *localv1.LocalVolume) error {
-	err := kubeClient.CoreV1().PersistentVolumes().DeleteCollection(goctx.TODO(), metav1.DeleteOptions{}, metav1.ListOptions{LabelSelector: commontypes.GetPVOwnerSelector(lv).String()})
+	err := kubeClient.CoreV1().PersistentVolumes().DeleteCollection(goctx.TODO(), metav1.DeleteOptions{}, metav1.ListOptions{LabelSelector: common.GetPVOwnerSelector(lv).String()})
 	if err == nil {
 		t.Log("PV deletion successful")
 	}
@@ -368,7 +367,7 @@ func deleteCreatedPV(t *testing.T, kubeClient kubernetes.Interface, lv *localv1.
 
 func waitForCreatedPV(kubeClient kubernetes.Interface, lv *localv1.LocalVolume) error {
 	waitErr := wait.PollImmediate(retryInterval, timeout, func() (bool, error) {
-		pvs, err := kubeClient.CoreV1().PersistentVolumes().List(goctx.TODO(), metav1.ListOptions{LabelSelector: commontypes.GetPVOwnerSelector(lv).String()})
+		pvs, err := kubeClient.CoreV1().PersistentVolumes().List(goctx.TODO(), metav1.ListOptions{LabelSelector: common.GetPVOwnerSelector(lv).String()})
 		if err != nil {
 			if isRetryableAPIError(err) {
 				return false, nil

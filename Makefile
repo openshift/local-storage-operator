@@ -39,8 +39,8 @@ verify: vet
 .PHONY: verify
 
 rbac: controller-gen ## Generate ClusterRole and Role objects.
-	$(CONTROLLER_GEN) rbac:roleName=local-storage-operator webhook paths="./controllers/..." output:artifacts:config=config/rbac
-	$(CONTROLLER_GEN) rbac:roleName=local-storage-admin paths="./diskmaker/controllers/..."  output:artifacts:config=config/rbac/diskmaker
+	$(CONTROLLER_GEN) rbac:roleName=local-storage-operator webhook paths="./pkg/controllers/..." output:artifacts:config=config/rbac
+	$(CONTROLLER_GEN) rbac:roleName=local-storage-admin paths="./pkg/diskmaker/controllers/..."  output:artifacts:config=config/rbac/diskmaker
 .PHONY: rbac
 
 manifests: controller-gen ## Generate CustomResourceDefinition objects.
@@ -61,11 +61,12 @@ vet: ## Run go vet against code.
 
 ENVTEST_ASSETS_DIR=$(shell pwd)/testbin
 
-test: manifests generate rbac fmt ## Run tests.
+test: ## Run unit tests.
 	mkdir -p ${ENVTEST_ASSETS_DIR}
 	test -f ${ENVTEST_ASSETS_DIR}/setup-envtest.sh || curl -sSLo ${ENVTEST_ASSETS_DIR}/setup-envtest.sh https://raw.githubusercontent.com/kubernetes-sigs/controller-runtime/v0.7.2/hack/setup-envtest.sh
 	source ${ENVTEST_ASSETS_DIR}/setup-envtest.sh; fetch_envtest_tools $(ENVTEST_ASSETS_DIR); setup_envtest_env $(ENVTEST_ASSETS_DIR)
-	go test ./common/... ./controllers/... ./diskmaker/...  ./internal/... ./localmetrics/... -coverprofile cover.out
+	go test ./pkg/... -coverprofile cover.out
+.PHONY: test
 
 CONTROLLER_GEN = $(shell pwd)/bin/controller-gen
 controller-gen: ## Download controller-gen locally if necessary.
@@ -89,11 +90,11 @@ all build: build-diskmaker build-operator
 .PHONY: all build
 
 build-diskmaker:
-	env GOOS=$(TARGET_GOOS) GOARCH=$(TARGET_GOARCH) go build -mod=vendor -ldflags '-X main.version=$(REV)' -o $(TARGET_DIR)/diskmaker $(CURPATH)/diskmaker_manager
+	env GOOS=$(TARGET_GOOS) GOARCH=$(TARGET_GOARCH) go build -mod=vendor -ldflags '-X main.version=$(REV)' -o $(TARGET_DIR)/diskmaker $(CURPATH)/cmd/diskmaker-manager
 .PHONY: build-diskmaker
 
 build-operator:
-	env GOOS=$(TARGET_GOOS) GOARCH=$(TARGET_GOARCH) go build -mod=vendor -ldflags '-X main.version=$(REV)' -o $(TARGET_DIR)/local-storage-operator $(CURPATH)
+	env GOOS=$(TARGET_GOOS) GOARCH=$(TARGET_GOARCH) go build -mod=vendor -ldflags '-X main.version=$(REV)' -o $(TARGET_DIR)/local-storage-operator $(CURPATH)/cmd/local-storage-operator
 .PHONY: build-operator
 
 images: diskmaker-container operator-container must-gather
