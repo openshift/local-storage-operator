@@ -37,6 +37,7 @@ import (
 // DiskMaker is a small utility that reads configmap and
 // creates and symlinks disks in location from which local-storage-provisioner can access.
 // It also ensures that only stable device names are used.
+// NOOP
 
 var (
 	checkDuration  = 60 * time.Second
