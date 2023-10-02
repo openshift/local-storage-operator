@@ -24,8 +24,10 @@ import (
 	"k8s.io/klog/v2"
 	"k8s.io/utils/mount"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/manager/signals"
+	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	provCache "sigs.k8s.io/sig-storage-local-static-provisioner/pkg/cache"
 	provDeleter "sigs.k8s.io/sig-storage-local-static-provisioner/pkg/deleter"
 )
@@ -87,10 +89,12 @@ func startManager(cmd *cobra.Command, args []string) error {
 	}
 
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
-		Namespace:          namespace,
-		Scheme:             scheme,
-		MetricsBindAddress: "0",
-		LeaderElection:     false,
+		Cache: cache.Options{
+			DefaultNamespaces: map[string]cache.Config{namespace: {}},
+		},
+		Scheme:         scheme,
+		Metrics:        metricsserver.Options{BindAddress: "0"},
+		LeaderElection: false,
 	})
 	if err != nil {
 		klog.ErrorS(err, "failed to create controller manager")

@@ -14,7 +14,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
-var fakeLabels = map[string]string{"key1": "value1", "key2": "value2"}
+var (
+	appLabel       = "fakeLabel"
+	expectedLabels = map[string]string{"app": appLabel}
+)
 
 func getFakeClient(t *testing.T) client.Client {
 	scheme, err := localv1alpha1.SchemeBuilder.Build()
@@ -26,51 +29,35 @@ func getFakeClient(t *testing.T) client.Client {
 	err = corev1.AddToScheme(scheme)
 	assert.NoErrorf(t, err, "adding corev1 to scheme")
 
-	return fake.NewFakeClientWithScheme(scheme)
+	return fake.NewClientBuilder().WithScheme(scheme).Build()
 }
 
 func TestEnableService(t *testing.T) {
-	fakeExporter := NewExporter(context.TODO(), getFakeClient(t), "test-service", "test-ns", "test-cert", []metav1.OwnerReference{}, fakeLabels)
+	fakeExporter := NewExporter(context.TODO(), getFakeClient(t), "test-service", "test-ns", "test-cert", []metav1.OwnerReference{}, appLabel)
 	err := fakeExporter.enableService()
 	assert.NoError(t, err)
 
 	// assert that service was created with correct parameters.
-	expectedServce := &corev1.Service{}
+	actual := &corev1.Service{}
 	err = fakeExporter.Client.Get(fakeExporter.Ctx,
-		types.NamespacedName{Name: "test-service", Namespace: "test-ns"}, expectedServce)
+		types.NamespacedName{Name: "test-service", Namespace: "test-ns"}, actual)
 	assert.NoError(t, err)
-	assert.Equal(t, "test-service", expectedServce.Name)
-	assert.Equal(t, fakeLabels, expectedServce.Labels)
-	assert.Equal(t, fakeLabels, expectedServce.Spec.Selector)
+	assert.Equal(t, "test-service", actual.Name)
+	assert.Equal(t, expectedLabels, actual.Labels)
+	assert.Equal(t, expectedLabels, actual.Spec.Selector)
 }
 
 func TestEnableServiceMonitor(t *testing.T) {
-	fakeExporter := NewExporter(context.TODO(), getFakeClient(t), "test-service-monitor", "test-ns", "test-cert", []metav1.OwnerReference{}, fakeLabels)
+	fakeExporter := NewExporter(context.TODO(), getFakeClient(t), "test-service-monitor", "test-ns", "test-cert", []metav1.OwnerReference{}, appLabel)
 	err := fakeExporter.enableServiceMonitor()
 	assert.NoError(t, err)
 
 	// assert that service monitor was created with correct parameters.
-	expectedServce := &monitoringv1.ServiceMonitor{}
-
+	actual := &monitoringv1.ServiceMonitor{}
 	err = fakeExporter.Client.Get(fakeExporter.Ctx,
-		types.NamespacedName{Name: "test-service-monitor", Namespace: "test-ns"}, expectedServce)
+		types.NamespacedName{Name: "test-service-monitor", Namespace: "test-ns"}, actual)
 	assert.NoError(t, err)
-	assert.Equal(t, "test-service-monitor", expectedServce.Name)
-	assert.Equal(t, fakeLabels, expectedServce.Labels)
-	assert.Equal(t, fakeLabels, expectedServce.Spec.Selector.MatchLabels)
-}
-
-func TestEnablePrometheusRule(t *testing.T) {
-	fakeExporter := NewExporter(context.TODO(), getFakeClient(t), "test-service-monitor", "test-ns", "test-cert", []metav1.OwnerReference{}, fakeLabels)
-	err := fakeExporter.enablePrometheusRule()
-	assert.NoError(t, err)
-
-	// assert that service monitor was created with correct parameters.
-	expectedRule := &monitoringv1.PrometheusRule{}
-
-	err = fakeExporter.Client.Get(fakeExporter.Ctx,
-		types.NamespacedName{Name: "test-service-monitor", Namespace: "test-ns"}, expectedRule)
-	assert.NoError(t, err)
-	assert.Equal(t, "test-service-monitor", expectedRule.Name)
-	assert.Equal(t, fakeLabels, expectedRule.Labels)
+	assert.Equal(t, "test-service-monitor", actual.Name)
+	assert.Equal(t, expectedLabels, actual.Labels)
+	assert.Equal(t, expectedLabels, actual.Spec.Selector.MatchLabels)
 }

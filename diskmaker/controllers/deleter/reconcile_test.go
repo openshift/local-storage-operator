@@ -148,7 +148,7 @@ func newFakeDeleteReconciler(t *testing.T, objs ...runtime.Object) (*DeleteRecon
 	assert.NoErrorf(t, err, "adding storagev1 to scheme")
 
 	fakeRecorder := record.NewFakeRecorder(20)
-	fakeClient := crFake.NewFakeClientWithScheme(scheme, objs...)
+	fakeClient := crFake.NewClientBuilder().WithScheme(scheme).WithRuntimeObjects(objs...).Build()
 	fakeVolUtil := provUtil.NewFakeVolumeUtil(false /*deleteShouldFail*/, map[string][]*provUtil.FakeDirEntry{})
 	mounter := &mount.FakeMounter{
 		MountPoints: []mount.MountPoint{},
