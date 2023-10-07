@@ -1,7 +1,6 @@
 package lv
 
 import (
-	"io/ioutil"
 	"os"
 	"path"
 	"path/filepath"
@@ -160,7 +159,7 @@ func TestLoadConfig(t *testing.T) {
 		t.Fatalf("error marshalling yaml : %v", err)
 	}
 	filename := filepath.Join(tempDir, "config")
-	err = ioutil.WriteFile(filename, []byte(yaml), 0755)
+	err = os.WriteFile(filename, []byte(yaml), 0755)
 	if err != nil {
 		t.Fatalf("error writing yaml to disk : %v", err)
 	}
@@ -318,7 +317,7 @@ func getDeiveIDs() []string {
 }
 
 func createTmpDir(t *testing.T, dir, prefix string) string {
-	tmpDir, err := ioutil.TempDir(dir, prefix)
+	tmpDir, err := os.MkdirTemp(dir, prefix)
 	if err != nil {
 		t.Fatalf("error creating temp directory : %v", err)
 	}
@@ -326,7 +325,7 @@ func createTmpDir(t *testing.T, dir, prefix string) string {
 }
 
 func createTmpFile(t *testing.T, dir, pattern string) *os.File {
-	tmpFile, err := ioutil.TempFile(dir, pattern)
+	tmpFile, err := os.CreateTemp(dir, pattern)
 	if err != nil {
 		t.Fatalf("error creating tmp file: %v", err)
 	}
@@ -334,12 +333,12 @@ func createTmpFile(t *testing.T, dir, pattern string) *os.File {
 }
 
 func hasFile(t *testing.T, dir, file string) bool {
-	files, err := ioutil.ReadDir(dir)
+	dentries, err := os.ReadDir(dir)
 	if err != nil {
 		t.Fatalf("error reading directory %s : %v", dir, err)
 	}
-	for _, f := range files {
-		if strings.Contains(f.Name(), file) {
+	for _, d := range dentries {
+		if strings.Contains(d.Name(), file) {
 			return true
 		}
 	}

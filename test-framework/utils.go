@@ -5,7 +5,6 @@ import (
 	"bytes"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -123,7 +122,7 @@ func GetGoPkg() string {
 	if _, err := os.Stat(goModFile); err != nil && !os.IsNotExist(err) {
 		log.Fatalf("Failed to read go.mod: %v", err)
 	} else if err == nil {
-		b, err := ioutil.ReadFile(goModFile)
+		b, err := os.ReadFile(goModFile)
 		if err != nil {
 			log.Fatalf("Read go.mod: %v", err)
 		}

@@ -3,7 +3,6 @@ package internal
 import (
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -127,7 +126,7 @@ func (b BlockDevice) HasChildren() (bool, error) {
 // HasBindMounts checks for bind mounts and returns mount point for a device by parsing `proc/1/mountinfo`.
 // HostPID should be set to true inside the POD spec to get details of host's mount points inside `proc/1/mountinfo`.
 func (b *BlockDevice) HasBindMounts() (bool, string, error) {
-	data, err := ioutil.ReadFile(mountFile)
+	data, err := os.ReadFile(mountFile)
 	if err != nil {
 		return false, "", fmt.Errorf("failed to read file %s: %v", mountFile, err)
 	}
