@@ -64,6 +64,9 @@ type StorageClassDevice struct {
 	// A list of device paths which would be chosen for local storage.
 	// For example - ["/dev/sda", "/dev/sdb", "/dev/disk/by-id/ata-crucial"]
 	DevicePaths []string `json:"devicePaths,omitempty"`
+	// This option will destroy all leftover data on the devices before they're used as PersistentVolumes. Use with care.
+	// +optional
+	ForceWipeDevicesAndDestroyAllData bool `json:"forceWipeDevicesAndDestroyAllData,omitempty"`
 }
 
 // LocalVolumeStatus defines the observed state of LocalVolume

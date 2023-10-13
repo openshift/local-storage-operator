@@ -64,6 +64,7 @@ type DiskLocation struct {
 	userProvidedPath string
 	diskID           string
 	blockDevice      internal.BlockDevice
+	forceWipe        bool
 }
 
 type LocalVolumeReconciler struct {
@@ -150,6 +151,17 @@ func (r *LocalVolumeReconciler) createSymlink(
 		return false
 	}
 
+	if deviceNameLocation.forceWipe {
+		cmd := exec.Command("wipefs", "-a", "-f", symLinkSource)
+		err = cmd.Run()
+		if err != nil {
+			msg := fmt.Sprintf("error wipefs device %s: %v", symLinkSource, err)
+			r.eventSync.Report(r.localVolume, newDiskEvent(ErrorCreatingSymLink, msg, symLinkSource, corev1.EventTypeWarning))
+			klog.Error(msg)
+			return false
+		}
+	}
+
 	err = os.Symlink(symLinkSource, symLinkTarget)
 	if err != nil {
 		msg := fmt.Sprintf("error creating symlink %s: %v", symLinkTarget, err)
@@ -211,6 +223,7 @@ func (r *LocalVolumeReconciler) generateConfig() *DiskConfig {
 	storageClassDevices := r.localVolume.Spec.StorageClassDevices
 	for _, storageClassDevice := range storageClassDevices {
 		disks := new(Disks)
+		disks.ForceWipeDevicesAndDestroyAllData = storageClassDevice.ForceWipeDevicesAndDestroyAllData
 		if len(storageClassDevice.DevicePaths) > 0 {
 			disks.DevicePaths = storageClassDevice.DevicePaths
 		}
@@ -486,17 +499,18 @@ func (r *LocalVolumeReconciler) findMatchingDisks(diskConfig *DiskConfig, blockD
 
 	// blockDeviceMap is a map of storageclass and device locations
 	blockDeviceMap := make(map[string][]DiskLocation)
-	addDiskToMap := func(scName, stableDeviceID, diskName, userDevicePath string, blockDevice internal.BlockDevice) {
+	addDiskToMap := func(scName, stableDeviceID, diskName, userDevicePath string, blockDevice internal.BlockDevice, forceWipe bool) {
 		deviceArray, ok := blockDeviceMap[scName]
 		if !ok {
 			deviceArray = []DiskLocation{}
 		}
-		deviceArray = append(deviceArray, DiskLocation{diskName, userDevicePath, stableDeviceID, blockDevice})
+		deviceArray = append(deviceArray, DiskLocation{diskName, userDevicePath, stableDeviceID, blockDevice, forceWipe})
 		blockDeviceMap[scName] = deviceArray
 	}
 
 	for storageClass, disks := range diskConfig.Disks {
 		devicePaths := disks.DevicePaths
+		forceWipe := disks.ForceWipeDevicesAndDestroyAllData
 		for _, devicePath := range devicePaths {
 			// handle user provided device_ids first
 			if strings.HasPrefix(devicePath, diskByIDPrefix) {
@@ -511,7 +525,7 @@ func (r *LocalVolumeReconciler) findMatchingDisks(diskConfig *DiskConfig, blockD
 				// We need to make sure that requested device is not already mounted.
 				blockDevice, matched := hasExactDisk(blockDevices, baseDeviceName)
 				if matched {
-					addDiskToMap(storageClass, matchedDeviceID, matchedDiskName, devicePath, blockDevice)
+					addDiskToMap(storageClass, matchedDeviceID, matchedDiskName, devicePath, blockDevice, forceWipe)
 				}
 			} else {
 				// handle anything other than device ids here - such as:
@@ -535,10 +549,10 @@ func (r *LocalVolumeReconciler) findMatchingDisks(diskConfig *DiskConfig, blockD
 					if err != nil {
 						klog.ErrorS(err, "unable to find disk ID for local pool",
 							"diskName", diskDevPath)
-						addDiskToMap(storageClass, "", diskDevPath, devicePath, blockDevice)
+						addDiskToMap(storageClass, "", diskDevPath, devicePath, blockDevice, forceWipe)
 						continue
 					}
-					addDiskToMap(storageClass, matchedDeviceID, diskDevPath, devicePath, blockDevice)
+					addDiskToMap(storageClass, matchedDeviceID, diskDevPath, devicePath, blockDevice, forceWipe)
 					continue
 				} else {
 					r.logDeviceError(diskDevPath)

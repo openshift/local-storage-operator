@@ -1,7 +1,6 @@
 package lv
 
 import (
-	"io/ioutil"
 	"os"
 	"path"
 	"path/filepath"
@@ -13,6 +12,7 @@ import (
 	"github.com/openshift/local-storage-operator/internal"
 
 	localv1 "github.com/openshift/local-storage-operator/api/v1"
+	"github.com/openshift/local-storage-operator/test-framework/testutils"
 	"github.com/stretchr/testify/assert"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -27,6 +27,11 @@ import (
 	provCommon "sigs.k8s.io/sig-storage-local-static-provisioner/pkg/common"
 	provDeleter "sigs.k8s.io/sig-storage-local-static-provisioner/pkg/deleter"
 	provUtil "sigs.k8s.io/sig-storage-local-static-provisioner/pkg/util"
+)
+
+const (
+	emptyFile = 0
+	tinyFile  = 1024 * 1024 // bytes
 )
 
 func TestFindMatchingDisk(t *testing.T) {
@@ -160,7 +165,7 @@ func TestLoadConfig(t *testing.T) {
 		t.Fatalf("error marshalling yaml : %v", err)
 	}
 	filename := filepath.Join(tempDir, "config")
-	err = ioutil.WriteFile(filename, []byte(yaml), 0755)
+	err = os.WriteFile(filename, []byte(yaml), 0755)
 	if err != nil {
 		t.Fatalf("error writing yaml to disk : %v", err)
 	}
@@ -183,8 +188,8 @@ func TestLoadConfig(t *testing.T) {
 
 func TestCreateSymLinkByDeviceID(t *testing.T) {
 	tmpSymLinkTargetDir := createTmpDir(t, "", "target")
-	fakeDisk := createTmpFile(t, "", "diskName")
-	fakeDiskByID := createTmpFile(t, "", "diskID")
+	fakeDisk := createTmpFile(t, "", "diskName", emptyFile)
+	fakeDiskByID := createTmpFile(t, "", "diskID", emptyFile)
 	defer os.RemoveAll(tmpSymLinkTargetDir)
 	defer os.Remove(fakeDisk.Name())
 	defer os.Remove(fakeDiskByID.Name())
@@ -206,7 +211,7 @@ func TestCreateSymLinkByDeviceID(t *testing.T) {
 	}
 	d, _ := getFakeDiskMaker(t, tmpSymLinkTargetDir, lv, sc)
 	d.fsInterface = FakeFileSystemInterface{}
-	diskLocation := DiskLocation{fakeDisk.Name(), fakeDiskByID.Name(), fakeDisk.Name(), internal.BlockDevice{}}
+	diskLocation := DiskLocation{fakeDisk.Name(), fakeDiskByID.Name(), fakeDisk.Name(), internal.BlockDevice{}, false}
 
 	d.runtimeConfig = &provCommon.RuntimeConfig{
 		UserConfig: &provCommon.UserConfig{
@@ -229,35 +234,60 @@ func TestCreateSymLinkByDeviceID(t *testing.T) {
 	assert.Truef(t, hasFile(t, tmpSymLinkTargetDir, "diskID"), "failed to find symlink with disk ID in %s directory", tmpSymLinkTargetDir)
 }
 
-func TestCreateSymLinkByDeviceName(t *testing.T) {
-	tmpSymLinkTargetDir := createTmpDir(t, "", "target")
-	fakeDisk := createTmpFile(t, "", "diskName")
-	defer os.Remove(fakeDisk.Name())
-	defer os.RemoveAll(tmpSymLinkTargetDir)
-
-	lv := &localv1.LocalVolume{
-		TypeMeta: metav1.TypeMeta{
-			APIVersion: "local.storage.openshift.io",
-			Kind:       "LocalVolume",
+func TestWipeDeviceWhenCreateSymLinkByDeviceName(t *testing.T) {
+	tests := []struct {
+		name      string
+		forceWipe bool
+	}{
+		{
+			name:      "forceWipeDevicesAndDestroyAllData is False",
+			forceWipe: false,
 		},
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "foobar",
-			Namespace: "default",
-		},
-	}
-	sc := &storagev1.StorageClass{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: "foobar",
+		{
+			name:      "forceWipeDevicesAndDestroyAllData is True",
+			forceWipe: true,
 		},
 	}
 
-	d, _ := getFakeDiskMaker(t, tmpSymLinkTargetDir, lv, sc)
-	d.fsInterface = FakeFileSystemInterface{}
-	diskLocation := DiskLocation{fakeDisk.Name(), "", fakeDisk.Name(), internal.BlockDevice{}}
-	d.createSymlink(diskLocation, fakeDisk.Name(), path.Join(tmpSymLinkTargetDir, "diskName"), false)
+	for i := range tests {
+		test := tests[i]
+		volHelper := util.NewVolumeHelper()
+		t.Run(test.name, func(t *testing.T) {
+			tmpSymLinkTargetDir := createTmpDir(t, "", "target")
+			fakeDisk := createTmpFile(t, "", "diskName", tinyFile)
+			fname := fakeDisk.Name()
+			volHelper.FormatAsExt4(t, fname)
+			defer os.Remove(fname)
+			defer os.RemoveAll(tmpSymLinkTargetDir)
 
-	// assert that target symlink is created for disk name when no disk ID is available
-	assert.Truef(t, hasFile(t, tmpSymLinkTargetDir, "diskName"), "failed to find symlink with disk name in %s directory", tmpSymLinkTargetDir)
+			lv := &localv1.LocalVolume{
+				TypeMeta: metav1.TypeMeta{
+					APIVersion: "local.storage.openshift.io",
+					Kind:       "LocalVolume",
+				},
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "foobar",
+					Namespace: "default",
+				},
+			}
+			sc := &storagev1.StorageClass{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "foobar",
+				},
+			}
+
+			d, _ := getFakeDiskMaker(t, tmpSymLinkTargetDir, lv, sc)
+			d.fsInterface = FakeFileSystemInterface{}
+			diskLocation := DiskLocation{fname, "", fname, internal.BlockDevice{}, test.forceWipe}
+			d.createSymlink(diskLocation, fname, path.Join(tmpSymLinkTargetDir, "diskName"), false)
+
+			// assert that target symlink is created for disk name when no disk ID is available
+			assert.Truef(t, hasFile(t, tmpSymLinkTargetDir, "diskName"), "failed to find symlink with disk name in %s directory", tmpSymLinkTargetDir)
+
+			// assert that disk was (or wasn't) wiped
+			assert.Truef(t, volHelper.HasExt4(t, fname) != test.forceWipe, "unexpected wiping disk %s", fname)
+		})
+	}
 }
 
 func getFakeDiskMaker(t *testing.T, symlinkLocation string, objs ...runtime.Object) (*LocalVolumeReconciler, *testContext) {
@@ -318,28 +348,32 @@ func getDeiveIDs() []string {
 }
 
 func createTmpDir(t *testing.T, dir, prefix string) string {
-	tmpDir, err := ioutil.TempDir(dir, prefix)
+	tmpDir, err := os.MkdirTemp(dir, prefix)
 	if err != nil {
 		t.Fatalf("error creating temp directory : %v", err)
 	}
 	return tmpDir
 }
 
-func createTmpFile(t *testing.T, dir, pattern string) *os.File {
-	tmpFile, err := ioutil.TempFile(dir, pattern)
+func createTmpFile(t *testing.T, dir, pattern string, size int64) *os.File {
+	tmpFile, err := os.CreateTemp(dir, pattern)
 	if err != nil {
 		t.Fatalf("error creating tmp file: %v", err)
+	}
+	err = tmpFile.Truncate(size)
+	if err != nil {
+		t.Fatalf("error truncating tmp file: %v", err)
 	}
 	return tmpFile
 }
 
 func hasFile(t *testing.T, dir, file string) bool {
-	files, err := ioutil.ReadDir(dir)
+	dentries, err := os.ReadDir(dir)
 	if err != nil {
 		t.Fatalf("error reading directory %s : %v", dir, err)
 	}
-	for _, f := range files {
-		if strings.Contains(f.Name(), file) {
+	for _, d := range dentries {
+		if strings.Contains(d.Name(), file) {
 			return true
 		}
 	}

@@ -2,7 +2,6 @@ package internal
 
 import (
 	"fmt"
-	"io/ioutil"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -258,7 +257,7 @@ func TestHasChildren(t *testing.T) {
 }
 
 func TestHasBindMounts(t *testing.T) {
-	tempDir, err := ioutil.TempDir("", "discovery")
+	tempDir, err := os.MkdirTemp("", "discovery")
 	if err != nil {
 		t.Fatalf("error creating temp directory : %v", err)
 	}
@@ -303,7 +302,7 @@ func TestHasBindMounts(t *testing.T) {
 
 	for _, tc := range testcases {
 		filename := filepath.Join(tempDir, "mountfile")
-		err = ioutil.WriteFile(filename, []byte(tc.mountInfo), 0755)
+		err = os.WriteFile(filename, []byte(tc.mountInfo), 0755)
 		if err != nil {
 			t.Fatalf("error writing mount info to file : %v", err)
 		}
