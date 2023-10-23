@@ -32,7 +32,8 @@ fi
 validateBlockDevice
 
 echo "Calling mkfs"
-ionice -c 3 mkfs -F $LOCAL_PV_BLKDEVICE
+# mkfs.xfs is preferred because default mkfs has 16TB limit (https://access.redhat.com/solutions/66689)
+ionice -c 3 mkfs.xfs -f $LOCAL_PV_BLKDEVICE
 
 echo "Calling wipefs"
 ionice -c 3 wipefs -a $LOCAL_PV_BLKDEVICE
