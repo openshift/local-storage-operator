@@ -43,6 +43,8 @@ const (
 	PartType DiscoveredDeviceType = "part"
 	// LVMType is an LVM type
 	LVMType DiscoveredDeviceType = "lvm"
+	// MultiPathType is a multipath type
+	MultiPathType DiscoveredDeviceType = "mpath"
 )
 
 // LocalVolumeDiscoverySpec defines the desired state of LocalVolumeDiscovery

@@ -395,6 +395,12 @@ func TestInTypeList(t *testing.T) {
 		},
 		{
 			matcherMap: matcherMap, matcher: matcher,
+			dev:         internal.BlockDevice{Type: string(localv1alpha1.MultiPathType)},
+			spec:        &localv1alpha1.DeviceInclusionSpec{DeviceTypes: []localv1alpha1.DeviceType{"MPATH"}},
+			expectMatch: true, expectErr: false,
+		},
+		{
+			matcherMap: matcherMap, matcher: matcher,
 			dev:         internal.BlockDevice{Type: string(localv1alpha1.Partition)},
 			spec:        &localv1alpha1.DeviceInclusionSpec{DeviceTypes: []localv1alpha1.DeviceType{"DISK", "PART"}},
 			expectMatch: true, expectErr: false,

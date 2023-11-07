@@ -147,12 +147,9 @@ func (discovery *DeviceDiscovery) discoverDevices() error {
 
 // getValidBlockDevices fetchs all the block devices sutitable for discovery
 func getValidBlockDevices() ([]internal.BlockDevice, error) {
-	blockDevices, badRows, err := internal.ListBlockDevices()
+	blockDevices, output, err := internal.ListBlockDevices()
 	if err != nil {
-
-		return blockDevices, errors.Wrapf(err, "failed to list all the block devices in the node.")
-	} else if len(badRows) > 0 {
-		klog.Warningf("failed to parse all the lsblk rows. Bad rows: %+v", badRows)
+		return blockDevices, errors.Wrapf(err, "failed to list all the block devices in the node, stderr=%v", output)
 	}
 
 	// Get valid list of devices
@@ -182,8 +179,12 @@ func getDiscoverdDevices(blockDevices []internal.BlockDevice) []v1alpha1.Discove
 			klog.Warningf("failed to parse size for the device %q. Error %v", blockDevice.Name, err)
 		}
 
+		path, err := blockDevice.GetDevPath()
+		if err != nil {
+			klog.Warningf("failed to parse path for the device %q. Error %v", blockDevice.KName, err)
+		}
 		discoveredDevice := v1alpha1.DiscoveredDevice{
-			Path:     fmt.Sprintf("/dev/%s", blockDevice.Name),
+			Path:     path,
 			Model:    blockDevice.Model,
 			Vendor:   blockDevice.Vendor,
 			FSType:   blockDevice.FSType,
@@ -197,7 +198,26 @@ func getDiscoverdDevices(blockDevices []internal.BlockDevice) []v1alpha1.Discove
 		discoveredDevices = append(discoveredDevices, discoveredDevice)
 	}
 
-	return discoveredDevices
+	return uniqueDevices(discoveredDevices)
+}
+
+// uniqueDevices removes duplicate devices from the list using DeviceID as a key
+// TODO: remove this and use lsblk with -M flag once base images are updated and lsblk v2.34 or higher is available
+// See: https://github.com/util-linux/util-linux/blob/3be31a106c52e093928afbea2cddbdbe44cfb357/Documentation/releases/v2.34-ReleaseNotes#L18
+func uniqueDevices(sample []v1alpha1.DiscoveredDevice) []v1alpha1.DiscoveredDevice {
+	var unique []v1alpha1.DiscoveredDevice
+	type key struct{ value, value2 string }
+	m := make(map[key]int)
+	for _, v := range sample {
+		k := key{v.DeviceID, v.Path}
+		if i, ok := m[k]; ok {
+			unique[i] = v
+		} else {
+			m[k] = len(unique)
+			unique = append(unique, v)
+		}
+	}
+	return unique
 }
 
 // ignoreDevices checks if a device should be ignored during discovery
@@ -292,6 +312,8 @@ func parseDeviceType(deviceType string) v1alpha1.DiscoveredDeviceType {
 		return v1alpha1.PartType
 	case deviceType == "lvm":
 		return v1alpha1.LVMType
+	case deviceType == "mpath":
+		return v1alpha1.MultiPathType
 	}
 
 	return ""
