@@ -15,8 +15,8 @@ import (
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/onsi/gomega"
 	localv1alpha1 "github.com/openshift/local-storage-operator/api/v1alpha1"
-	"github.com/openshift/local-storage-operator/common"
-	framework "github.com/openshift/local-storage-operator/test-framework"
+	"github.com/openshift/local-storage-operator/pkg/common"
+	framework "github.com/openshift/local-storage-operator/test/framework"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -148,14 +148,14 @@ func createAndAttachAWSVolumesForNode(t *testing.T, nodeEntry nodeDisks, ec2Clie
 	node := nodeEntry.node
 	if len(nodeEntry.disks) > 20 {
 		err := fmt.Errorf("can't provision more than 20 disks per node")
-		t.Fatalf("failed to create and attach aws disks for node %q: %+v", nodeEntry.node.Name, err)
+		t.Errorf("failed to create and attach aws disks for node %q: %+v", nodeEntry.node.Name, err)
 	}
 	volumes := make([]*ec2.Volume, len(nodeEntry.disks))
 	volumeLetters := []string{"g", "h", "i", "j", "k", "l", "m", "n", "o", "p", "q", "r", "s", "t", "u", "v", "w", "x", "y", "z"}
 	volumeIDs := make([]*string, 0)
 	instanceID, _, zone, err := getAWSNodeInfo(node)
 	if err != nil {
-		t.Fatalf("failed to create and attach aws disks for node %q: %+v", nodeEntry.node.Name, err)
+		t.Errorf("failed to create and attach aws disks for node %q: %+v", nodeEntry.node.Name, err)
 	}
 
 	// create ec2 volumes
@@ -189,7 +189,7 @@ func createAndAttachAWSVolumesForNode(t *testing.T, nodeEntry nodeDisks, ec2Clie
 		volume, err := ec2Client.CreateVolume(createInput)
 		if err != nil {
 			err := fmt.Errorf("expect to create AWS volume with input %v: %w", createInput, err)
-			t.Fatalf("failed to create and attach aws disks for node %q: %+v", nodeEntry.node.Name, err)
+			t.Errorf("failed to create and attach aws disks for node %q: %+v", nodeEntry.node.Name, err)
 		}
 		t.Logf("creating volume: %q (%dGi)", *volume.VolumeId, *volume.Size)
 		volumes[i] = volume
@@ -229,7 +229,7 @@ func createAndAttachAWSVolumesForNode(t *testing.T, nodeEntry nodeDisks, ec2Clie
 
 	})
 	if err != nil {
-		t.Fatalf("failed to create and attach aws disks for node %q: %+v", nodeEntry.node.Name, err)
+		t.Errorf("failed to create and attach aws disks for node %q: %+v", nodeEntry.node.Name, err)
 	}
 }
 

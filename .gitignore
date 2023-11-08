@@ -1,9 +1,8 @@
-diskmaker
-*local-storage-operator
-!local-storage-operator/
-!diskmaker/
 bin/
 cover.out
 _output
 testbin/
 debug.test
+*.swp
+opm-bundle/
+Dockerfile.diskmaker.hack

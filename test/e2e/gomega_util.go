@@ -8,9 +8,7 @@ import (
 	"time"
 
 	"github.com/onsi/gomega"
-
-	framework "github.com/openshift/local-storage-operator/test-framework"
-
+	framework "github.com/openshift/local-storage-operator/test/framework"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"

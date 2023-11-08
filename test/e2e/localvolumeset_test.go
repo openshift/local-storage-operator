@@ -15,7 +15,7 @@ import (
 
 	localv1 "github.com/openshift/local-storage-operator/api/v1"
 	localv1alpha1 "github.com/openshift/local-storage-operator/api/v1alpha1"
-	framework "github.com/openshift/local-storage-operator/test-framework"
+	framework "github.com/openshift/local-storage-operator/test/framework"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"

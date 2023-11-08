@@ -12,8 +12,8 @@ import (
 	"github.com/openshift/local-storage-operator/api"
 	localv1 "github.com/openshift/local-storage-operator/api/v1"
 	localv1alpha1 "github.com/openshift/local-storage-operator/api/v1alpha1"
-	framework "github.com/openshift/local-storage-operator/test-framework"
-	"github.com/openshift/local-storage-operator/test-framework/e2eutil"
+	framework "github.com/openshift/local-storage-operator/test/framework"
+	"github.com/openshift/local-storage-operator/test/framework/e2eutil"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -91,7 +91,7 @@ func TestLocalStorage(t *testing.T) {
 		runCleanup := getCleanupRunner(t, &cleanupFuncs)
 
 		// handle ctrl-c
-		stopChan := make(chan os.Signal)
+		stopChan := make(chan os.Signal, 1)
 		signal.Notify(stopChan, os.Interrupt, syscall.SIGTERM)
 		go func() {
 			t.Log("listening for interrupt")
