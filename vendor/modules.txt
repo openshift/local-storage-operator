@@ -191,7 +191,7 @@ github.com/onsi/gomega/matchers/support/goraph/edge
 github.com/onsi/gomega/matchers/support/goraph/node
 github.com/onsi/gomega/matchers/support/goraph/util
 github.com/onsi/gomega/types
-# github.com/openshift/api v0.0.0-20230613151523-ba04973d3ed1
+# github.com/openshift/api v0.0.0-20230807132801-600991d550ac
 ## explicit; go 1.20
 github.com/openshift/api
 github.com/openshift/api/apiserver
@@ -268,7 +268,7 @@ github.com/openshift/client-go/config/applyconfigurations/internal
 github.com/openshift/client-go/config/clientset/versioned/scheme
 github.com/openshift/client-go/config/clientset/versioned/typed/config/v1
 github.com/openshift/client-go/security/clientset/versioned/scheme
-# github.com/openshift/library-go v0.0.0-20230724150037-c515269de16e
+# github.com/openshift/library-go v0.0.0-20231103161458-0ec67489d123
 ## explicit; go 1.20
 github.com/openshift/library-go/pkg/config/clusterstatus
 github.com/openshift/library-go/pkg/config/leaderelection
