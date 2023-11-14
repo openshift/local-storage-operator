@@ -8,5 +8,4 @@ LABEL operators.operatorframework.io.bundle.channels.v1=preview
 LABEL operators.operatorframework.io.bundle.channel.default.v1=preview
 
 COPY manifests/stable/*.yaml /manifests/
-COPY crd/bases/*.yaml /manifests/
 COPY metadata/annotations.yaml /metadata/annotations.yaml
