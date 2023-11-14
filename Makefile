@@ -51,7 +51,7 @@ rbac: controller-gen ## Generate ClusterRole and Role objects.
 .PHONY: rbac
 
 manifests: controller-gen ## Generate CustomResourceDefinition objects.
-	$(CONTROLLER_GEN) rbac:roleName=local-storage-operator crd paths="./api/..." output:artifacts:config=config/crd/bases
+	$(CONTROLLER_GEN) rbac:roleName=local-storage-operator crd paths="./api/..." output:artifacts:config=config/manifests/stable
 .PHONY: manifests
 
 generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
