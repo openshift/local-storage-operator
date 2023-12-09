@@ -1,4 +1,6 @@
-FROM registry.ci.openshift.org/ocp/4.15:cli
+FROM registry.ci.openshift.org/ocp/4.16:base-rhel9
+RUN dnf install -y --nodocs --setopt=install_weak_deps=False openshift-clients \
+  && dnf clean all && rm -rf /var/cache/*
 COPY must-gather/gather /usr/bin/
 RUN chmod +x /usr/bin/gather
 
