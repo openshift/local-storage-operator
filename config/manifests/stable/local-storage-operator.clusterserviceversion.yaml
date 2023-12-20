@@ -1,7 +1,7 @@
 apiVersion: operators.coreos.com/v1alpha1
 kind: ClusterServiceVersion
 metadata:
-  name: local-storage-operator.v4.15.0
+  name: local-storage-operator.v4.16.0
   namespace: placeholder
   annotations:
     alm-examples: |-
@@ -115,7 +115,7 @@ metadata:
     repository: https://github.com/openshift/local-storage-operator
     createdAt: "2019-08-14T00:00:00Z"
     description: Configure and use local storage volumes.
-    olm.skipRange: ">=4.3.0 <4.15.0"
+    olm.skipRange: ">=4.3.0 <4.16.0"
     operators.openshift.io/infrastructure-features: '["disconnected"]'
     operators.operatorframework.io/internal-objects: '["localvolumediscoveryresults.local.storage.openshift.io"]'
     # This annotation injection is a workaround for BZ-1950047, since the associated
@@ -144,7 +144,7 @@ spec:
       url: https://github.com/openshift/local-storage-operator/tree/master/docs
     - name: Source Repository
       url: https://github.com/openshift/local-storage-operator
-  version: 4.15.0
+  version: 4.16.0
   maturity: stable
   maintainers:
     - email: aos-storage-staff@redhat.com
@@ -154,7 +154,7 @@ spec:
     name: Red Hat
   labels:
     alm-owner-metering: local-storage-operator
-    alm-status-descriptors: local-storage-operator.v4.15.0
+    alm-status-descriptors: local-storage-operator.v4.16.0
   selector:
     matchLabels:
       alm-owner-metering: local-storage-operator

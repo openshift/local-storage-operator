@@ -1,4 +1,4 @@
 packageName: local-storage-operator
 channels:
 - name: stable
-  currentCSV: local-storage-operator.v4.15.0
+  currentCSV: local-storage-operator.v4.16.0
