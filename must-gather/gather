@@ -1,16 +1,29 @@
 #!/bin/bash
 
+# Store PIDs of all the subprocesses
+pids=()
+
 subscriptionName="local-storage-operator"
 
 lsoNamespace=$(/usr/bin/oc get subscription --all-namespaces | grep ${subscriptionName} | awk '{print $1}')
-/usr/bin/oc adm inspect namespace/${lsoNamespace} --dest-dir=must-gather/
+/usr/bin/oc adm inspect namespace/${lsoNamespace} --dest-dir=must-gather/ &
+pids+=($!)
 
 for I in $(/usr/bin/oc get crd | grep local.storage.openshift.io | awk '{print $1}'); do
     echo "Gathering data for CRD $I"
-    /usr/bin/oc adm inspect $I --all-namespaces --dest-dir=must-gather/
+    /usr/bin/oc adm inspect $I --all-namespaces --dest-dir=must-gather/ &
+    pids+=($!)
 done
 
 # Nodes and PVs
-/usr/bin/oc adm inspect nodes,persistentvolumes --dest-dir=must-gather/
+/usr/bin/oc adm inspect nodes,persistentvolumes --dest-dir=must-gather/ &
+pids+=($!)
+
+# Check if PID array has any values, if so, wait for them to finish
+if [ ${#pids[@]} -ne 0 ]; then
+    echo "Waiting on subprocesses to finish execution."
+    wait "${pids[@]}"
+fi
+
 
 exit 0
