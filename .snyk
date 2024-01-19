@@ -4,3 +4,4 @@
 exclude:
   global:
     - vendor/**
+    - "**/*_test.go"
