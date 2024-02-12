@@ -106,6 +106,14 @@ metadata:
     # annotation in spec.install.spec.deployments.template.metadata is presently ignored.
     # TODO: remove the next line after BZ-1950047 is resolved.
     target.workload.openshift.io/management: '{"effect": "PreferredDuringScheduling"}'
+    features.operators.openshift.io/disconnected: "true"
+    features.operators.openshift.io/fips-compliant: "true"
+    features.operators.openshift.io/proxy-aware: "true"
+    features.operators.openshift.io/tls-profiles: "false"
+    features.operators.openshift.io/csi: "false"
+    features.operators.openshift.io/token-auth-aws: "false"
+    features.operators.openshift.io/token-auth-azure: "false"
+    features.operators.openshift.io/token-auth-gcp: "false"
   labels:
     operator-metering: "true"
     "operatorframework.io/arch.amd64": supported
