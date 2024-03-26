@@ -153,6 +153,7 @@ spec:
     - name: Source Repository
       url: https://github.com/openshift/local-storage-operator
   version: 4.16.0
+  replaces: local-storage-operator.v4.15.0
   maturity: stable
   maintainers:
     - email: aos-storage-staff@redhat.com
