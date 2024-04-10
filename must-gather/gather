@@ -1,22 +1,25 @@
 #!/bin/bash
 
+source $(dirname "$0")/gather-common.sh
+get_log_collection_args
+
 # Store PIDs of all the subprocesses
 pids=()
 
 subscriptionName="local-storage-operator"
 
 lsoNamespace=$(/usr/bin/oc get subscription --all-namespaces | grep ${subscriptionName} | awk '{print $1}')
-/usr/bin/oc adm inspect namespace/${lsoNamespace} --dest-dir=must-gather/ &
+/usr/bin/oc adm inspect ${log_collection_args} namespace/${lsoNamespace} --dest-dir=must-gather/ &
 pids+=($!)
 
 for I in $(/usr/bin/oc get crd | grep local.storage.openshift.io | awk '{print $1}'); do
     echo "Gathering data for CRD $I"
-    /usr/bin/oc adm inspect $I --all-namespaces --dest-dir=must-gather/ &
+    /usr/bin/oc adm inspect ${log_collection_args} $I --all-namespaces --dest-dir=must-gather/ &
     pids+=($!)
 done
 
 # Nodes and PVs
-/usr/bin/oc adm inspect nodes,persistentvolumes --dest-dir=must-gather/ &
+/usr/bin/oc adm inspect ${log_collection_args} nodes,persistentvolumes --dest-dir=must-gather/ &
 pids+=($!)
 
 # Check if PID array has any values, if so, wait for them to finish
