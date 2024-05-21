@@ -2,7 +2,7 @@ module github.com/openshift/local-storage-operator
 
 go 1.21
 
-toolchain go1.21.3
+toolchain go1.21.7
 
 require (
 	github.com/aws/aws-sdk-go v1.50.9
