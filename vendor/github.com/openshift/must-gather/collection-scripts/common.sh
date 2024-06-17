@@ -1,5 +1,20 @@
 #!/bin/bash
-# This is copied from https://github.com/openshift/must-gather/blob/a175e0178104f4f794828c02245cd2de896cef0e/collection-scripts/common.sh
+
+function get_operator_ns() {
+    local operator_name=$(echo \"$1\")
+    cmd="$(echo "oc get subs -A -o template --template '{{range .items}}{{if eq .spec.name ""${operator_name}""}}{{.metadata.namespace}}{{\"\\n\"}}{{end}}{{end}}'")"
+    operator_ns="$(eval "$cmd")"
+
+    if [ -z "${operator_ns}" ]; then
+        echo "INFO: ${operator_name} not detected. Skipping."
+        exit 0
+    fi
+
+    if [[ "$(echo "${operator_ns}" | wc -l)" -gt 1 ]]; then
+        echo "ERROR: found more than one ${operator_name} subscription. Exiting."
+        exit 1
+    fi
+}
 
 get_log_collection_args() {
 	# validation of MUST_GATHER_SINCE and MUST_GATHER_SINCE_TIME is done by the

@@ -1,8 +1,8 @@
 module github.com/openshift/local-storage-operator
 
-go 1.21
+go 1.22
 
-toolchain go1.21.7
+toolchain go1.22.3
 
 require (
 	github.com/aws/aws-sdk-go v1.50.9
@@ -14,6 +14,7 @@ require (
 	github.com/openshift/api v0.0.0-20240202140003-8b34b9854c7f
 	github.com/openshift/client-go v0.0.0-20240125160436-aa5df63097c4
 	github.com/openshift/library-go v0.0.0-20240130085015-2ad786549f07
+	github.com/openshift/must-gather v0.0.0-20240606205211-408ab8661885
 	github.com/pborman/uuid v1.2.1
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring v0.71.2
@@ -133,5 +134,7 @@ replace (
 )
 
 replace sigs.k8s.io/sig-storage-local-static-provisioner => github.com/openshift/sig-storage-local-static-provisioner v0.0.0-20221121145404-891b3d12b1a9 //BUG: https://issues.redhat.com/browse/OCPBUGS-2450
+
+replace github.com/openshift/must-gather => ../must-gather
 
 replace github.com/dgrijalva/jwt-go => github.com/golang-jwt/jwt v3.2.1+incompatible

@@ -2,7 +2,8 @@ FROM registry.ci.openshift.org/ocp/4.17:base-rhel9
 RUN dnf install -y --nodocs --setopt=install_weak_deps=False openshift-clients \
   && dnf clean all && rm -rf /var/cache/*
 
-COPY must-gather/gather must-gather/gather-common.sh /usr/bin/
+COPY must-gather/gather /usr/bin/
+COPY vendor/github.com/openshift/must-gather/collection-scripts/common.sh /usr/bin/gather-common.sh
 RUN chmod +x /usr/bin/gather
 
 ENTRYPOINT /usr/bin/gather

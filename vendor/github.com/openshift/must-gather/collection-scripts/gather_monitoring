@@ -1,0 +1,134 @@
+#!/bin/bash
+
+# safeguards
+set -o nounset
+set -o errexit
+set -o pipefail
+
+# global readonly constants
+declare -r BASE_COLLECTION_PATH="../must-gather"
+declare -r MONITORING_PATH="${BASE_COLLECTION_PATH}/monitoring"
+declare -r CA_BUNDLE="${MONITORING_PATH}/ca-bundle.crt"
+
+
+# init initializes global variables that need to be computed.
+# E.g. get token of the default ServiceAccount
+init() {
+  mkdir -p "${MONITORING_PATH}"
+
+  PROMETHEUS_ROUTE="$(oc get routes \
+    -n openshift-monitoring prometheus-k8s \
+    -o jsonpath='{.status.ingress[0].host}')"
+
+  ALERT_MANAGER_ROUTE="$(oc get routes \
+    -n openshift-monitoring alertmanager-main \
+    -o jsonpath='{.status.ingress[0].host}')"
+
+  # the SA token is used for authentication with Prometheus and Alert Manager
+  # see: prom_get
+  SA_TOKEN="$(oc create token default)"
+
+  # this is a CA bundle we need to verify the monitoring route,
+  # we will write it to disk so we can use it in the flag
+  oc -n openshift-config-managed get cm default-ingress-cert \
+    -o jsonpath='{.data.ca-bundle\.crt}' > "$CA_BUNDLE"
+
+  readarray -t PROM_PODS < <(
+    oc get pods -n openshift-monitoring  -l prometheus=k8s \
+      --no-headers -o custom-columns=":metadata.name"
+  )
+}
+
+cleanup() {
+  rm "$CA_BUNDLE"
+}
+
+# prom_get makes http GET requests to prometheus /api/v1/$object and stores
+# the stdout and stderr results
+prom_get() {
+  local object="$1"; shift
+  local path="${1:-$object}"; shift || true
+
+  local result_path="$MONITORING_PATH/prometheus/$path"
+  mkdir -p "$(dirname "$result_path")"
+
+  oc get \
+    --certificate-authority="$CA_BUNDLE" \
+    --token="${SA_TOKEN}" \
+    --server="https://$PROMETHEUS_ROUTE" \
+    --raw="/api/v1/$object" \
+      > "$result_path.json" \
+      2> "$result_path.stderr"
+}
+
+# prom_get_from_replica makes http GET requests to prometheus pod $replica
+# /api/v1/$object and stores the stdout and stderr results
+prom_get_from_replica() {
+  local replica="$1"; shift
+  local object="$1"; shift
+  local path="${1:-$object}"; shift || true
+
+  local result_path="${MONITORING_PATH}/prometheus/${path}"
+  mkdir -p "$(dirname "${result_path}")"
+
+  oc exec "${replica}" \
+    -c prometheus \
+    -n openshift-monitoring \
+    -- /bin/bash -c "curl -sG http://localhost:9090/api/v1/${object}" \
+      >  "${result_path}.json" \
+      2> "${result_path}.stderr"
+}
+
+prom_get_from_replicas() {
+  local object="$1"; shift
+  local path="${1:-$object}"; shift || true
+
+  for pod in "${PROM_PODS[@]}"; do
+    prom_get_from_replica "${pod}" "${object}" "${pod}/${path}" || true
+  done
+}
+
+alertmanager_get() {
+  local object="$1"; shift
+  local path="${1:-$object}"; shift || true
+
+  local result_path="$MONITORING_PATH/alertmanager/$path"
+  mkdir -p "$(dirname "$result_path")"
+
+  oc get \
+    --certificate-authority="$CA_BUNDLE" \
+    --token="${SA_TOKEN}" \
+    --server="https://$ALERT_MANAGER_ROUTE" \
+    --raw="/api/v2/$object" \
+      > "$result_path.json" \
+      2> "$result_path.stderr"
+}
+
+
+monitoring_gather(){
+  init
+
+  echo "INFO: Found ${#PROM_PODS[@]} replicas - ${PROM_PODS[*]}"
+
+  # begin gathering
+  # NOTE || true ignores failures
+
+  prom_get alertmanagers   || true
+  prom_get rules    || true
+  prom_get status/config  || true
+  prom_get status/flags  || true
+  prom_get status/runtimeinfo  || true
+
+  # using prom_get_from_replica as the state differs for each replica
+  prom_get_from_replicas 'targets?state=active' active-targets  || true
+  prom_get_from_replicas status/tsdb  || true
+
+  alertmanager_get status  || true
+
+  # force disk flush to ensure that all data gathered are written
+  sync
+
+  cleanup
+}
+
+monitoring_gather

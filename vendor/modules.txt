@@ -279,6 +279,9 @@ github.com/openshift/library-go/pkg/config/clusterstatus
 github.com/openshift/library-go/pkg/config/leaderelection
 github.com/openshift/library-go/pkg/operator/resource/resourcemerge
 github.com/openshift/library-go/pkg/operator/resource/resourceread
+# github.com/openshift/must-gather v0.0.0-20240606205211-408ab8661885 => ../must-gather
+## explicit; go 1.22
+github.com/openshift/must-gather/collection-scripts
 # github.com/pborman/uuid v1.2.1
 ## explicit
 github.com/pborman/uuid
@@ -1134,4 +1137,5 @@ sigs.k8s.io/yaml/goyaml.v2
 # k8s.io/pod-security-admission => k8s.io/pod-security-admission v0.28.2
 # k8s.io/sample-apiserver => k8s.io/sample-apiserver v0.28.2
 # sigs.k8s.io/sig-storage-local-static-provisioner => github.com/openshift/sig-storage-local-static-provisioner v0.0.0-20221121145404-891b3d12b1a9
+# github.com/openshift/must-gather => ../must-gather
 # github.com/dgrijalva/jwt-go => github.com/golang-jwt/jwt v3.2.1+incompatible
