@@ -27,6 +27,11 @@ var (
 		Help: "Total symlinks that became orphan after updating the Local Volume Set filter",
 	}, []string{"nodeName", "storageClass"})
 
+	metricLocalVolumeSetDeletionTimestamp = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "lso_lvset_deletion_timestamp",
+		Help: "Timestamp when the LocalVolumeSet was marked for deletion",
+	}, []string{"lvSetName"})
+
 	// LocalVolume metrics
 	metricLocalVolumeProvisionedPVs = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "lso_lv_provisioned_PV_count",
@@ -46,6 +51,7 @@ var (
 		metricLocalVolumeSetProvisionedPVs,
 		metricLocalVolumeSetUnmatchedDisks,
 		metricLocalVolumeSetOrphanedSymlinks,
+		metricLocalVolumeSetDeletionTimestamp,
 		metricLocalVolumeProvisionedPVs,
 		metricLocalVolumeOrphanedSymlinks,
 	}
@@ -73,6 +79,17 @@ func SetLVSOrphanedSymlinksMetric(nodeName, storageClassName string, count int) 
 	metricLocalVolumeSetOrphanedSymlinks.
 		With(prometheus.Labels{"nodeName": nodeName, "storageClass": storageClassName}).
 		Set(float64(count))
+}
+
+func SetLVSDeletionTimestampMetric(lvSetName string, ts int64) {
+	metricLocalVolumeSetDeletionTimestamp.
+		With(prometheus.Labels{"lvSetName": lvSetName}).
+		Set(float64(ts))
+}
+
+func RemoveLVSDeletionTimestampMetric(lvSetName string) {
+	metricLocalVolumeSetDeletionTimestamp.
+		Delete(prometheus.Labels{"lvSetName": lvSetName})
 }
 
 func SetLVProvisionedPVMetric(nodeName, storageClassName string, count int) {
