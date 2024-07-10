@@ -72,9 +72,6 @@ func (d *Deleter) DeletePVs() {
 		if pv.Status.Phase != v1.VolumeReleased {
 			continue
 		}
-		if d.Cache.SuccessfullyCleanedPV(pv) {
-			continue
-		}
 		name := pv.Name
 		switch pv.Spec.PersistentVolumeReclaimPolicy {
 		case v1.PersistentVolumeReclaimRetain:
@@ -165,12 +162,9 @@ func (d *Deleter) deletePV(pv *v1.PersistentVolume) error {
 	switch state {
 	case CSSucceeded:
 		// Found a completed cleaning entry
-		d.Cache.CleanPV(pv)
 		klog.Infof("Deleting pv %s after successful cleanup", pv.Name)
 		if err = d.APIUtil.DeletePV(pv.Name); err != nil {
 			if !errors.IsNotFound(err) {
-				// PV failed to delete in API server, flag the PV as not cleaned so next reconcile attempts the deletion again.
-				d.Cache.UncleanPV(pv)
 				d.RuntimeConfig.Recorder.Eventf(pv, v1.EventTypeWarning, common.EventVolumeFailedDelete,
 					err.Error())
 				return fmt.Errorf("Error deleting PV %q: %v", pv.Name, err.Error())
@@ -342,15 +336,15 @@ func (d *Deleter) execScript(pvName string, blkdevPath string, exe string, exeAr
 
 // runJob runs a cleaning job.
 // The advantages of using a Job to do block cleaning (which is a process that can take several hours) is as follows
-// 1) By naming the job based on the specific name of the volume, one ensures that only one instance of a cleaning
-//    job will be active for any given volume. Any attempt to create another will fail due to name collision. This
-//    avoids any concurrent cleaning problems.
-// 2) The above approach also ensures that we don't accidentally create a new PV when a cleaning job is in progress.
-//    Even if a user accidentally deletes the PV, the presence of the cleaning job would prevent the provisioner from
-//    attempting to re-create it. This would be the case even if the Daemonset had two provisioners running on the same
-//    host (which can sometimes happen as the Daemonset controller follows "at least one" semantics).
-// 3) Admins get transparency on what is going on with a released volume by just running kubectl commands
-//    to check for any corresponding cleaning job for a given volume and looking into its progress or failure.
+//  1. By naming the job based on the specific name of the volume, one ensures that only one instance of a cleaning
+//     job will be active for any given volume. Any attempt to create another will fail due to name collision. This
+//     avoids any concurrent cleaning problems.
+//  2. The above approach also ensures that we don't accidentally create a new PV when a cleaning job is in progress.
+//     Even if a user accidentally deletes the PV, the presence of the cleaning job would prevent the provisioner from
+//     attempting to re-create it. This would be the case even if the Daemonset had two provisioners running on the same
+//     host (which can sometimes happen as the Daemonset controller follows "at least one" semantics).
+//  3. Admins get transparency on what is going on with a released volume by just running kubectl commands
+//     to check for any corresponding cleaning job for a given volume and looking into its progress or failure.
 //
 // To achieve these advantages, the provisioner names the cleaning job with a constant name based on the PV name.
 // If a job completes successfully, then the job is first deleted and then the cleaned PV (to enable its rediscovery).

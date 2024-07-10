@@ -33,7 +33,7 @@ require (
 	k8s.io/klog/v2 v2.130.1
 	k8s.io/utils v0.0.0-20240711033017-18e509b52bc8
 	sigs.k8s.io/controller-runtime v0.16.6
-	sigs.k8s.io/sig-storage-local-static-provisioner v2.5.0+incompatible
+	sigs.k8s.io/sig-storage-local-static-provisioner v0.0.0-20240328032358-4f81db77908f // v2.7.0
 	sigs.k8s.io/yaml v1.4.0 // indirect
 )
 
@@ -70,6 +70,7 @@ require (
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.2 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
+	github.com/opencontainers/selinux v1.11.0 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/prometheus/client_model v0.4.0 // indirect
 	github.com/prometheus/common v0.44.0 // indirect
@@ -92,6 +93,7 @@ require (
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	k8s.io/apiserver v0.30.2 // indirect
+	k8s.io/cloud-provider v0.27.8 // indirect
 	k8s.io/component-base v0.30.2 // indirect
 	k8s.io/kube-openapi v0.0.0-20240709000822-3c01b740850f // indirect
 	k8s.io/kubernetes v1.30.2 // indirect
@@ -132,7 +134,5 @@ replace (
 	k8s.io/pod-security-admission => k8s.io/pod-security-admission v0.28.2
 	k8s.io/sample-apiserver => k8s.io/sample-apiserver v0.28.2
 )
-
-replace sigs.k8s.io/sig-storage-local-static-provisioner => github.com/openshift/sig-storage-local-static-provisioner v0.0.0-20221121145404-891b3d12b1a9 //BUG: https://issues.redhat.com/browse/OCPBUGS-2450
 
 replace github.com/dgrijalva/jwt-go => github.com/golang-jwt/jwt v3.2.1+incompatible
