@@ -8,6 +8,12 @@ import metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 // ImagePolicy holds namespace-wide configuration for image signature verification
 //
 // Compatibility level 4: No compatibility is provided, the API can change at any point for any reason. These capabilities should not be used by applications needing long term support.
+// +kubebuilder:object:root=true
+// +kubebuilder:resource:path=imagepolicies,scope=Namespaced
+// +kubebuilder:subresource:status
+// +openshift:api-approved.openshift.io=https://github.com/openshift/api/pull/1457
+// +openshift:file-pattern=cvoRunLevel=0000_10,operatorName=config-operator,operatorOrdering=01
+// +openshift:enable:FeatureGate=ImagePolicy
 // +openshift:compatibility-gen:level=4
 type ImagePolicy struct {
 	metav1.TypeMeta `json:",inline"`
@@ -31,8 +37,9 @@ type ImagePolicySpec struct {
 	// More general scopes are prefixes of individual-image scopes, and specify a repository (by omitting the tag or digest), a repository
 	// namespace, or a registry host (by only specifying the host name and possibly a port number) or a wildcard expression starting with `*.`, for matching all subdomains (not including a port number).
 	// Wildcards are only supported for subdomain matching, and may not be used in the middle of the host, i.e.  *.example.com is a valid case, but example*.*.com is not.
-	// Please be aware that the scopes should not be nested under the repositories of OpenShift Container Platform images.
-	// If configured, the policies for OpenShift Container Platform repositories will not be in effect.
+	// If multiple scopes match a given image, only the policy requirements for the most specific scope apply. The policy requirements for more general scopes are ignored.
+	// In addition to setting a policy appropriate for your own deployed applications, make sure that a policy on the OpenShift image repositories
+	// quay.io/openshift-release-dev/ocp-release, quay.io/openshift-release-dev/ocp-v4.0-art-dev (or on a more general scope) allows deployment of the OpenShift images required for cluster operation.
 	// For additional details about the format, please refer to the document explaining the docker transport field,
 	// which can be found at: https://github.com/containers/image/blob/main/docs/containers-policy.json.5.md#docker
 	// +kubebuilder:validation:Required
@@ -96,12 +103,12 @@ type PublicKey struct {
 	// KeyData must be at most 8192 characters.
 	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:MaxLength=8192
-	KeyData string `json:"keyData"`
+	KeyData []byte `json:"keyData"`
 	// rekorKeyData contains inline base64-encoded data for the PEM format from the Rekor public key.
 	// rekorKeyData must be at most 8192 characters.
 	// +optional
 	// +kubebuilder:validation:MaxLength=8192
-	RekorKeyData string `json:"rekorKeyData,omitempty"`
+	RekorKeyData []byte `json:"rekorKeyData,omitempty"`
 }
 
 // FulcioCAWithRekor defines the root of trust based on the Fulcio certificate and the Rekor public key.
@@ -110,12 +117,12 @@ type FulcioCAWithRekor struct {
 	// fulcioCAData must be at most 8192 characters.
 	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:MaxLength=8192
-	FulcioCAData string `json:"fulcioCAData"`
+	FulcioCAData []byte `json:"fulcioCAData"`
 	// rekorKeyData contains inline base64-encoded data for the PEM format from the Rekor public key.
 	// rekorKeyData must be at most 8192 characters.
 	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:MaxLength=8192
-	RekorKeyData string `json:"rekorKeyData"`
+	RekorKeyData []byte `json:"rekorKeyData"`
 	// fulcioSubject specifies OIDC issuer and the email of the Fulcio authentication configuration.
 	// +kubebuilder:validation:Required
 	FulcioSubject PolicyFulcioSubject `json:"fulcioSubject,omitempty"`
