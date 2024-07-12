@@ -27,3 +27,13 @@ spec:
             A frequent issue is that nodes that run OpenShift Data Foundation (ODF) are tainted,
             so only ODF runs on these nodes. In that case, LocalVolume / LocalVolumeSet objects
             must tolerate such a taint to provide disks for ODF on the nodes.
+    - name: lvset_deletion_alerts
+      rules:
+      - alert: LvSetDeletionAlert
+        expr: lso_lvset_deletion_timestamp > 0 and time() - lso_lvset_deletion_timestamp > 72 * 3600
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "LocalVolumeSet has had a deletion timestamp older than 72 hours"
+          description: "LocalVolumeSet {{ $labels.lvSetName }} has been marked for deletion for more than 72 hours."

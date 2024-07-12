@@ -67,8 +67,12 @@ func (r *LocalVolumeSetReconciler) Reconcile(ctx context.Context, request ctrl.R
 
 	// don't provision for deleted lvsets
 	if !lvset.DeletionTimestamp.IsZero() {
+		// update metrics for deletion timestamp
+		localmetrics.SetLVSDeletionTimestampMetric(lvset.GetName(), lvset.GetDeletionTimestamp().Unix())
 		return ctrl.Result{}, nil
 	}
+	// since deletion timestamp is notset, clear out its metrics
+	localmetrics.RemoveLVSDeletionTimestampMetric(lvset.GetName())
 
 	// ignore LocalVolmeSets whose LabelSelector doesn't match this node
 	// NodeSelectorTerms.MatchExpressions are ORed
