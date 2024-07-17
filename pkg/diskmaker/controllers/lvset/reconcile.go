@@ -65,6 +65,22 @@ func (r *LocalVolumeSetReconciler) Reconcile(ctx context.Context, request ctrl.R
 		return ctrl.Result{}, err
 	}
 
+	if !r.cacheSynced {
+		pvList := &corev1.PersistentVolumeList{}
+		err := r.Client.List(context.TODO(), pvList)
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to initialize PV cache: %w", err)
+		}
+		for _, pv := range pvList.Items {
+			// skip non-owned PVs
+			if !common.PVMatchesProvisioner(pv, r.runtimeConfig.Name) {
+				continue
+			}
+			addOrUpdatePV(r.runtimeConfig, pv)
+		}
+		r.cacheSynced = true
+	}
+
 	// don't provision for deleted lvsets
 	if !lvset.DeletionTimestamp.IsZero() {
 		// update metrics for deletion timestamp
@@ -86,9 +102,13 @@ func (r *LocalVolumeSetReconciler) Reconcile(ctx context.Context, request ctrl.R
 		return ctrl.Result{}, nil
 	}
 
-	storageClassName := lvset.Spec.StorageClassName
+	// Delete PV's before creating new ones
+	klog.InfoS("Looking for released PVs to cleanup", "namespace", request.Namespace, "name", request.Name)
+	r.deleter.DeletePVs()
 
+	klog.InfoS("Looking for valid block devices", "namespace", request.Namespace, "name", request.Name)
 	// get associated storageclass
+	storageClassName := lvset.Spec.StorageClassName
 	storageClass := &storagev1.StorageClass{}
 	err = r.Client.Get(ctx, types.NamespacedName{Name: storageClassName}, storageClass)
 	if err != nil {
@@ -432,6 +452,7 @@ type LocalVolumeSetReconciler struct {
 	Scheme        *runtime.Scheme
 	nodeName      string
 	eventReporter *eventReporter
+	cacheSynced   bool
 	// map from KNAME of device to time when the device was first observed since the process started
 	deviceAgeMap *ageMap
 
@@ -513,6 +534,13 @@ func handlePVChange(runtimeConfig *provCommon.RuntimeConfig, pv *corev1.Persiste
 		return
 	}
 
+	// update cache
+	if isDelete {
+		removePV(runtimeConfig, *pv)
+	} else {
+		addOrUpdatePV(runtimeConfig, *pv)
+	}
+
 	// enqueue owner
 	ownerName, found := pv.Labels[common.PVOwnerNameLabel]
 	if !found {
@@ -538,4 +566,20 @@ func handlePVChange(runtimeConfig *provCommon.RuntimeConfig, pv *corev1.Persiste
 		q.Add(reconcile.Request{NamespacedName: types.NamespacedName{Name: ownerName, Namespace: ownerNamespace}})
 	}
 
+}
+
+func removePV(r *provCommon.RuntimeConfig, pv corev1.PersistentVolume) {
+	_, exists := r.Cache.GetPV(pv.GetName())
+	if exists {
+		r.Cache.DeletePV(pv.Name)
+	}
+}
+
+func addOrUpdatePV(r *provCommon.RuntimeConfig, pv corev1.PersistentVolume) {
+	_, exists := r.Cache.GetPV(pv.GetName())
+	if exists {
+		r.Cache.UpdatePV(&pv)
+	} else {
+		r.Cache.AddPV(&pv)
+	}
 }

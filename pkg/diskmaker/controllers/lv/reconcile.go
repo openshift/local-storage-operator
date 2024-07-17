@@ -39,7 +39,7 @@ import (
 // It also ensures that only stable device names are used.
 
 var (
-	checkDuration  = 60 * time.Second
+	checkDuration  = time.Minute
 	diskByIDPath   = "/dev/disk/by-id/*"
 	diskByIDPrefix = "/dev/disk/by-id"
 )
@@ -321,6 +321,12 @@ func (r *LocalVolumeReconciler) Reconcile(ctx context.Context, request ctrl.Requ
 	if !matches {
 		return ctrl.Result{}, nil
 	}
+
+	// Delete PV's before creating new ones
+	klog.InfoS("Looking for released PVs to cleanup", "namespace", request.Namespace, "name", request.Name)
+	r.deleter.DeletePVs()
+
+	klog.InfoS("Looking for valid block devices", "namespace", request.Namespace, "name", request.Name)
 
 	err = os.MkdirAll(r.symlinkLocation, 0755)
 	if err != nil {
@@ -653,7 +659,6 @@ func (r *LocalVolumeReconciler) WithManager(mgr ctrl.Manager) error {
 		Watches(
 			&corev1.ConfigMap{},
 			handler.EnqueueRequestForOwner(mgr.GetScheme(), mgr.GetRESTMapper(), &localv1.LocalVolume{})).
-		// TODO enqueue for the PV based on labels
 		// update owned-pv cache used by provisioner/deleter libs and enequeue owning lvset
 		// only the cache is touched by
 		Watches(&corev1.PersistentVolume{}, &handler.Funcs{
@@ -685,7 +690,6 @@ func (r *LocalVolumeReconciler) WithManager(mgr ctrl.Manager) error {
 		Complete(r)
 
 	return err
-
 }
 
 func handlePVChange(runtimeConfig *provCommon.RuntimeConfig, pv *corev1.PersistentVolume, q workqueue.RateLimitingInterface, isDelete bool) {
@@ -715,7 +719,17 @@ func handlePVChange(runtimeConfig *provCommon.RuntimeConfig, pv *corev1.Persiste
 		return
 	}
 
-	q.Add(reconcile.Request{NamespacedName: types.NamespacedName{Name: ownerName, Namespace: ownerNamespace}})
+	if isDelete {
+		// Delayed reconcile so that the cleanup tracker has time to mark the PV cleaned up.
+		// Don't block the informer goroutine.
+		go func() {
+			time.Sleep(time.Second * 10)
+			q.Add(reconcile.Request{NamespacedName: types.NamespacedName{Name: ownerName, Namespace: ownerNamespace}})
+		}()
+	} else {
+		q.Add(reconcile.Request{NamespacedName: types.NamespacedName{Name: ownerName, Namespace: ownerNamespace}})
+	}
+
 }
 
 func removePV(r *provCommon.RuntimeConfig, pv corev1.PersistentVolume) {
