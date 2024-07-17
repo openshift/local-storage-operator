@@ -24,7 +24,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
-	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	provCommon "sigs.k8s.io/sig-storage-local-static-provisioner/pkg/common"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -300,7 +299,7 @@ func (r *LocalVolumeReconciler) Reconcile(ctx context.Context, request ctrl.Requ
 			if !common.PVMatchesProvisioner(pv, r.runtimeConfig.Name) {
 				continue
 			}
-			addOrUpdatePV(r.runtimeConfig, pv)
+			common.AddOrUpdatePV(r.runtimeConfig, pv)
 		}
 		r.cacheSynced = true
 	}
@@ -665,85 +664,29 @@ func (r *LocalVolumeReconciler) WithManager(mgr ctrl.Manager) error {
 			GenericFunc: func(ctx context.Context, e event.GenericEvent, q workqueue.RateLimitingInterface) {
 				pv, ok := e.Object.(*corev1.PersistentVolume)
 				if ok {
-					handlePVChange(r.runtimeConfig, pv, q, false)
+					common.HandlePVChange(r.runtimeConfig, pv, q, false)
 				}
 			},
 			CreateFunc: func(ctx context.Context, e event.CreateEvent, q workqueue.RateLimitingInterface) {
 				pv, ok := e.Object.(*corev1.PersistentVolume)
 				if ok {
-					handlePVChange(r.runtimeConfig, pv, q, false)
+					common.HandlePVChange(r.runtimeConfig, pv, q, false)
 				}
 			},
 			UpdateFunc: func(ctx context.Context, e event.UpdateEvent, q workqueue.RateLimitingInterface) {
 				pv, ok := e.ObjectNew.(*corev1.PersistentVolume)
 				if ok {
-					handlePVChange(r.runtimeConfig, pv, q, false)
+					common.HandlePVChange(r.runtimeConfig, pv, q, false)
 				}
 			},
 			DeleteFunc: func(ctx context.Context, e event.DeleteEvent, q workqueue.RateLimitingInterface) {
 				pv, ok := e.Object.(*corev1.PersistentVolume)
 				if ok {
-					handlePVChange(r.runtimeConfig, pv, q, true)
+					common.HandlePVChange(r.runtimeConfig, pv, q, true)
 				}
 			},
 		}).
 		Complete(r)
 
 	return err
-}
-
-func handlePVChange(runtimeConfig *provCommon.RuntimeConfig, pv *corev1.PersistentVolume, q workqueue.RateLimitingInterface, isDelete bool) {
-	// skip non-owned PVs
-	if !common.PVMatchesProvisioner(*pv, runtimeConfig.Name) {
-		return
-	}
-
-	// update cache
-	if isDelete {
-		removePV(runtimeConfig, *pv)
-	} else {
-		addOrUpdatePV(runtimeConfig, *pv)
-	}
-
-	// enqueue owner
-	ownerName, found := pv.Labels[common.PVOwnerNameLabel]
-	if !found {
-		return
-	}
-	ownerNamespace, found := pv.Labels[common.PVOwnerNamespaceLabel]
-	if !found {
-		return
-	}
-	ownerKind, found := pv.Labels[common.PVOwnerKindLabel]
-	if ownerKind != localv1.LocalVolumeKind || !found {
-		return
-	}
-
-	if isDelete {
-		// Delayed reconcile so that the cleanup tracker has time to mark the PV cleaned up.
-		// Don't block the informer goroutine.
-		go func() {
-			time.Sleep(time.Second * 10)
-			q.Add(reconcile.Request{NamespacedName: types.NamespacedName{Name: ownerName, Namespace: ownerNamespace}})
-		}()
-	} else {
-		q.Add(reconcile.Request{NamespacedName: types.NamespacedName{Name: ownerName, Namespace: ownerNamespace}})
-	}
-
-}
-
-func removePV(r *provCommon.RuntimeConfig, pv corev1.PersistentVolume) {
-	_, exists := r.Cache.GetPV(pv.GetName())
-	if exists {
-		r.Cache.DeletePV(pv.Name)
-	}
-}
-
-func addOrUpdatePV(r *provCommon.RuntimeConfig, pv corev1.PersistentVolume) {
-	_, exists := r.Cache.GetPV(pv.GetName())
-	if exists {
-		r.Cache.UpdatePV(&pv)
-	} else {
-		r.Cache.AddPV(&pv)
-	}
 }

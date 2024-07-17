@@ -5,16 +5,21 @@ import (
 	"fmt"
 	"hash/fnv"
 	"path/filepath"
+	"time"
 
+	localv1 "github.com/openshift/local-storage-operator/api/v1"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/client-go/util/workqueue"
 	"k8s.io/klog/v2"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	provCommon "sigs.k8s.io/sig-storage-local-static-provisioner/pkg/common"
 	provDeleter "sigs.k8s.io/sig-storage-local-static-provisioner/pkg/deleter"
@@ -240,4 +245,60 @@ func GeneratePVName(file, node, class string) string {
 	h.Write([]byte(class))
 	// This is the FNV-1a 32-bit hash
 	return fmt.Sprintf("local-pv-%x", h.Sum32())
+}
+
+func HandlePVChange(runtimeConfig *provCommon.RuntimeConfig, pv *corev1.PersistentVolume, q workqueue.RateLimitingInterface, isDelete bool) {
+	// skip non-owned PVs
+	if !PVMatchesProvisioner(*pv, runtimeConfig.Name) {
+		return
+	}
+
+	// update cache
+	if isDelete {
+		RemovePV(runtimeConfig, *pv)
+	} else {
+		AddOrUpdatePV(runtimeConfig, *pv)
+	}
+
+	// enqueue owner
+	ownerName, found := pv.Labels[PVOwnerNameLabel]
+	if !found {
+		return
+	}
+	ownerNamespace, found := pv.Labels[PVOwnerNamespaceLabel]
+	if !found {
+		return
+	}
+	ownerKind, found := pv.Labels[PVOwnerKindLabel]
+	if ownerKind != localv1.LocalVolumeKind || !found {
+		return
+	}
+
+	if isDelete {
+		// Delayed reconcile so that the cleanup tracker has time to mark the PV cleaned up.
+		// Don't block the informer goroutine.
+		go func() {
+			time.Sleep(time.Second * 10)
+			q.Add(reconcile.Request{NamespacedName: types.NamespacedName{Name: ownerName, Namespace: ownerNamespace}})
+		}()
+	} else {
+		q.Add(reconcile.Request{NamespacedName: types.NamespacedName{Name: ownerName, Namespace: ownerNamespace}})
+	}
+
+}
+
+func RemovePV(r *provCommon.RuntimeConfig, pv corev1.PersistentVolume) {
+	_, exists := r.Cache.GetPV(pv.GetName())
+	if exists {
+		r.Cache.DeletePV(pv.Name)
+	}
+}
+
+func AddOrUpdatePV(r *provCommon.RuntimeConfig, pv corev1.PersistentVolume) {
+	_, exists := r.Cache.GetPV(pv.GetName())
+	if exists {
+		r.Cache.UpdatePV(&pv)
+	} else {
+		r.Cache.AddPV(&pv)
+	}
 }
