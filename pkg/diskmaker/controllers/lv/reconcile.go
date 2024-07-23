@@ -37,23 +37,22 @@ import (
 // creates and symlinks disks in location from which local-storage-provisioner can access.
 // It also ensures that only stable device names are used.
 
-var (
-	checkDuration  = time.Minute
-	diskByIDPath   = "/dev/disk/by-id/*"
-	diskByIDPrefix = "/dev/disk/by-id"
-)
-
 const (
 	ownerNamespaceLabel = "local.storage.openshift.io/owner-namespace"
 	ownerNameLabel      = "local.storage.openshift.io/owner-name"
 	// ComponentName for lv symlinker
-	ComponentName = "localvolume-symlink-controller"
+	ComponentName  = "localvolume-symlink-controller"
+	diskByIDPath   = "/dev/disk/by-id/*"
+	diskByIDPrefix = "/dev/disk/by-id"
+	checkDuration  = time.Minute
 )
 
 var nodeName string
+var watchNamespace string
 
 func init() {
 	nodeName = common.GetNodeNameEnvVar()
+	watchNamespace, _ = common.GetWatchNamespace()
 }
 
 type DiskLocation struct {
@@ -436,7 +435,6 @@ func (r *LocalVolumeReconciler) Reconcile(ctx context.Context, request ctrl.Requ
 				err = common.CreateLocalPV(
 					lv,
 					r.runtimeConfig,
-					r.cleanupTracker,
 					*storageClass,
 					mountPointMap,
 					r.Client,
@@ -664,25 +662,25 @@ func (r *LocalVolumeReconciler) WithManager(mgr ctrl.Manager) error {
 			GenericFunc: func(ctx context.Context, e event.GenericEvent, q workqueue.RateLimitingInterface) {
 				pv, ok := e.Object.(*corev1.PersistentVolume)
 				if ok {
-					common.HandlePVChange(r.runtimeConfig, pv, q, false)
+					common.HandlePVChange(r.runtimeConfig, pv, q, watchNamespace, false)
 				}
 			},
 			CreateFunc: func(ctx context.Context, e event.CreateEvent, q workqueue.RateLimitingInterface) {
 				pv, ok := e.Object.(*corev1.PersistentVolume)
 				if ok {
-					common.HandlePVChange(r.runtimeConfig, pv, q, false)
+					common.HandlePVChange(r.runtimeConfig, pv, q, watchNamespace, false)
 				}
 			},
 			UpdateFunc: func(ctx context.Context, e event.UpdateEvent, q workqueue.RateLimitingInterface) {
 				pv, ok := e.ObjectNew.(*corev1.PersistentVolume)
 				if ok {
-					common.HandlePVChange(r.runtimeConfig, pv, q, false)
+					common.HandlePVChange(r.runtimeConfig, pv, q, watchNamespace, false)
 				}
 			},
 			DeleteFunc: func(ctx context.Context, e event.DeleteEvent, q workqueue.RateLimitingInterface) {
 				pv, ok := e.Object.(*corev1.PersistentVolume)
 				if ok {
-					common.HandlePVChange(r.runtimeConfig, pv, q, true)
+					common.HandlePVChange(r.runtimeConfig, pv, q, watchNamespace, true)
 				}
 			},
 		}).

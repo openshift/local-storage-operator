@@ -22,7 +22,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	provCommon "sigs.k8s.io/sig-storage-local-static-provisioner/pkg/common"
-	provDeleter "sigs.k8s.io/sig-storage-local-static-provisioner/pkg/deleter"
 )
 
 // GenerateMountMap is used to get a set of mountpoints that can be quickly looked up
@@ -46,7 +45,6 @@ func GenerateMountMap(runtimeConfig *provCommon.RuntimeConfig) (sets.String, err
 func CreateLocalPV(
 	obj runtime.Object,
 	runtimeConfig *provCommon.RuntimeConfig,
-	cleanupTracker *provDeleter.CleanupStatusTracker,
 	storageClass storagev1.StorageClass,
 	mountPointMap sets.String,
 	client client.Client,
@@ -55,7 +53,6 @@ func CreateLocalPV(
 	idExists bool,
 	extraLabelsForPV map[string]string,
 ) error {
-	useJob := false
 	nodeLabels := runtimeConfig.Node.GetLabels()
 	hostname, found := nodeLabels[corev1.LabelHostname]
 	if !found {
@@ -92,15 +89,12 @@ func CreateLocalPV(
 		return fmt.Errorf("could not read the device's volume mode from the node: %w", err)
 	}
 
-	if cleanupTracker.InProgress(pvName, useJob) {
+	// Do not attempt to create or update existing PV's that have been released
+	existingPV := &corev1.PersistentVolume{ObjectMeta: metav1.ObjectMeta{Name: pvName}}
+	err = client.Get(context.TODO(), types.NamespacedName{Name: pvName}, existingPV)
+	if err == nil && existingPV.Status.Phase == corev1.VolumeReleased {
 		klog.InfoS("PV is still being cleaned, not going to recreate it", "pvName", pvName, "disk", deviceName)
 		return nil
-	}
-
-	_, _, err = cleanupTracker.RemoveStatus(pvName, useJob)
-	if err != nil {
-		klog.ErrorS(err, "failed to remove cleanup status for PV", "pvName", pvName)
-		return err
 	}
 
 	var capacityBytes int64
@@ -188,8 +182,6 @@ func CreateLocalPV(
 	}
 	newPV := provCommon.CreateLocalPVSpec(localPVConfig)
 
-	existingPV := &corev1.PersistentVolume{ObjectMeta: metav1.ObjectMeta{Name: pvName}}
-
 	klog.InfoS("creating PV", "pvName", pvName)
 	opRes, err := controllerutil.CreateOrUpdate(context.TODO(), client, existingPV, func() error {
 		if existingPV.CreationTimestamp.IsZero() {
@@ -247,7 +239,13 @@ func GeneratePVName(file, node, class string) string {
 	return fmt.Sprintf("local-pv-%x", h.Sum32())
 }
 
-func HandlePVChange(runtimeConfig *provCommon.RuntimeConfig, pv *corev1.PersistentVolume, q workqueue.RateLimitingInterface, isDelete bool) {
+func HandlePVChange(runtimeConfig *provCommon.RuntimeConfig, pv *corev1.PersistentVolume, q workqueue.RateLimitingInterface, watchNamespace string, isDelete bool) {
+	// if provisioner name is not known, enqueue to initialize the cache and discover provisioner name
+	if runtimeConfig.Name == "" {
+		q.Add(reconcile.Request{NamespacedName: types.NamespacedName{Namespace: watchNamespace}})
+		return
+	}
+
 	// skip non-owned PVs
 	if !PVMatchesProvisioner(*pv, runtimeConfig.Name) {
 		return
@@ -258,6 +256,9 @@ func HandlePVChange(runtimeConfig *provCommon.RuntimeConfig, pv *corev1.Persiste
 		RemovePV(runtimeConfig, *pv)
 	} else {
 		AddOrUpdatePV(runtimeConfig, *pv)
+	}
+	if pv.Status.Phase == corev1.VolumeReleased {
+		klog.InfoS("found PV with state released", "pvName", pv.Name)
 	}
 
 	// enqueue owner

@@ -37,6 +37,14 @@ const (
 	pvOwnerKey = "pvOwner"
 )
 
+var nodeName string
+var watchNamespace string
+
+func init() {
+	nodeName = common.GetNodeNameEnvVar()
+	watchNamespace, _ = common.GetWatchNamespace()
+}
+
 // Reconcile reads that state of the cluster for a LocalVolumeSet object and makes changes based on the state read
 // and what is in the LocalVolumeSet.Spec
 // Note:
@@ -378,7 +386,6 @@ func (r *LocalVolumeSetReconciler) provisionPV(
 				return common.CreateLocalPV(
 					obj,
 					r.runtimeConfig,
-					r.cleanupTracker,
 					storageClass,
 					mountPointMap,
 					r.Client,
@@ -416,7 +423,6 @@ func (r *LocalVolumeSetReconciler) provisionPV(
 				return common.CreateLocalPV(
 					obj,
 					r.runtimeConfig,
-					r.cleanupTracker,
 					storageClass,
 					mountPointMap,
 					r.Client,
@@ -433,7 +439,6 @@ func (r *LocalVolumeSetReconciler) provisionPV(
 	return common.CreateLocalPV(
 		obj,
 		r.runtimeConfig,
-		r.cleanupTracker,
 		storageClass,
 		mountPointMap,
 		r.Client,
@@ -459,14 +464,6 @@ type LocalVolumeSetReconciler struct {
 	cleanupTracker *provDeleter.CleanupStatusTracker
 	runtimeConfig  *provCommon.RuntimeConfig
 	deleter        *provDeleter.Deleter
-}
-
-var watchNamespace string
-var nodeName string
-
-func init() {
-	nodeName = common.GetNodeNameEnvVar()
-	watchNamespace, _ = common.GetWatchNamespace()
 }
 
 func NewLocalVolumeSetReconciler(client client.Client, scheme *runtime.Scheme, time timeInterface, cleanupTracker *provDeleter.CleanupStatusTracker, rc *provCommon.RuntimeConfig) *LocalVolumeSetReconciler {
@@ -500,25 +497,25 @@ func (r *LocalVolumeSetReconciler) WithManager(mgr ctrl.Manager) error {
 			GenericFunc: func(ctx context.Context, e event.GenericEvent, q workqueue.RateLimitingInterface) {
 				pv, ok := e.Object.(*corev1.PersistentVolume)
 				if ok {
-					common.HandlePVChange(r.runtimeConfig, pv, q, false)
+					common.HandlePVChange(r.runtimeConfig, pv, q, watchNamespace, false)
 				}
 			},
 			CreateFunc: func(ctx context.Context, e event.CreateEvent, q workqueue.RateLimitingInterface) {
 				pv, ok := e.Object.(*corev1.PersistentVolume)
 				if ok {
-					common.HandlePVChange(r.runtimeConfig, pv, q, false)
+					common.HandlePVChange(r.runtimeConfig, pv, q, watchNamespace, false)
 				}
 			},
 			UpdateFunc: func(ctx context.Context, e event.UpdateEvent, q workqueue.RateLimitingInterface) {
 				pv, ok := e.ObjectNew.(*corev1.PersistentVolume)
 				if ok {
-					common.HandlePVChange(r.runtimeConfig, pv, q, false)
+					common.HandlePVChange(r.runtimeConfig, pv, q, watchNamespace, false)
 				}
 			},
 			DeleteFunc: func(ctx context.Context, e event.DeleteEvent, q workqueue.RateLimitingInterface) {
 				pv, ok := e.Object.(*corev1.PersistentVolume)
 				if ok {
-					common.HandlePVChange(r.runtimeConfig, pv, q, true)
+					common.HandlePVChange(r.runtimeConfig, pv, q, watchNamespace, true)
 				}
 			},
 		}).
