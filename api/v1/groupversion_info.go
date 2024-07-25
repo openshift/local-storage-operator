@@ -25,7 +25,8 @@ import (
 )
 
 const (
-	LocalVolumeKind = "LocalVolume"
+	LocalVolumeKind    = "LocalVolume"
+	LocalVolumeSetKind = "LocalVolumeSet"
 )
 
 var (

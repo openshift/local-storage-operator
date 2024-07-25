@@ -661,25 +661,25 @@ func (r *LocalVolumeReconciler) WithManager(mgr ctrl.Manager) error {
 		Watches(&corev1.PersistentVolume{}, &handler.Funcs{
 			GenericFunc: func(ctx context.Context, e event.GenericEvent, q workqueue.RateLimitingInterface) {
 				pv, ok := e.Object.(*corev1.PersistentVolume)
-				if ok {
+				if ok && common.IsLocalVolumePV(pv) {
 					common.HandlePVChange(r.runtimeConfig, pv, q, watchNamespace, false)
 				}
 			},
 			CreateFunc: func(ctx context.Context, e event.CreateEvent, q workqueue.RateLimitingInterface) {
 				pv, ok := e.Object.(*corev1.PersistentVolume)
-				if ok {
+				if ok && common.IsLocalVolumePV(pv) {
 					common.HandlePVChange(r.runtimeConfig, pv, q, watchNamespace, false)
 				}
 			},
 			UpdateFunc: func(ctx context.Context, e event.UpdateEvent, q workqueue.RateLimitingInterface) {
 				pv, ok := e.ObjectNew.(*corev1.PersistentVolume)
-				if ok {
+				if ok && common.IsLocalVolumePV(pv) {
 					common.HandlePVChange(r.runtimeConfig, pv, q, watchNamespace, false)
 				}
 			},
 			DeleteFunc: func(ctx context.Context, e event.DeleteEvent, q workqueue.RateLimitingInterface) {
 				pv, ok := e.Object.(*corev1.PersistentVolume)
-				if ok {
+				if ok && common.IsLocalVolumePV(pv) {
 					common.HandlePVChange(r.runtimeConfig, pv, q, watchNamespace, true)
 				}
 			},

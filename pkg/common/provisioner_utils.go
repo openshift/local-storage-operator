@@ -270,10 +270,6 @@ func HandlePVChange(runtimeConfig *provCommon.RuntimeConfig, pv *corev1.Persiste
 	if !found {
 		return
 	}
-	ownerKind, found := pv.Labels[PVOwnerKindLabel]
-	if ownerKind != localv1.LocalVolumeKind || !found {
-		return
-	}
 
 	if isDelete {
 		// Delayed reconcile so that the cleanup tracker has time to mark the PV cleaned up.
@@ -302,4 +298,14 @@ func AddOrUpdatePV(r *provCommon.RuntimeConfig, pv corev1.PersistentVolume) {
 	} else {
 		r.Cache.AddPV(&pv)
 	}
+}
+
+func IsLocalVolumePV(pv *corev1.PersistentVolume) bool {
+	ownerKind, found := pv.Labels[PVOwnerKindLabel]
+	return found && ownerKind == localv1.LocalVolumeKind
+}
+
+func IsLocalVolumeSetPV(pv *corev1.PersistentVolume) bool {
+	ownerKind, found := pv.Labels[PVOwnerKindLabel]
+	return found && ownerKind == localv1.LocalVolumeSetKind
 }
