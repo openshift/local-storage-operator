@@ -41,10 +41,11 @@ const (
 	ownerNamespaceLabel = "local.storage.openshift.io/owner-namespace"
 	ownerNameLabel      = "local.storage.openshift.io/owner-name"
 	// ComponentName for lv symlinker
-	ComponentName  = "localvolume-symlink-controller"
-	diskByIDPath   = "/dev/disk/by-id/*"
-	diskByIDPrefix = "/dev/disk/by-id"
-	checkDuration  = time.Minute
+	ComponentName      = "localvolume-symlink-controller"
+	diskByIDPath       = "/dev/disk/by-id/*"
+	diskByIDPrefix     = "/dev/disk/by-id"
+	defaultRequeueTime = time.Minute
+	fastRequeueTime    = 5 * time.Second
 )
 
 var nodeName string
@@ -266,6 +267,7 @@ func addOwnerLabels(meta *metav1.ObjectMeta, cr *localv1.LocalVolume) bool {
 //+kubebuilder:rbac:groups="";storage.k8s.io,resources=configmaps;storageclasses;persistentvolumeclaims;persistentvolumes,verbs=*
 
 func (r *LocalVolumeReconciler) Reconcile(ctx context.Context, request ctrl.Request) (ctrl.Result, error) {
+	requeueTime := defaultRequeueTime
 
 	lv := &localv1.LocalVolume{}
 	err := r.Client.Get(ctx, request.NamespacedName, lv)
@@ -443,7 +445,9 @@ func (r *LocalVolumeReconciler) Reconcile(ctx context.Context, request ctrl.Requ
 					idExists,
 					lvOwnerLabels,
 				)
-				if err != nil {
+				if err == common.ErrTryAgain {
+					requeueTime = fastRequeueTime
+				} else if err != nil {
 					klog.ErrorS(err, "could not create local PV",
 						"deviceNameLocation", deviceNameLocation)
 					errors = append(errors, err)
@@ -471,7 +475,7 @@ func (r *LocalVolumeReconciler) Reconcile(ctx context.Context, request ctrl.Requ
 		localmetrics.SetLVOrphanedSymlinksMetric(nodeName, storageClassName, len(orphanSymlinkDevices))
 	}
 
-	return ctrl.Result{Requeue: true, RequeueAfter: checkDuration}, nil
+	return ctrl.Result{Requeue: true, RequeueAfter: requeueTime}, nil
 }
 
 func getSymlinkSourceAndTarget(devLocation DiskLocation, symlinkDir string) (string, string, bool, error) {

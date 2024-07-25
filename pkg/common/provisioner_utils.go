@@ -2,10 +2,10 @@ package common
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"hash/fnv"
 	"path/filepath"
-	"time"
 
 	localv1 "github.com/openshift/local-storage-operator/api/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -23,6 +23,8 @@ import (
 
 	provCommon "sigs.k8s.io/sig-storage-local-static-provisioner/pkg/common"
 )
+
+var ErrTryAgain = errors.New("retry provisioning")
 
 // GenerateMountMap is used to get a set of mountpoints that can be quickly looked up
 func GenerateMountMap(runtimeConfig *provCommon.RuntimeConfig) (sets.String, error) {
@@ -94,7 +96,8 @@ func CreateLocalPV(
 	err = client.Get(context.TODO(), types.NamespacedName{Name: pvName}, existingPV)
 	if err == nil && existingPV.Status.Phase == corev1.VolumeReleased {
 		klog.InfoS("PV is still being cleaned, not going to recreate it", "pvName", pvName, "disk", deviceName)
-		return nil
+		// Caller should try again soon
+		return ErrTryAgain
 	}
 
 	var capacityBytes int64
@@ -271,17 +274,7 @@ func HandlePVChange(runtimeConfig *provCommon.RuntimeConfig, pv *corev1.Persiste
 		return
 	}
 
-	if isDelete {
-		// Delayed reconcile so that the cleanup tracker has time to mark the PV cleaned up.
-		// Don't block the informer goroutine.
-		go func() {
-			time.Sleep(time.Second * 10)
-			q.Add(reconcile.Request{NamespacedName: types.NamespacedName{Name: ownerName, Namespace: ownerNamespace}})
-		}()
-	} else {
-		q.Add(reconcile.Request{NamespacedName: types.NamespacedName{Name: ownerName, Namespace: ownerNamespace}})
-	}
-
+	q.Add(reconcile.Request{NamespacedName: types.NamespacedName{Name: ownerName, Namespace: ownerNamespace}})
 }
 
 func RemovePV(r *provCommon.RuntimeConfig, pv corev1.PersistentVolume) {

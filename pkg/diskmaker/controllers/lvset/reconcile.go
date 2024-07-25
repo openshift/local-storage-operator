@@ -32,9 +32,10 @@ import (
 
 const (
 	// ComponentName for lvset symlinker
-	ComponentName = "localvolumeset-symlink-controller"
-
-	pvOwnerKey = "pvOwner"
+	ComponentName      = "localvolumeset-symlink-controller"
+	pvOwnerKey         = "pvOwner"
+	defaultRequeueTime = time.Minute
+	fastRequeueTime    = 5 * time.Second
 )
 
 var nodeName string
@@ -51,6 +52,7 @@ func init() {
 // The Controller will requeue the Request to be processed again if the returned error is non-nil or
 // Result.Requeue is true, otherwise upon completion it will remove the work from the queue.
 func (r *LocalVolumeSetReconciler) Reconcile(ctx context.Context, request ctrl.Request) (ctrl.Result, error) {
+	requeueTime := defaultRequeueTime
 
 	// Fetch the LocalVolumeSet instance
 	lvset := &localv1alpha1.LocalVolumeSet{}
@@ -194,7 +196,9 @@ func (r *LocalVolumeSetReconciler) Reconcile(ctx context.Context, request ctrl.R
 		klog.InfoS("provisioning PV", "blockDevice", blockDevice.Name)
 		r.eventReporter.Report(lvset, newDiskEvent(diskmaker.FoundMatchingDisk, "provisioning matching disk", blockDevice.KName, corev1.EventTypeNormal))
 		err = r.provisionPV(lvset, blockDevice, *storageClass, mountPointMap, symlinkSourcePath, symlinkPath, idExists)
-		if err != nil {
+		if err == common.ErrTryAgain {
+			requeueTime = fastRequeueTime
+		} else if err != nil {
 			msg := fmt.Sprintf("provisioning failed for %s: %v", blockDevice.Name, err)
 			r.eventReporter.Report(lvset, newDiskEvent(diskmaker.ErrorProvisioningDisk, msg, blockDevice.KName, corev1.EventTypeWarning))
 			klog.Error(msg)
@@ -228,8 +232,7 @@ func (r *LocalVolumeSetReconciler) Reconcile(ctx context.Context, request ctrl.R
 	}
 
 	// shorten the requeueTime if there are delayed devices
-	requeueTime := time.Minute
-	if len(delayedDevices) > 1 {
+	if len(delayedDevices) > 1 && requeueTime == defaultRequeueTime {
 		requeueTime = deviceMinAge / 2
 	}
 
