@@ -90,15 +90,6 @@ func (r *LocalVolumeSetReconciler) Reconcile(ctx context.Context, request ctrl.R
 		r.cacheSynced = true
 	}
 
-	// don't provision for deleted lvsets
-	if !lvset.DeletionTimestamp.IsZero() {
-		// update metrics for deletion timestamp
-		localmetrics.SetLVSDeletionTimestampMetric(lvset.GetName(), lvset.GetDeletionTimestamp().Unix())
-		return ctrl.Result{}, nil
-	}
-	// since deletion timestamp is notset, clear out its metrics
-	localmetrics.RemoveLVSDeletionTimestampMetric(lvset.GetName())
-
 	// ignore LocalVolmeSets whose LabelSelector doesn't match this node
 	// NodeSelectorTerms.MatchExpressions are ORed
 	matches, err := common.NodeSelectorMatchesNodeLabels(r.runtimeConfig.Node, lvset.Spec.NodeSelector)
@@ -114,6 +105,15 @@ func (r *LocalVolumeSetReconciler) Reconcile(ctx context.Context, request ctrl.R
 	// Delete PV's before creating new ones
 	klog.InfoS("Looking for released PVs to cleanup", "namespace", request.Namespace, "name", request.Name)
 	r.deleter.DeletePVs()
+
+	// don't provision for deleted lvsets
+	if !lvset.DeletionTimestamp.IsZero() {
+		// update metrics for deletion timestamp
+		localmetrics.SetLVSDeletionTimestampMetric(lvset.GetName(), lvset.GetDeletionTimestamp().Unix())
+		return ctrl.Result{}, nil
+	}
+	// since deletion timestamp is notset, clear out its metrics
+	localmetrics.RemoveLVSDeletionTimestampMetric(lvset.GetName())
 
 	klog.InfoS("Looking for valid block devices", "namespace", request.Namespace, "name", request.Name)
 	// get associated storageclass

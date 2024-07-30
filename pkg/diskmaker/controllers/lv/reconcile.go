@@ -305,11 +305,6 @@ func (r *LocalVolumeReconciler) Reconcile(ctx context.Context, request ctrl.Requ
 		r.cacheSynced = true
 	}
 
-	// don't provision for deleted lvs
-	if !lv.DeletionTimestamp.IsZero() {
-		return ctrl.Result{}, nil
-	}
-
 	// ignore LocalVolumes whose LabelSelector doesn't match this node
 	// NodeSelectorTerms.MatchExpressions are ORed
 	matches, err := common.NodeSelectorMatchesNodeLabels(r.runtimeConfig.Node, lv.Spec.NodeSelector)
@@ -325,6 +320,11 @@ func (r *LocalVolumeReconciler) Reconcile(ctx context.Context, request ctrl.Requ
 	// Delete PV's before creating new ones
 	klog.InfoS("Looking for released PVs to cleanup", "namespace", request.Namespace, "name", request.Name)
 	r.deleter.DeletePVs()
+
+	// don't provision for deleted lvs
+	if !lv.DeletionTimestamp.IsZero() {
+		return ctrl.Result{}, nil
+	}
 
 	klog.InfoS("Looking for valid block devices", "namespace", request.Namespace, "name", request.Name)
 
