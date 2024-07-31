@@ -16,6 +16,7 @@ import (
 	"github.com/openshift/library-go/pkg/operator/resource/resourceread"
 	localv1 "github.com/openshift/local-storage-operator/api/v1"
 	localv1alpha1 "github.com/openshift/local-storage-operator/api/v1alpha1"
+	"github.com/openshift/local-storage-operator/pkg/common"
 	"github.com/openshift/local-storage-operator/pkg/internal"
 	test "github.com/openshift/local-storage-operator/test/framework"
 	"github.com/openshift/local-storage-operator/test/framework/util"
@@ -467,6 +468,9 @@ func makePersistentVolumeList(symLinkDir string, params []PVConfigParams) *corev
 			ObjectMeta: metav1.ObjectMeta{
 				Annotations: map[string]string{
 					provCommon.AnnProvisionedBy: p.PVAnnotation,
+				},
+				Labels: map[string]string{
+					common.PVOwnerKindLabel: localv1.LocalVolumeKind,
 				},
 				Name: p.PVName,
 			},
