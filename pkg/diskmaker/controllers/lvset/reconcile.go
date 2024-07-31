@@ -82,10 +82,10 @@ func (r *LocalVolumeSetReconciler) Reconcile(ctx context.Context, request ctrl.R
 		}
 		for _, pv := range pvList.Items {
 			// skip non-owned PVs
-			if !common.PVMatchesProvisioner(pv, r.runtimeConfig.Name) {
+			if !common.PVMatchesProvisioner(&pv, r.runtimeConfig.Name) {
 				continue
 			}
-			common.AddOrUpdatePV(r.runtimeConfig, pv)
+			common.AddOrUpdatePV(r.runtimeConfig, &pv)
 		}
 		r.cacheSynced = true
 	}

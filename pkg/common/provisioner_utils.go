@@ -250,15 +250,15 @@ func HandlePVChange(runtimeConfig *provCommon.RuntimeConfig, pv *corev1.Persiste
 	}
 
 	// skip non-owned PVs
-	if !PVMatchesProvisioner(*pv, runtimeConfig.Name) {
+	if !PVMatchesProvisioner(pv, runtimeConfig.Name) {
 		return
 	}
 
 	// update cache
 	if isDelete {
-		RemovePV(runtimeConfig, *pv)
+		RemovePV(runtimeConfig, pv)
 	} else {
-		AddOrUpdatePV(runtimeConfig, *pv)
+		AddOrUpdatePV(runtimeConfig, pv)
 	}
 	if pv.Status.Phase == corev1.VolumeReleased {
 		klog.InfoS("found PV with state released", "pvName", pv.Name)
@@ -277,19 +277,19 @@ func HandlePVChange(runtimeConfig *provCommon.RuntimeConfig, pv *corev1.Persiste
 	q.Add(reconcile.Request{NamespacedName: types.NamespacedName{Name: ownerName, Namespace: ownerNamespace}})
 }
 
-func RemovePV(r *provCommon.RuntimeConfig, pv corev1.PersistentVolume) {
+func RemovePV(r *provCommon.RuntimeConfig, pv *corev1.PersistentVolume) {
 	_, exists := r.Cache.GetPV(pv.GetName())
 	if exists {
 		r.Cache.DeletePV(pv.Name)
 	}
 }
 
-func AddOrUpdatePV(r *provCommon.RuntimeConfig, pv corev1.PersistentVolume) {
+func AddOrUpdatePV(r *provCommon.RuntimeConfig, pv *corev1.PersistentVolume) {
 	_, exists := r.Cache.GetPV(pv.GetName())
 	if exists {
-		r.Cache.UpdatePV(&pv)
+		r.Cache.UpdatePV(pv)
 	} else {
-		r.Cache.AddPV(&pv)
+		r.Cache.AddPV(pv)
 	}
 }
 
