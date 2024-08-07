@@ -197,6 +197,11 @@ github.com/onsi/gomega/matchers/support/goraph/edge
 github.com/onsi/gomega/matchers/support/goraph/node
 github.com/onsi/gomega/matchers/support/goraph/util
 github.com/onsi/gomega/types
+# github.com/opencontainers/selinux v1.11.0
+## explicit; go 1.19
+github.com/opencontainers/selinux/go-selinux
+github.com/opencontainers/selinux/go-selinux/label
+github.com/opencontainers/selinux/pkg/pwalkdir
 # github.com/openshift/api v0.0.0-20240710000542-465787efd0d6
 ## explicit; go 1.22.0
 github.com/openshift/api
@@ -965,6 +970,9 @@ k8s.io/client-go/util/homedir
 k8s.io/client-go/util/keyutil
 k8s.io/client-go/util/retry
 k8s.io/client-go/util/workqueue
+# k8s.io/cloud-provider v0.27.8 => k8s.io/cloud-provider v0.28.2
+## explicit; go 1.20
+k8s.io/cloud-provider
 # k8s.io/component-base v0.30.2 => k8s.io/component-base v0.28.2
 ## explicit; go 1.20
 k8s.io/component-base/config
@@ -979,6 +987,7 @@ k8s.io/component-base/version
 ## explicit; go 1.20
 k8s.io/component-helpers/scheduling/corev1
 k8s.io/component-helpers/scheduling/corev1/nodeaffinity
+k8s.io/component-helpers/storage/volume
 # k8s.io/klog/v2 v2.130.1
 ## explicit; go 1.18
 k8s.io/klog/v2
@@ -1001,11 +1010,24 @@ k8s.io/kube-openapi/pkg/util/proto
 k8s.io/kube-openapi/pkg/validation/spec
 # k8s.io/kubernetes v1.30.2 => k8s.io/kubernetes v1.28.2
 ## explicit; go 1.20
+k8s.io/kubernetes/pkg/api/legacyscheme
+k8s.io/kubernetes/pkg/api/v1/pod
+k8s.io/kubernetes/pkg/apis/core
+k8s.io/kubernetes/pkg/apis/core/helper
+k8s.io/kubernetes/pkg/apis/core/v1/helper
 k8s.io/kubernetes/pkg/features
 k8s.io/kubernetes/pkg/kubelet/server/metrics
+k8s.io/kubernetes/pkg/securitycontext
+k8s.io/kubernetes/pkg/volume
+k8s.io/kubernetes/pkg/volume/util
 k8s.io/kubernetes/pkg/volume/util/fs
 k8s.io/kubernetes/pkg/volume/util/fsquota
 k8s.io/kubernetes/pkg/volume/util/fsquota/common
+k8s.io/kubernetes/pkg/volume/util/hostutil
+k8s.io/kubernetes/pkg/volume/util/recyclerclient
+k8s.io/kubernetes/pkg/volume/util/subpath
+k8s.io/kubernetes/pkg/volume/util/types
+k8s.io/kubernetes/pkg/volume/util/volumepathhandler
 # k8s.io/mount-utils v0.30.2 => k8s.io/mount-utils v0.28.2
 ## explicit; go 1.20
 k8s.io/mount-utils
@@ -1021,8 +1043,11 @@ k8s.io/utils/io
 k8s.io/utils/keymutex
 k8s.io/utils/mount
 k8s.io/utils/net
+k8s.io/utils/nsenter
+k8s.io/utils/path
 k8s.io/utils/pointer
 k8s.io/utils/ptr
+k8s.io/utils/strings
 k8s.io/utils/strings/slices
 k8s.io/utils/trace
 # sigs.k8s.io/controller-runtime v0.16.6
@@ -1082,8 +1107,8 @@ sigs.k8s.io/kube-storage-version-migrator/pkg/apis/migration/v1alpha1
 # sigs.k8s.io/sig-storage-lib-external-provisioner/v6 v6.3.0
 ## explicit; go 1.13
 sigs.k8s.io/sig-storage-lib-external-provisioner/v6/util
-# sigs.k8s.io/sig-storage-local-static-provisioner v2.5.0+incompatible => github.com/openshift/sig-storage-local-static-provisioner v0.0.0-20221121145404-891b3d12b1a9
-## explicit; go 1.17
+# sigs.k8s.io/sig-storage-local-static-provisioner v0.0.0-20240328032358-4f81db77908f
+## explicit; go 1.20
 sigs.k8s.io/sig-storage-local-static-provisioner/pkg/cache
 sigs.k8s.io/sig-storage-local-static-provisioner/pkg/common
 sigs.k8s.io/sig-storage-local-static-provisioner/pkg/deleter
@@ -1128,5 +1153,4 @@ sigs.k8s.io/yaml/goyaml.v2
 # k8s.io/mount-utils => k8s.io/mount-utils v0.28.2
 # k8s.io/pod-security-admission => k8s.io/pod-security-admission v0.28.2
 # k8s.io/sample-apiserver => k8s.io/sample-apiserver v0.28.2
-# sigs.k8s.io/sig-storage-local-static-provisioner => github.com/openshift/sig-storage-local-static-provisioner v0.0.0-20221121145404-891b3d12b1a9
 # github.com/dgrijalva/jwt-go => github.com/golang-jwt/jwt v3.2.1+incompatible

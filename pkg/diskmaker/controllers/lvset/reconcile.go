@@ -26,17 +26,25 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
-	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	provCommon "sigs.k8s.io/sig-storage-local-static-provisioner/pkg/common"
 	provDeleter "sigs.k8s.io/sig-storage-local-static-provisioner/pkg/deleter"
 )
 
 const (
 	// ComponentName for lvset symlinker
-	ComponentName = "localvolumeset-symlink-controller"
-
-	pvOwnerKey = "pvOwner"
+	ComponentName      = "localvolumeset-symlink-controller"
+	pvOwnerKey         = "pvOwner"
+	defaultRequeueTime = time.Minute
+	fastRequeueTime    = 5 * time.Second
 )
+
+var nodeName string
+var watchNamespace string
+
+func init() {
+	nodeName = common.GetNodeNameEnvVar()
+	watchNamespace, _ = common.GetWatchNamespace()
+}
 
 // Reconcile reads that state of the cluster for a LocalVolumeSet object and makes changes based on the state read
 // and what is in the LocalVolumeSet.Spec
@@ -44,6 +52,7 @@ const (
 // The Controller will requeue the Request to be processed again if the returned error is non-nil or
 // Result.Requeue is true, otherwise upon completion it will remove the work from the queue.
 func (r *LocalVolumeSetReconciler) Reconcile(ctx context.Context, request ctrl.Request) (ctrl.Result, error) {
+	requeueTime := defaultRequeueTime
 
 	// Fetch the LocalVolumeSet instance
 	lvset := &localv1alpha1.LocalVolumeSet{}
@@ -65,14 +74,22 @@ func (r *LocalVolumeSetReconciler) Reconcile(ctx context.Context, request ctrl.R
 		return ctrl.Result{}, err
 	}
 
-	// don't provision for deleted lvsets
-	if !lvset.DeletionTimestamp.IsZero() {
-		// update metrics for deletion timestamp
-		localmetrics.SetLVSDeletionTimestampMetric(lvset.GetName(), lvset.GetDeletionTimestamp().Unix())
-		return ctrl.Result{}, nil
+	if !r.cacheSynced {
+		pvList := &corev1.PersistentVolumeList{}
+		err := r.Client.List(context.TODO(), pvList)
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to initialize PV cache: %w", err)
+		}
+		for _, pv := range pvList.Items {
+			// skip non-owned PVs
+			if !common.PVMatchesProvisioner(&pv, r.runtimeConfig.Name) ||
+				!common.IsLocalVolumeSetPV(&pv) {
+				continue
+			}
+			common.AddOrUpdatePV(r.runtimeConfig, &pv)
+		}
+		r.cacheSynced = true
 	}
-	// since deletion timestamp is notset, clear out its metrics
-	localmetrics.RemoveLVSDeletionTimestampMetric(lvset.GetName())
 
 	// ignore LocalVolmeSets whose LabelSelector doesn't match this node
 	// NodeSelectorTerms.MatchExpressions are ORed
@@ -86,9 +103,22 @@ func (r *LocalVolumeSetReconciler) Reconcile(ctx context.Context, request ctrl.R
 		return ctrl.Result{}, nil
 	}
 
-	storageClassName := lvset.Spec.StorageClassName
+	// Delete PV's before creating new ones
+	klog.InfoS("Looking for released PVs to cleanup", "namespace", request.Namespace, "name", request.Name)
+	r.deleter.DeletePVs()
 
+	// don't provision for deleted lvsets
+	if !lvset.DeletionTimestamp.IsZero() {
+		// update metrics for deletion timestamp
+		localmetrics.SetLVSDeletionTimestampMetric(lvset.GetName(), lvset.GetDeletionTimestamp().Unix())
+		return ctrl.Result{}, nil
+	}
+	// since deletion timestamp is notset, clear out its metrics
+	localmetrics.RemoveLVSDeletionTimestampMetric(lvset.GetName())
+
+	klog.InfoS("Looking for valid block devices", "namespace", request.Namespace, "name", request.Name)
 	// get associated storageclass
+	storageClassName := lvset.Spec.StorageClassName
 	storageClass := &storagev1.StorageClass{}
 	err = r.Client.Get(ctx, types.NamespacedName{Name: storageClassName}, storageClass)
 	if err != nil {
@@ -167,7 +197,9 @@ func (r *LocalVolumeSetReconciler) Reconcile(ctx context.Context, request ctrl.R
 		klog.InfoS("provisioning PV", "blockDevice", blockDevice.Name)
 		r.eventReporter.Report(lvset, newDiskEvent(diskmaker.FoundMatchingDisk, "provisioning matching disk", blockDevice.KName, corev1.EventTypeNormal))
 		err = r.provisionPV(lvset, blockDevice, *storageClass, mountPointMap, symlinkSourcePath, symlinkPath, idExists)
-		if err != nil {
+		if err == common.ErrTryAgain {
+			requeueTime = fastRequeueTime
+		} else if err != nil {
 			msg := fmt.Sprintf("provisioning failed for %s: %v", blockDevice.Name, err)
 			r.eventReporter.Report(lvset, newDiskEvent(diskmaker.ErrorProvisioningDisk, msg, blockDevice.KName, corev1.EventTypeWarning))
 			klog.Error(msg)
@@ -201,8 +233,7 @@ func (r *LocalVolumeSetReconciler) Reconcile(ctx context.Context, request ctrl.R
 	}
 
 	// shorten the requeueTime if there are delayed devices
-	requeueTime := time.Minute
-	if len(delayedDevices) > 1 {
+	if len(delayedDevices) > 1 && requeueTime == defaultRequeueTime {
 		requeueTime = deviceMinAge / 2
 	}
 
@@ -359,7 +390,6 @@ func (r *LocalVolumeSetReconciler) provisionPV(
 				return common.CreateLocalPV(
 					obj,
 					r.runtimeConfig,
-					r.cleanupTracker,
 					storageClass,
 					mountPointMap,
 					r.Client,
@@ -397,7 +427,6 @@ func (r *LocalVolumeSetReconciler) provisionPV(
 				return common.CreateLocalPV(
 					obj,
 					r.runtimeConfig,
-					r.cleanupTracker,
 					storageClass,
 					mountPointMap,
 					r.Client,
@@ -414,7 +443,6 @@ func (r *LocalVolumeSetReconciler) provisionPV(
 	return common.CreateLocalPV(
 		obj,
 		r.runtimeConfig,
-		r.cleanupTracker,
 		storageClass,
 		mountPointMap,
 		r.Client,
@@ -432,6 +460,7 @@ type LocalVolumeSetReconciler struct {
 	Scheme        *runtime.Scheme
 	nodeName      string
 	eventReporter *eventReporter
+	cacheSynced   bool
 	// map from KNAME of device to time when the device was first observed since the process started
 	deviceAgeMap *ageMap
 
@@ -439,14 +468,6 @@ type LocalVolumeSetReconciler struct {
 	cleanupTracker *provDeleter.CleanupStatusTracker
 	runtimeConfig  *provCommon.RuntimeConfig
 	deleter        *provDeleter.Deleter
-}
-
-var watchNamespace string
-var nodeName string
-
-func init() {
-	nodeName = common.GetNodeNameEnvVar()
-	watchNamespace, _ = common.GetWatchNamespace()
 }
 
 func NewLocalVolumeSetReconciler(client client.Client, scheme *runtime.Scheme, time timeInterface, cleanupTracker *provDeleter.CleanupStatusTracker, rc *provCommon.RuntimeConfig) *LocalVolumeSetReconciler {
@@ -479,63 +500,30 @@ func (r *LocalVolumeSetReconciler) WithManager(mgr ctrl.Manager) error {
 		Watches(&corev1.PersistentVolume{}, &handler.Funcs{
 			GenericFunc: func(ctx context.Context, e event.GenericEvent, q workqueue.RateLimitingInterface) {
 				pv, ok := e.Object.(*corev1.PersistentVolume)
-				if ok {
-					handlePVChange(r.runtimeConfig, pv, q, false)
+				if ok && common.IsLocalVolumeSetPV(pv) {
+					common.HandlePVChange(r.runtimeConfig, pv, q, watchNamespace, false)
 				}
 			},
 			CreateFunc: func(ctx context.Context, e event.CreateEvent, q workqueue.RateLimitingInterface) {
 				pv, ok := e.Object.(*corev1.PersistentVolume)
-				if ok {
-					handlePVChange(r.runtimeConfig, pv, q, false)
+				if ok && common.IsLocalVolumeSetPV(pv) {
+					common.HandlePVChange(r.runtimeConfig, pv, q, watchNamespace, false)
 				}
 			},
 			UpdateFunc: func(ctx context.Context, e event.UpdateEvent, q workqueue.RateLimitingInterface) {
 				pv, ok := e.ObjectNew.(*corev1.PersistentVolume)
-				if ok {
-					handlePVChange(r.runtimeConfig, pv, q, false)
+				if ok && common.IsLocalVolumeSetPV(pv) {
+					common.HandlePVChange(r.runtimeConfig, pv, q, watchNamespace, false)
 				}
 			},
 			DeleteFunc: func(ctx context.Context, e event.DeleteEvent, q workqueue.RateLimitingInterface) {
 				pv, ok := e.Object.(*corev1.PersistentVolume)
-				if ok {
-					handlePVChange(r.runtimeConfig, pv, q, true)
+				if ok && common.IsLocalVolumeSetPV(pv) {
+					common.HandlePVChange(r.runtimeConfig, pv, q, watchNamespace, true)
 				}
 			},
 		}).
 		Complete(r)
 
 	return err
-}
-
-func handlePVChange(runtimeConfig *provCommon.RuntimeConfig, pv *corev1.PersistentVolume, q workqueue.RateLimitingInterface, isDelete bool) {
-	// skip non-owned PVs
-	if !common.PVMatchesProvisioner(*pv, runtimeConfig.Name) {
-		return
-	}
-
-	// enqueue owner
-	ownerName, found := pv.Labels[common.PVOwnerNameLabel]
-	if !found {
-		return
-	}
-	ownerNamespace, found := pv.Labels[common.PVOwnerNamespaceLabel]
-	if !found {
-		return
-	}
-	ownerKind, found := pv.Labels[common.PVOwnerKindLabel]
-	if ownerKind != localv1.LocalVolumeKind || !found {
-		return
-	}
-
-	if isDelete {
-		// Delayed reconcile so that the cleanup tracker has time to mark the PV cleaned up.
-		// Don't block the informer goroutine.
-		go func() {
-			time.Sleep(time.Second * 10)
-			q.Add(reconcile.Request{NamespacedName: types.NamespacedName{Name: ownerName, Namespace: ownerNamespace}})
-		}()
-	} else {
-		q.Add(reconcile.Request{NamespacedName: types.NamespacedName{Name: ownerName, Namespace: ownerNamespace}})
-	}
-
 }

@@ -228,7 +228,6 @@ func TestCreatePV(t *testing.T) {
 		err := common.CreateLocalPV(
 			&tc.lvset,
 			r.runtimeConfig,
-			r.cleanupTracker,
 			tc.sc,
 			tc.mountPoints,
 			r.Client,
@@ -278,7 +277,6 @@ func TestCreatePV(t *testing.T) {
 		err = common.CreateLocalPV(
 			&tc.lvset,
 			r.runtimeConfig,
-			r.cleanupTracker,
 			tc.sc,
 			tc.mountPoints,
 			r.Client,

@@ -118,7 +118,7 @@ must-gather:
 
 # this is ugly, but allows us to build dev containers without tripping over yum install
 diskmaker-dockerfile-hack:
-	sed -e 's~registry.ci.openshift.org/ocp/.*:base~almalinux:8~' Dockerfile.diskmaker.rhel7 > Dockerfile.diskmaker.hack
+	sed -e 's~registry.ci.openshift.org/ocp/.*:base.*~almalinux:9~' Dockerfile.diskmaker.rhel7 > Dockerfile.diskmaker.hack
 .PHONY: diskmaker-dockerfile-hack
 
 diskmaker-container: diskmaker-dockerfile-hack

@@ -10,7 +10,6 @@ import (
 	localv1 "github.com/openshift/local-storage-operator/api/v1"
 	localv1alpha1 "github.com/openshift/local-storage-operator/api/v1alpha1"
 	"github.com/openshift/local-storage-operator/pkg/common"
-	diskmakerControllerDeleter "github.com/openshift/local-storage-operator/pkg/diskmaker/controllers/deleter"
 	diskmakerControllerLv "github.com/openshift/local-storage-operator/pkg/diskmaker/controllers/lv"
 	diskmakerControllerLvSet "github.com/openshift/local-storage-operator/pkg/diskmaker/controllers/lvset"
 	"github.com/openshift/local-storage-operator/pkg/localmetrics"
@@ -120,15 +119,6 @@ func startManager(cmd *cobra.Command, args []string) error {
 		getRuntimeConfig(diskmakerControllerLvSet.ComponentName, mgr),
 	).WithManager(mgr); err != nil {
 		klog.ErrorS(err, "unable to create LocalVolumeSet diskmaker controller")
-		return err
-	}
-
-	if err = diskmakerControllerDeleter.NewDeleteReconciler(
-		mgr.GetClient(),
-		&provDeleter.CleanupStatusTracker{ProcTable: provDeleter.NewProcTable()},
-		getRuntimeConfig(diskmakerControllerDeleter.ComponentName, mgr),
-	).WithManager(mgr); err != nil {
-		klog.ErrorS(err, "unable to create Deleter diskmaker controller: %v")
 		return err
 	}
 

@@ -95,7 +95,7 @@ func GetProvisionedByValue(node corev1.Node) string {
 	return fmt.Sprintf("local-volume-provisioner-%v", node.Name)
 }
 
-func PVMatchesProvisioner(pv corev1.PersistentVolume, provisionerName string) bool {
+func PVMatchesProvisioner(pv *corev1.PersistentVolume, provisionerName string) bool {
 	PVAnnotation, found := pv.Annotations[provCommon.AnnProvisionedBy]
 	if !found {
 		klog.V(4).InfoS("PV annotation not found - skipping.", "pvName", pv.GetName(), "provisionerName", provisionerName)
