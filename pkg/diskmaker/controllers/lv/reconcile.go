@@ -13,6 +13,7 @@ import (
 
 	localv1 "github.com/openshift/local-storage-operator/api/v1"
 	"github.com/openshift/local-storage-operator/pkg/common"
+	"github.com/openshift/local-storage-operator/pkg/diskmaker"
 	"github.com/openshift/local-storage-operator/pkg/internal"
 	"github.com/openshift/local-storage-operator/pkg/localmetrics"
 	corev1 "k8s.io/api/core/v1"
@@ -321,6 +322,16 @@ func (r *LocalVolumeReconciler) Reconcile(ctx context.Context, request ctrl.Requ
 	// Delete PV's before creating new ones
 	klog.InfoS("Looking for released PVs to cleanup", "namespace", request.Namespace, "name", request.Name)
 	r.deleter.DeletePVs()
+
+	// Cleanup symlinks for deleted PV's
+	klog.InfoS("Looking for symlinks to cleanup", "namespace", request.Namespace, "name", request.Name)
+	err = common.CleanupSymlinks(r.Client, r.runtimeConfig)
+	if err != nil {
+		msg := fmt.Sprintf("failed to cleanup symlinks: %v", err)
+		r.eventSync.Report(r.localVolume, newDiskEvent(diskmaker.ErrorRemovingSymLink, msg, "", corev1.EventTypeWarning))
+		klog.Error(msg)
+		return ctrl.Result{}, err
+	}
 
 	// don't provision for deleted lvs
 	if !lv.DeletionTimestamp.IsZero() {

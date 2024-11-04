@@ -9,6 +9,7 @@ import (
 	provCommon "sigs.k8s.io/sig-storage-local-static-provisioner/pkg/common"
 
 	localv1 "github.com/openshift/local-storage-operator/api/v1"
+	localv1alpha1 "github.com/openshift/local-storage-operator/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 )
 
@@ -58,6 +59,9 @@ const (
 	// LocalVolumeProtectionFinalizer is set to ensure the provisioner daemonset and owning object stick around long
 	// enough to handle the PV reclaim policy.
 	LocalVolumeProtectionFinalizer = "storage.openshift.com/local-volume-protection"
+	// LSOSymlinkDeleterFinalizer is set to ensure diskmaker has a chance
+	// to remove the symlink used by the PV before it is deleted.
+	LSOSymlinkDeleterFinalizer = "storage.openshift.com/lso-symlink-deleter"
 )
 
 // GetDiskMakerImage returns the image to be used for diskmaker daemonset
@@ -87,6 +91,11 @@ func GetLocalDiskLocationPath() string {
 // LocalVolumeKey returns key for the localvolume
 func LocalVolumeKey(lv *localv1.LocalVolume) string {
 	return fmt.Sprintf("%s/%s", lv.Namespace, lv.Name)
+}
+
+// LocalVolumeSetKey returns key for the localvolumeset
+func LocalVolumeSetKey(lvs *localv1alpha1.LocalVolumeSet) string {
+	return fmt.Sprintf("%s/%s", lvs.Namespace, lvs.Name)
 }
 
 // GetProvisionedByValue is the the annotation that indicates which node a PV was originally provisioned on

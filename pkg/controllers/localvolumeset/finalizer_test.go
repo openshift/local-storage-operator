@@ -13,6 +13,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
@@ -286,7 +287,7 @@ func TestPVProtectionFinalizer(t *testing.T) {
 				assert.Truef(t, errors.IsNotFound(err), "expected lvset to be deleted")
 			} else {
 				assert.Nilf(t, err, "expected lvset to be found via fake client")
-				exists := common.ContainsFinalizer(lvSet.ObjectMeta, common.LocalVolumeProtectionFinalizer)
+				exists := controllerutil.ContainsFinalizer(lvSet, common.LocalVolumeProtectionFinalizer)
 				assert.Equalf(t, result.expectFinalizer, exists, "expect finalizer result to match for lv: %q", lvSet.Name)
 			}
 
