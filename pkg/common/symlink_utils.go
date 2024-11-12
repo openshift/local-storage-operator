@@ -98,10 +98,16 @@ func deleteSymlink(pv *corev1.PersistentVolume) error {
 // and then removes the finalizer to allow the PV deletion to complete.
 func CleanupSymlinks(c client.Client, r *provCommon.RuntimeConfig) error {
 	for _, pv := range r.Cache.ListPVs() {
-		if pv.Status.Phase != corev1.VolumeReleased {
+		// Only process deleted volumes
+		if pv.DeletionTimestamp.IsZero() {
 			continue
 		}
-		if pv.DeletionTimestamp.IsZero() {
+		// Only process Released or Available volumes.
+		// LSO will release all available PV's if the LV or LVS
+		// is deleted, but we still need to cleanup and remove
+		// the finalizer if a user deletes an available PV.
+		if pv.Status.Phase != corev1.VolumeReleased &&
+			pv.Status.Phase != corev1.VolumeAvailable {
 			continue
 		}
 		if !hasSymlinkFinalizer(pv) {
