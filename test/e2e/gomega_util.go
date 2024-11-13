@@ -176,7 +176,7 @@ func consumePV(t *testing.T, ctx *framework.Context, pv corev1.PersistentVolume)
 					Containers: []corev1.Container{
 						{
 							Name:    "busybox",
-							Image:   "gcr.io/google_containers/busybox",
+							Image:   framework.BusyBoxImage,
 							Command: []string{"/bin/sh", "-c"},
 							Args: []string{
 								"dd if=/dev/random of=/tmp/random.img bs=512 count=1",     // create a new file named random.img
