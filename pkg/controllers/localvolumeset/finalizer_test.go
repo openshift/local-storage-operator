@@ -18,10 +18,7 @@ import (
 )
 
 func TestPVProtectionFinalizer(t *testing.T) {
-	// finalizer should be removed only if and only if:-
-	// - no PVs owned by the localvolumeset are a in "Bound" state
-
-	// test table definition:
+	// finalizer should be removed only if no PVs are owned by the localvolumeset
 
 	// an association between a localVolumeSet and expectedFinalizers given
 	// a list of PVs in various states.
@@ -149,13 +146,8 @@ func TestPVProtectionFinalizer(t *testing.T) {
 		},
 		// no bound pvs, no deletion timestamp, expectFinalizer to be created
 		{
-			desc: "2a: deletion unblocked, simple",
-			existingPVs: []corev1.PersistentVolume{
-				// no bound
-				newPV(newLV(false, nameA), corev1.VolumeAvailable),
-				newPV(newLV(false, nameA), corev1.VolumeFailed),
-				newPV(newLV(false, nameA), corev1.VolumePending),
-			},
+			desc:        "2a: deletion unblocked, simple",
+			existingPVs: []corev1.PersistentVolume{},
 			lvSetResults: []lvSetResult{
 				{
 					lvSet:           newLV(true, nameA),
@@ -174,13 +166,11 @@ func TestPVProtectionFinalizer(t *testing.T) {
 				// has bound
 				newPV(newLV(false, nameB), corev1.VolumeAvailable),
 				newPV(newLV(false, nameB), corev1.VolumeBound),
-				// no bound
-				newPV(newLV(false, nameC), corev1.VolumeAvailable),
 			},
 			lvSetResults: []lvSetResult{
 				{
 					lvSet:           newLV(true, nameA),
-					expectFinalizer: false,
+					expectFinalizer: true,
 				},
 				{
 					lvSet:           newLV(true, nameB),
@@ -233,7 +223,7 @@ func TestPVProtectionFinalizer(t *testing.T) {
 				},
 				{
 					lvSet:           newLV(true, nameB),
-					expectFinalizer: false,
+					expectFinalizer: true,
 				},
 				{
 					lvSet:           newLV(true, nameC),
