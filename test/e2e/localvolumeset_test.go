@@ -4,6 +4,7 @@ import (
 	"context"
 	goctx "context"
 	"fmt"
+	"path"
 	"testing"
 	"time"
 
@@ -15,6 +16,7 @@ import (
 
 	localv1 "github.com/openshift/local-storage-operator/api/v1"
 	localv1alpha1 "github.com/openshift/local-storage-operator/api/v1alpha1"
+	"github.com/openshift/local-storage-operator/pkg/common"
 	framework "github.com/openshift/local-storage-operator/test/framework"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
@@ -445,6 +447,9 @@ func LocalVolumeSetTest(ctx *framework.TestCtx, cleanupFuncs *[]cleanupFn) func(
 			return false
 		}).Should(gomega.BeTrue(), "verifying LocalVolumeSet has been deleted", twentyToFifty.Name)
 
+		// check for leftover symlinks before cleanup
+		symLinkPath := path.Join(common.GetLocalDiskLocationPath(), twentyToFifty.Spec.StorageClassName)
+		checkForSymlinks(t, ctx, nodeEnv, symLinkPath)
 	}
 
 }
