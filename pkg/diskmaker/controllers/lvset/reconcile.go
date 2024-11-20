@@ -109,7 +109,16 @@ func (r *LocalVolumeSetReconciler) Reconcile(ctx context.Context, request ctrl.R
 
 	// Cleanup symlinks for deleted PV's
 	klog.InfoS("Looking for symlinks to cleanup", "namespace", request.Namespace, "name", request.Name)
-	err = common.CleanupSymlinks(r.Client, r.runtimeConfig)
+	ownerLabels := map[string]string{
+		common.PVOwnerKindLabel:      localv1.LocalVolumeSetKind,
+		common.PVOwnerNamespaceLabel: lvset.Namespace,
+		common.PVOwnerNameLabel:      lvset.Name,
+	}
+	err = common.CleanupSymlinks(r.Client, r.runtimeConfig, ownerLabels,
+		func() bool {
+			// Only delete the symlink if the owner LVSet is deleted.
+			return !lvset.DeletionTimestamp.IsZero()
+		})
 	if err != nil {
 		msg := fmt.Sprintf("failed to cleanup symlinks: %v", err)
 		r.eventReporter.Report(lvset, newDiskEvent(diskmaker.ErrorRemovingSymLink, msg, "", corev1.EventTypeWarning))

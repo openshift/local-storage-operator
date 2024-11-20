@@ -93,11 +93,38 @@ func deleteSymlink(pv *corev1.PersistentVolume) error {
 	return nil
 }
 
+func pvHasLabels(pv *corev1.PersistentVolume, labels map[string]string) bool {
+	for key, value := range labels {
+		v, found := pv.Labels[key]
+		if !found || v != value {
+			return false
+		}
+	}
+	return true
+}
+
+type ConditionalSymlinkRemoval func() bool
+
 // CleanupSymlinks processes deleted PersistentVolumes with the
 // storage.openshift.com/lso-symlink-deleter finalizer, removes the symlink,
 // and then removes the finalizer to allow the PV deletion to complete.
-func CleanupSymlinks(c client.Client, r *provCommon.RuntimeConfig) error {
+// The ownerLabels arg allows the caller to only process PV's with those labels.
+// The shouldDeleteSymlinkFnArg callback allows the caller to selectively remove
+// symlinks for a subset of PV's but still remove the finalizer for all of them.
+func CleanupSymlinks(c client.Client, r *provCommon.RuntimeConfig, ownerLabels map[string]string, shouldDeleteSymlinkFnArg ConditionalSymlinkRemoval) error {
+	// If shouldDeleteSymlinkFnArg is nil, default to always returning true.
+	var shouldDeleteSymlinkFn ConditionalSymlinkRemoval
+	if shouldDeleteSymlinkFnArg == nil {
+		shouldDeleteSymlinkFn = func() bool { return true }
+	} else {
+		shouldDeleteSymlinkFn = shouldDeleteSymlinkFnArg
+	}
+
 	for _, pv := range r.Cache.ListPVs() {
+		// Only process PV's with the provided owner labels.
+		if !pvHasLabels(pv, ownerLabels) {
+			continue
+		}
 		// Only process deleted volumes
 		if pv.DeletionTimestamp.IsZero() {
 			continue
@@ -113,11 +140,13 @@ func CleanupSymlinks(c client.Client, r *provCommon.RuntimeConfig) error {
 		if !hasSymlinkFinalizer(pv) {
 			continue
 		}
-		err := deleteSymlink(pv)
-		if err != nil {
-			return err
+		if shouldDeleteSymlinkFn() {
+			err := deleteSymlink(pv)
+			if err != nil {
+				return err
+			}
 		}
-		err = removeSymlinkFinalizer(c, pv)
+		err := removeSymlinkFinalizer(c, pv)
 		if err != nil {
 			return err
 		}
