@@ -25,6 +25,7 @@ func TestPVProtectionFinalizer(t *testing.T) {
 	type lvSetResult struct {
 		lvSet           localv1alpha1.LocalVolumeSet
 		expectFinalizer bool
+		expectErr       bool
 	}
 
 	// knownResult defines one testCase
@@ -171,10 +172,12 @@ func TestPVProtectionFinalizer(t *testing.T) {
 				{
 					lvSet:           newLV(true, nameA),
 					expectFinalizer: true,
+					expectErr:       true,
 				},
 				{
 					lvSet:           newLV(true, nameB),
 					expectFinalizer: true,
+					expectErr:       true,
 				},
 				{
 					lvSet:           newLV(true, nameC),
@@ -197,6 +200,7 @@ func TestPVProtectionFinalizer(t *testing.T) {
 				{
 					lvSet:           newLV(true, nameA),
 					expectFinalizer: true,
+					expectErr:       true,
 				},
 			},
 		},
@@ -220,20 +224,23 @@ func TestPVProtectionFinalizer(t *testing.T) {
 				{
 					lvSet:           newLV(true, nameA),
 					expectFinalizer: true,
+					expectErr:       true,
 				},
 				{
 					lvSet:           newLV(true, nameB),
 					expectFinalizer: true,
+					expectErr:       true,
 				},
 				{
 					lvSet:           newLV(true, nameC),
 					expectFinalizer: true,
+					expectErr:       true,
 				},
 			},
 		},
 		// no bound pvs, no deletion timestamp, expectFinalizer to be created
 		{
-			desc: "3c: deletion blocked,  released PV",
+			desc: "3c: deletion blocked, released PV",
 			existingPVs: []corev1.PersistentVolume{
 				// all types
 				newPV(newLV(false, nameA), corev1.VolumeAvailable),
@@ -245,6 +252,7 @@ func TestPVProtectionFinalizer(t *testing.T) {
 				{
 					lvSet:           newLV(true, nameA),
 					expectFinalizer: true,
+					expectErr:       true,
 				},
 			},
 		},
@@ -269,7 +277,11 @@ func TestPVProtectionFinalizer(t *testing.T) {
 
 			// reconcile successfully
 			_, err := reconciler.reconcile(context.TODO(), reconcile.Request{NamespacedName: lvSetKey})
-			assert.Nilf(t, err, "expected reconciler to reconciler successfully")
+			if result.expectErr {
+				assert.NotNilf(t, err, "expected reconciler to return an error")
+			} else {
+				assert.Nilf(t, err, "expected reconciler to reconciler successfully")
+			}
 
 			lvSet := &localv1alpha1.LocalVolumeSet{}
 			err = reconciler.Client.Get(context.TODO(), lvSetKey, lvSet)
