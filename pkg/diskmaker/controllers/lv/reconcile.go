@@ -335,7 +335,7 @@ func (r *LocalVolumeReconciler) Reconcile(ctx context.Context, request ctrl.Requ
 
 	// don't provision for deleted lvs
 	if !lv.DeletionTimestamp.IsZero() {
-		return ctrl.Result{}, nil
+		return ctrl.Result{Requeue: true, RequeueAfter: fastRequeueTime}, nil
 	}
 
 	klog.InfoS("Looking for valid block devices", "namespace", request.Namespace, "name", request.Name)

@@ -45,6 +45,8 @@ func (r *LocalVolumeSetReconciler) syncFinalizer(lvSet *localv1alpha1.LocalVolum
 				}
 			}
 			klog.InfoS("owned PVs found, not removing finalizer", "pvNames", pvNames)
+			msg := fmt.Sprintf("localvolumeset %s has owned persistentvolumes in use", common.LocalVolumeSetKey(lvSet))
+			return fmt.Errorf(msg)
 		}
 	}
 
