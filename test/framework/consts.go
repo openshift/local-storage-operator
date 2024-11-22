@@ -20,4 +20,6 @@ const (
 	BuildScriptDir = BuildDir + filePathSep + "bin"
 	DeployDir      = "deploy"
 	CRDsDir        = DeployDir + filePathSep + "crds"
+
+	BusyBoxImage = "registry.k8s.io/e2e-test-images/busybox:1.36.1-1"
 )

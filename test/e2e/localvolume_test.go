@@ -5,6 +5,7 @@ import (
 	goctx "context"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"reflect"
 	"regexp"
@@ -34,8 +35,9 @@ import (
 )
 
 var (
-	awsEBSNitroRegex  = "^[cmr]5.*|t3|z1d"
-	labelInstanceType = "beta.kubernetes.io/instance-type"
+	awsEBSNitroRegex   = "^[cmr]5.*|t3|z1d"
+	labelInstanceType  = "beta.kubernetes.io/instance-type"
+	lvStorageClassName = "test-local-sc"
 )
 
 func LocalVolumeTest(ctx *framework.TestCtx, cleanupFuncs *[]cleanupFn) func(*testing.T) {
@@ -224,6 +226,9 @@ func LocalVolumeTest(ctx *framework.TestCtx, cleanupFuncs *[]cleanupFn) func(*te
 			return false
 		}).Should(gomega.BeTrue(), "verifying LocalVolume has been deleted", localVolume.Name)
 
+		// check for leftover symlinks before cleanup
+		symLinkPath := path.Join(common.GetLocalDiskLocationPath(), lvStorageClassName)
+		checkForSymlinks(t, ctx, nodeEnv, symLinkPath)
 	}
 
 }
@@ -534,7 +539,7 @@ func getFakeLocalVolume(selectedNode v1.Node, selectedDisk, namespace string) *l
 			},
 			StorageClassDevices: []localv1.StorageClassDevice{
 				{
-					StorageClassName: "test-local-sc",
+					StorageClassName: lvStorageClassName,
 					DevicePaths:      []string{selectedDisk},
 				},
 			},

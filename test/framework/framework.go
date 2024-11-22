@@ -28,9 +28,11 @@ import (
 	"time"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
+	"go.uber.org/zap/zapcore"
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
 	log "github.com/sirupsen/logrus"
+	zaplog "go.uber.org/zap"
 	extscheme "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset/scheme"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -40,8 +42,9 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/restmapper"
 	"k8s.io/client-go/tools/clientcmd"
-	"sigs.k8s.io/controller-runtime/pkg/client"
+	ctrl "sigs.k8s.io/controller-runtime"
 	dynclient "sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 )
 
 var (
@@ -122,6 +125,13 @@ func newFramework(opts *frameworkOpts) (*Framework, error) {
 		return nil, fmt.Errorf("failed to add api extensions scheme to runtime scheme: %w", err)
 	}
 
+	zapopts := zap.Options{
+		Development: true,
+		ZapOpts:     []zaplog.Option{zaplog.AddCaller()},
+		TimeEncoder: zapcore.ISO8601TimeEncoder,
+	}
+	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&zapopts)))
+
 	cachedDiscoveryClient := cached.NewMemCacheClient(kubeclient.Discovery())
 	restMapper := restmapper.NewDeferredDiscoveryRESTMapper(cachedDiscoveryClient)
 	restMapper.Reset()
@@ -158,11 +168,11 @@ type addToSchemeFunc func(*runtime.Scheme) error
 // The List object is needed because the CRD has not always been fully registered
 // by the time this function is called. If the CRD takes more than 5 seconds to
 // become ready, this function throws an error
-func AddToFrameworkScheme(addToScheme addToSchemeFunc, obj client.ObjectList) error {
+func AddToFrameworkScheme(addToScheme addToSchemeFunc, obj dynclient.ObjectList) error {
 	return Global.addToScheme(addToScheme, obj)
 }
 
-func (f *Framework) addToScheme(addToScheme addToSchemeFunc, obj client.ObjectList) error {
+func (f *Framework) addToScheme(addToScheme addToSchemeFunc, obj dynclient.ObjectList) error {
 	f.schemeMutex.Lock()
 	defer f.schemeMutex.Unlock()
 

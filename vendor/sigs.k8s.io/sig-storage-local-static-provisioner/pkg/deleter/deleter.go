@@ -72,6 +72,11 @@ func (d *Deleter) DeletePVs() {
 		if pv.Status.Phase != v1.VolumeReleased {
 			continue
 		}
+		// Do not clean PV's that were already deleted,
+		// they may disappear at any time.
+		if !pv.DeletionTimestamp.IsZero() {
+			continue
+		}
 		name := pv.Name
 		switch pv.Spec.PersistentVolumeReclaimPolicy {
 		case v1.PersistentVolumeReclaimRetain:
@@ -358,7 +363,7 @@ func (d *Deleter) runJob(pv *v1.PersistentVolume, volMode v1.PersistentVolumeMod
 	if d.JobContainerImage == "" {
 		return fmt.Errorf("cannot run cleanup job without specifying job image name in the environment variable")
 	}
-	job, err := NewCleanupJob(pv, volMode, d.JobContainerImage, d.Node.Name, d.Namespace, mountPath, config)
+	job, err := NewCleanupJob(pv, volMode, d.JobContainerImage, d.JobTolerations, d.Node.Name, d.Namespace, mountPath, config)
 	if err != nil {
 		return err
 	}

@@ -13,20 +13,19 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
 func TestPVProtectionFinalizer(t *testing.T) {
-	// finalizer should be removed only if and only if:-
-	// - no PVs owned by the localvolumeset are a in "Bound" state
-
-	// test table definition:
+	// finalizer should be removed only if no PVs are owned by the localvolumeset
 
 	// an association between a localVolumeSet and expectedFinalizers given
 	// a list of PVs in various states.
 	type lvSetResult struct {
 		lvSet           localv1alpha1.LocalVolumeSet
 		expectFinalizer bool
+		expectErr       bool
 	}
 
 	// knownResult defines one testCase
@@ -148,13 +147,8 @@ func TestPVProtectionFinalizer(t *testing.T) {
 		},
 		// no bound pvs, no deletion timestamp, expectFinalizer to be created
 		{
-			desc: "2a: deletion unblocked, simple",
-			existingPVs: []corev1.PersistentVolume{
-				// no bound
-				newPV(newLV(false, nameA), corev1.VolumeAvailable),
-				newPV(newLV(false, nameA), corev1.VolumeFailed),
-				newPV(newLV(false, nameA), corev1.VolumePending),
-			},
+			desc:        "2a: deletion unblocked, simple",
+			existingPVs: []corev1.PersistentVolume{},
 			lvSetResults: []lvSetResult{
 				{
 					lvSet:           newLV(true, nameA),
@@ -173,17 +167,17 @@ func TestPVProtectionFinalizer(t *testing.T) {
 				// has bound
 				newPV(newLV(false, nameB), corev1.VolumeAvailable),
 				newPV(newLV(false, nameB), corev1.VolumeBound),
-				// no bound
-				newPV(newLV(false, nameC), corev1.VolumeAvailable),
 			},
 			lvSetResults: []lvSetResult{
 				{
 					lvSet:           newLV(true, nameA),
-					expectFinalizer: false,
+					expectFinalizer: true,
+					expectErr:       true,
 				},
 				{
 					lvSet:           newLV(true, nameB),
 					expectFinalizer: true,
+					expectErr:       true,
 				},
 				{
 					lvSet:           newLV(true, nameC),
@@ -206,6 +200,7 @@ func TestPVProtectionFinalizer(t *testing.T) {
 				{
 					lvSet:           newLV(true, nameA),
 					expectFinalizer: true,
+					expectErr:       true,
 				},
 			},
 		},
@@ -229,20 +224,23 @@ func TestPVProtectionFinalizer(t *testing.T) {
 				{
 					lvSet:           newLV(true, nameA),
 					expectFinalizer: true,
+					expectErr:       true,
 				},
 				{
 					lvSet:           newLV(true, nameB),
-					expectFinalizer: false,
+					expectFinalizer: true,
+					expectErr:       true,
 				},
 				{
 					lvSet:           newLV(true, nameC),
 					expectFinalizer: true,
+					expectErr:       true,
 				},
 			},
 		},
 		// no bound pvs, no deletion timestamp, expectFinalizer to be created
 		{
-			desc: "3c: deletion blocked,  released PV",
+			desc: "3c: deletion blocked, released PV",
 			existingPVs: []corev1.PersistentVolume{
 				// all types
 				newPV(newLV(false, nameA), corev1.VolumeAvailable),
@@ -254,6 +252,7 @@ func TestPVProtectionFinalizer(t *testing.T) {
 				{
 					lvSet:           newLV(true, nameA),
 					expectFinalizer: true,
+					expectErr:       true,
 				},
 			},
 		},
@@ -278,7 +277,11 @@ func TestPVProtectionFinalizer(t *testing.T) {
 
 			// reconcile successfully
 			_, err := reconciler.reconcile(context.TODO(), reconcile.Request{NamespacedName: lvSetKey})
-			assert.Nilf(t, err, "expected reconciler to reconciler successfully")
+			if result.expectErr {
+				assert.NotNilf(t, err, "expected reconciler to return an error")
+			} else {
+				assert.Nilf(t, err, "expected reconciler to reconciler successfully")
+			}
 
 			lvSet := &localv1alpha1.LocalVolumeSet{}
 			err = reconciler.Client.Get(context.TODO(), lvSetKey, lvSet)
@@ -286,7 +289,7 @@ func TestPVProtectionFinalizer(t *testing.T) {
 				assert.Truef(t, errors.IsNotFound(err), "expected lvset to be deleted")
 			} else {
 				assert.Nilf(t, err, "expected lvset to be found via fake client")
-				exists := common.ContainsFinalizer(lvSet.ObjectMeta, common.LocalVolumeProtectionFinalizer)
+				exists := controllerutil.ContainsFinalizer(lvSet, common.LocalVolumeProtectionFinalizer)
 				assert.Equalf(t, result.expectFinalizer, exists, "expect finalizer result to match for lv: %q", lvSet.Name)
 			}
 

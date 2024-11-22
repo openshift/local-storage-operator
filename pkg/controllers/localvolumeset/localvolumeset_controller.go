@@ -87,9 +87,9 @@ func (r *LocalVolumeSetReconciler) reconcile(ctx context.Context, request reconc
 	r.LvSetMap.RegisterStorageClassOwner(lvSet.Spec.StorageClassName, request.NamespacedName)
 
 	// handle the LocalVolumeSet finalizer
-	err = r.syncFinalizer(*lvSet)
+	err = r.syncFinalizer(lvSet)
 	if err != nil {
-		return reconcile.Result{}, fmt.Errorf("failed to update localvolumeset finalizer: %w", err)
+		return ctrl.Result{}, fmt.Errorf("failed to update localvolumeset finalizer: %w", err)
 	}
 
 	// The diskmaker daemonset, local-staic-provisioner daemonset and configmap are created in pkg/daemon

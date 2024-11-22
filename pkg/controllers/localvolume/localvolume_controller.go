@@ -104,7 +104,11 @@ func (r *LocalVolumeReconciler) Reconcile(ctx context.Context, request ctrl.Requ
 		r.LvMap.RegisterStorageClassOwner(storageClassDeviceSet.StorageClassName, request.NamespacedName)
 	}
 
-	r.syncLocalVolumeProvider(ctx, localStorageProvider)
+	err = r.syncLocalVolumeProvider(ctx, localStorageProvider)
+	if err != nil {
+		return ctrl.Result{Requeue: true}, err
+	}
+
 	return ctrl.Result{}, nil
 }
 
@@ -214,23 +218,30 @@ func (r *LocalVolumeReconciler) addSuccessCondition(lv *localv1.LocalVolume) *lo
 
 func (r *LocalVolumeReconciler) cleanupLocalVolumeDeployment(ctx context.Context, lv *localv1.LocalVolume) error {
 	klog.InfoS("Deleting localvolume", "Namespace-Name", common.LocalVolumeKey(lv))
-	boundPVs, releasedPVs, err := common.GetBoundAndReleasedPVs(lv, r.Client)
+	// Release all remaining 'Available' PV's owned by the LV
+	err := common.ReleaseAvailablePVs(lv, r.Client)
+	if err != nil {
+		msg := fmt.Sprintf("error releasing unbound persistent volumes for localvolume %s: %v", common.LocalVolumeKey(lv), err)
+		r.apiClient.recordEvent(lv, corev1.EventTypeWarning, releasingPersistentVolumesFailed, msg)
+		return fmt.Errorf(msg)
+	}
+
+	// finalizer should be unset only when no owned PVs are found
+	ownedPVs, err := common.GetOwnedPVs(lv, r.Client)
 	if err != nil {
 		msg := fmt.Sprintf("error listing persistent volumes for localvolume %s: %v", common.LocalVolumeKey(lv), err)
 		r.apiClient.recordEvent(lv, corev1.EventTypeWarning, listingPersistentVolumesFailed, msg)
 		return fmt.Errorf(msg)
 	}
 
-	// if we add support for other reclaimPolicys we can avoid appending releasedPVs here only bound PVs
-	pendingPVs := append(boundPVs, releasedPVs...)
-	if len(pendingPVs) > 0 {
+	if len(ownedPVs) > 0 {
 		pvNames := ""
-		for _, pv := range pendingPVs {
+		for _, pv := range ownedPVs {
 			pvNames += fmt.Sprintf(" %v", pv.Name)
 		}
 
-		klog.InfoS("bound/released PVs found, not removing finalizer", "pvNames", pvNames)
-		msg := fmt.Sprintf("localvolume %s has bound/released persistentvolumes in use", common.LocalVolumeKey(lv))
+		klog.InfoS("owned PVs found, not removing finalizer", "pvNames", pvNames)
+		msg := fmt.Sprintf("localvolume %s has owned persistentvolumes in use", common.LocalVolumeKey(lv))
 		r.apiClient.recordEvent(lv, corev1.EventTypeWarning, localVolumeDeletionFailed, msg)
 		return fmt.Errorf(msg)
 	}

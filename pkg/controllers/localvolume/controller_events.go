@@ -1,8 +1,9 @@
 package localvolume
 
 const (
-	localVolumeUpdateFailed        = "LocalVolumeUpdateFailed"
-	listingPersistentVolumesFailed = "ListingPersistentVolumeFailed"
-	deletingStorageClassFailed     = "DeletingStorageClassFailed"
-	localVolumeDeletionFailed      = "LocalVolumeDeletionFailed"
+	localVolumeUpdateFailed          = "LocalVolumeUpdateFailed"
+	releasingPersistentVolumesFailed = "ReleasingPersistentVolumeFailed"
+	listingPersistentVolumesFailed   = "ListingPersistentVolumeFailed"
+	deletingStorageClassFailed       = "DeletingStorageClassFailed"
+	localVolumeDeletionFailed        = "LocalVolumeDeletionFailed"
 )

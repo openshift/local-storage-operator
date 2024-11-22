@@ -36,6 +36,8 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/selection"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
 	corelisters "k8s.io/client-go/listers/core/v1"
@@ -106,6 +108,8 @@ type UserConfig struct {
 	Namespace string
 	// JobContainerImage of container to use for jobs (optional)
 	JobContainerImage string
+	// JobTolerations defines the tolerations to apply to jobs (optional)
+	JobTolerations []v1.Toleration
 	// MinResyncPeriod is minimum resync period. Resync period in reflectors
 	// will be random between MinResyncPeriod and 2*MinResyncPeriod.
 	MinResyncPeriod metav1.Duration
@@ -203,6 +207,9 @@ type ProvisionerConfiguration struct {
 	// default is false.
 	// +optional
 	UseJobForCleaning bool `json:"useJobForCleaning" yaml:"useJobForCleaning"`
+	// JobTolerations defines the tolerations to apply to jobs
+	// +optional
+	JobTolerations []v1.Toleration `json:"jobTolerations" yaml:"jobTolerations"`
 	// MinResyncPeriod is minimum resync period. Resync period in reflectors
 	// will be random between MinResyncPeriod and 2*MinResyncPeriod.
 	MinResyncPeriod metav1.Duration `json:"minResyncPeriod" yaml:"minResyncPeriod"`
@@ -395,6 +402,7 @@ func UserConfigFromProvisionerConfig(node *v1.Node, namespace, jobImage string, 
 		UseNodeNameOnly:   config.UseNodeNameOnly,
 		Namespace:         namespace,
 		JobContainerImage: jobImage,
+		JobTolerations:    config.JobTolerations,
 		LabelsForPV:       config.LabelsForPV,
 		SetPVOwnerRef:     config.SetPVOwnerRef,
 	}
@@ -488,10 +496,20 @@ func GetVolumeMode(volUtil util.VolumeUtil, fullPath string) (v1.PersistentVolum
 }
 
 // NodeExists checks to see if a Node exists in the Indexer of a NodeLister.
+// It tries to get the node and if it fails, it uses the well known label
+// `kubernetes.io/hostname` to find the Node.
 func NodeExists(nodeLister corelisters.NodeLister, nodeName string) (bool, error) {
 	_, err := nodeLister.Get(nodeName)
 	if errors.IsNotFound(err) {
-		return false, nil
+		req, err := labels.NewRequirement(NodeLabelKey, selection.Equals, []string{nodeName})
+		if err != nil {
+			return false, err
+		}
+		nodes, err := nodeLister.List(labels.NewSelector().Add(*req))
+		if err != nil {
+			return false, err
+		}
+		return len(nodes) > 0, nil
 	}
 	return err == nil, err
 }

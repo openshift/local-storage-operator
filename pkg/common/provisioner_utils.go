@@ -185,6 +185,9 @@ func CreateLocalPV(
 	}
 	newPV := provCommon.CreateLocalPVSpec(localPVConfig)
 
+	// Add finalizer for diskmaker symlink cleanup
+	controllerutil.AddFinalizer(newPV, LSOSymlinkDeleterFinalizer)
+
 	klog.InfoS("creating PV", "pvName", pvName)
 	opRes, err := controllerutil.CreateOrUpdate(context.TODO(), client, existingPV, func() error {
 		if existingPV.CreationTimestamp.IsZero() {

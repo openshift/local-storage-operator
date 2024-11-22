@@ -308,6 +308,7 @@ spec:
             - watch
             - create
             - delete
+            - update
           serviceAccountName: local-storage-operator
         - rules:
           - apiGroups:

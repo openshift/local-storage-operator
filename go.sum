@@ -585,8 +585,8 @@ sigs.k8s.io/kube-storage-version-migrator v0.0.6-0.20230721195810-5c8923c5ff96 h
 sigs.k8s.io/kube-storage-version-migrator v0.0.6-0.20230721195810-5c8923c5ff96/go.mod h1:EOBQyBowOUsd7U4CJnMHNE0ri+zCXyouGdLwC/jZU+I=
 sigs.k8s.io/sig-storage-lib-external-provisioner/v6 v6.3.0 h1:IKsKAnscMyIOqyl8s8V7guTcx0QBEa6OT57EPgAgpmM=
 sigs.k8s.io/sig-storage-lib-external-provisioner/v6 v6.3.0/go.mod h1:DhZ52sQMJHW21+JXyA2LRUPRIxKnrNrwh+QFV+2tVA4=
-sigs.k8s.io/sig-storage-local-static-provisioner v0.0.0-20240328032358-4f81db77908f h1:Hq89aOzkvgDKsKMomdzREf299n6RgzWtaVfPEO0oSqU=
-sigs.k8s.io/sig-storage-local-static-provisioner v0.0.0-20240328032358-4f81db77908f/go.mod h1:SgluVbtzs5aST/3SAe5YA6npsRRJHNaR8IHq647kdLo=
+sigs.k8s.io/sig-storage-local-static-provisioner v0.0.0-20241119091453-a3790448c974 h1:jvvaAJhGlGHZbUQEMD2pbumrVpiofvXAk6g64bbCQ9Q=
+sigs.k8s.io/sig-storage-local-static-provisioner v0.0.0-20241119091453-a3790448c974/go.mod h1:hZnzZ2IWxwDTYdehDfLGdzl6evEs/lADna/IMrMY/Gs=
 sigs.k8s.io/structured-merge-diff/v4 v4.2.3/go.mod h1:qjx8mGObPmV2aSZepjQjbmb2ihdVs8cGKBraizNC69E=
 sigs.k8s.io/structured-merge-diff/v4 v4.4.1 h1:150L+0vs/8DA78h1u02ooW1/fFq/Lwr+sGiqlzvrtq4=
 sigs.k8s.io/structured-merge-diff/v4 v4.4.1/go.mod h1:N8hJocpFajUSSeSJ9bOZ77VzejKZaXsTtZo4/u7Io08=

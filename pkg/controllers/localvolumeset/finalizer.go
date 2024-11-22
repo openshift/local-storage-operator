@@ -6,34 +6,37 @@ import (
 
 	localv1alpha1 "github.com/openshift/local-storage-operator/api/v1alpha1"
 	"github.com/openshift/local-storage-operator/pkg/common"
-	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/klog/v2"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
-func (r *LocalVolumeSetReconciler) syncFinalizer(lvSet localv1alpha1.LocalVolumeSet) error {
-	lvSetExisting := &localv1alpha1.LocalVolumeSet{}
-	lvSet.DeepCopyInto(lvSetExisting)
+func (r *LocalVolumeSetReconciler) syncFinalizer(lvSet *localv1alpha1.LocalVolumeSet) error {
 	// finalizer should exist and be removed only when deleting
 	setFinalizer := true
 
 	// handle deletion
 	if !lvSet.DeletionTimestamp.IsZero() {
 		klog.Info("deletionTimeStamp found, waiting for 0 bound PVs")
-		// if obect is deleted, finalizer should be unset only when no boundPVs are found
-		boundPVs, releasedPVs, err := common.GetBoundAndReleasedPVs(&lvSet, r.Client)
+
+		// Release all remaining 'Available' PV's owned by the LVS
+		err := common.ReleaseAvailablePVs(lvSet, r.Client)
 		if err != nil {
-			return fmt.Errorf("could not list bound PVs: %w", err)
+			msg := fmt.Sprintf("error releasing unbound persistent volumes for localvolumeset %s: %v", common.LocalVolumeSetKey(lvSet), err)
+			return fmt.Errorf(msg)
 		}
 
-		// if we add support for other reclaimPolicy's we can avoid appending releasedPVs here only bound PVs
-		pendingPVs := append(boundPVs, releasedPVs...)
-		if len(pendingPVs) == 0 {
+		// finalizer should be unset only when no owned PVs are found
+		ownedPVs, err := common.GetOwnedPVs(lvSet, r.Client)
+		if err != nil {
+			return fmt.Errorf("could not list owned PVs: %w", err)
+		}
+
+		if len(ownedPVs) == 0 {
 			setFinalizer = false
-			klog.Info("no bound/released PVs found, removing finalizer")
+			klog.Info("no owned PVs found, removing finalizer")
 		} else {
 			pvNames := ""
-			for i, pv := range pendingPVs {
+			for i, pv := range ownedPVs {
 				pvNames += fmt.Sprintf(" %v", pv.Name)
 				// only print up to 10 PV names
 				if i >= 9 {
@@ -41,19 +44,22 @@ func (r *LocalVolumeSetReconciler) syncFinalizer(lvSet localv1alpha1.LocalVolume
 					break
 				}
 			}
-			klog.InfoS("bound/released PVs found, not removing finalizer", "pvNames", pvNames)
+			klog.InfoS("owned PVs found, not removing finalizer", "pvNames", pvNames)
+			msg := fmt.Sprintf("localvolumeset %s has owned persistentvolumes in use", common.LocalVolumeSetKey(lvSet))
+			return fmt.Errorf(msg)
 		}
 	}
 
+	finalizerUpdated := false
 	if setFinalizer {
-		controllerutil.AddFinalizer(&lvSet, common.LocalVolumeProtectionFinalizer)
+		finalizerUpdated = controllerutil.AddFinalizer(lvSet, common.LocalVolumeProtectionFinalizer)
 	} else {
-		controllerutil.RemoveFinalizer(&lvSet, common.LocalVolumeProtectionFinalizer)
+		finalizerUpdated = controllerutil.RemoveFinalizer(lvSet, common.LocalVolumeProtectionFinalizer)
 	}
 
 	// update finalizer in lvset and make client call only if the value changed
-	if !equality.Semantic.DeepEqual(lvSetExisting, lvSet) {
-		return r.Client.Update(context.TODO(), &lvSet)
+	if finalizerUpdated {
+		return r.Client.Update(context.TODO(), lvSet)
 	}
 
 	return nil

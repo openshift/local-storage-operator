@@ -107,11 +107,30 @@ func (r *LocalVolumeSetReconciler) Reconcile(ctx context.Context, request ctrl.R
 	klog.InfoS("Looking for released PVs to cleanup", "namespace", request.Namespace, "name", request.Name)
 	r.deleter.DeletePVs()
 
+	// Cleanup symlinks for deleted PV's
+	klog.InfoS("Looking for symlinks to cleanup", "namespace", request.Namespace, "name", request.Name)
+	ownerLabels := map[string]string{
+		common.PVOwnerKindLabel:      localv1.LocalVolumeSetKind,
+		common.PVOwnerNamespaceLabel: lvset.Namespace,
+		common.PVOwnerNameLabel:      lvset.Name,
+	}
+	err = common.CleanupSymlinks(r.Client, r.runtimeConfig, ownerLabels,
+		func() bool {
+			// Only delete the symlink if the owner LVSet is deleted.
+			return !lvset.DeletionTimestamp.IsZero()
+		})
+	if err != nil {
+		msg := fmt.Sprintf("failed to cleanup symlinks: %v", err)
+		r.eventReporter.Report(lvset, newDiskEvent(diskmaker.ErrorRemovingSymLink, msg, "", corev1.EventTypeWarning))
+		klog.Error(msg)
+		return ctrl.Result{}, err
+	}
+
 	// don't provision for deleted lvsets
 	if !lvset.DeletionTimestamp.IsZero() {
 		// update metrics for deletion timestamp
 		localmetrics.SetLVSDeletionTimestampMetric(lvset.GetName(), lvset.GetDeletionTimestamp().Unix())
-		return ctrl.Result{}, nil
+		return ctrl.Result{Requeue: true, RequeueAfter: fastRequeueTime}, nil
 	}
 	// since deletion timestamp is notset, clear out its metrics
 	localmetrics.RemoveLVSDeletionTimestampMetric(lvset.GetName())

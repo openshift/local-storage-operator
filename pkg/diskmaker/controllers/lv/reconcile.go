@@ -13,6 +13,7 @@ import (
 
 	localv1 "github.com/openshift/local-storage-operator/api/v1"
 	"github.com/openshift/local-storage-operator/pkg/common"
+	"github.com/openshift/local-storage-operator/pkg/diskmaker"
 	"github.com/openshift/local-storage-operator/pkg/internal"
 	"github.com/openshift/local-storage-operator/pkg/localmetrics"
 	corev1 "k8s.io/api/core/v1"
@@ -322,9 +323,28 @@ func (r *LocalVolumeReconciler) Reconcile(ctx context.Context, request ctrl.Requ
 	klog.InfoS("Looking for released PVs to cleanup", "namespace", request.Namespace, "name", request.Name)
 	r.deleter.DeletePVs()
 
+	// Cleanup symlinks for deleted PV's
+	klog.InfoS("Looking for symlinks to cleanup", "namespace", request.Namespace, "name", request.Name)
+	ownerLabels := map[string]string{
+		common.PVOwnerKindLabel:      localv1.LocalVolumeKind,
+		common.PVOwnerNamespaceLabel: lv.Namespace,
+		common.PVOwnerNameLabel:      lv.Name,
+	}
+	err = common.CleanupSymlinks(r.Client, r.runtimeConfig, ownerLabels,
+		func() bool {
+			// Only delete the symlink if the owner LV is deleted.
+			return !lv.DeletionTimestamp.IsZero()
+		})
+	if err != nil {
+		msg := fmt.Sprintf("failed to cleanup symlinks: %v", err)
+		r.eventSync.Report(r.localVolume, newDiskEvent(diskmaker.ErrorRemovingSymLink, msg, "", corev1.EventTypeWarning))
+		klog.Error(msg)
+		return ctrl.Result{}, err
+	}
+
 	// don't provision for deleted lvs
 	if !lv.DeletionTimestamp.IsZero() {
-		return ctrl.Result{}, nil
+		return ctrl.Result{Requeue: true, RequeueAfter: fastRequeueTime}, nil
 	}
 
 	klog.InfoS("Looking for valid block devices", "namespace", request.Namespace, "name", request.Name)
