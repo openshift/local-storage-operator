@@ -130,7 +130,14 @@ func (r *LocalVolumeSetReconciler) Reconcile(ctx context.Context, request ctrl.R
 	if !lvset.DeletionTimestamp.IsZero() {
 		// update metrics for deletion timestamp
 		localmetrics.SetLVSDeletionTimestampMetric(lvset.GetName(), lvset.GetDeletionTimestamp().Unix())
-		return ctrl.Result{Requeue: true, RequeueAfter: fastRequeueTime}, nil
+		// If there are released PV's for this owner in the cache, use
+		// the fast requeue time, as it implies a cleanup job may be in
+		// progress and we should call DeletePVs() again soon to check
+		// for job completion and to delete the PV.
+		if common.OwnerHasReleasedPVs(r.runtimeConfig, ownerLabels) {
+			requeueTime = fastRequeueTime
+		}
+		return ctrl.Result{Requeue: true, RequeueAfter: requeueTime}, nil
 	}
 	// since deletion timestamp is notset, clear out its metrics
 	localmetrics.RemoveLVSDeletionTimestampMetric(lvset.GetName())
