@@ -305,3 +305,15 @@ func IsLocalVolumeSetPV(pv *corev1.PersistentVolume) bool {
 	ownerKind, found := pv.Labels[PVOwnerKindLabel]
 	return found && ownerKind == localv1.LocalVolumeSetKind
 }
+
+// OwnerHasReleasedPVs returns true if at least one PV in the cache
+// has the provided owner labels and is in the Released phase.
+func OwnerHasReleasedPVs(r *provCommon.RuntimeConfig, ownerLabels map[string]string) bool {
+	for _, pv := range r.Cache.ListPVs() {
+		if pvHasLabels(pv, ownerLabels) &&
+			pv.Status.Phase == corev1.VolumeReleased {
+			return true
+		}
+	}
+	return false
+}
