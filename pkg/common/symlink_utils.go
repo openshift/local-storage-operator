@@ -7,6 +7,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"syscall"
 
 	"github.com/openshift/local-storage-operator/pkg/internal"
 	corev1 "k8s.io/api/core/v1"
@@ -75,8 +76,10 @@ func deleteSymlink(pv *corev1.PersistentVolume) error {
 	// Check if file exists and is a symlink
 	fileInfo, err := os.Lstat(symlink)
 	if err != nil {
-		if os.IsNotExist(err) {
-			return nil
+		if errors.Is(err, os.ErrNotExist) {
+			// If the symlink was already deleted, we may still
+			// need to remove the parent directory.
+			return deleteSymlinkParentDir(symlink)
 		}
 		return fmt.Errorf("failed to lstat %s: %v", symlink, err)
 	}
@@ -86,10 +89,31 @@ func deleteSymlink(pv *corev1.PersistentVolume) error {
 
 	// Remove symlink
 	err = os.Remove(symlink)
-	if err != nil && !os.IsNotExist(err) {
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("error removing symlink %s: %v", symlink, err)
 	}
 
+	// Remove the parent directory if this was the last remaining symlink
+	return deleteSymlinkParentDir(symlink)
+}
+
+// deleteSymlinkParentDir tries to remove the parent directory of the symlink.
+// Don't bother with extra syscalls to check if the directory is empty first,
+// just attempt to remove the directory and return nil if we get ENOTEMPTY.
+// The last symlink to be removed will remove the parent directory with it.
+func deleteSymlinkParentDir(symlink string) error {
+	parentDir := filepath.Dir(symlink)
+	err := os.Remove(parentDir)
+	if err != nil {
+		// Quietly return success if the directory was already
+		// deleted, or if the directory is not yet empty.
+		if errors.Is(err, os.ErrNotExist) ||
+			errors.Is(err, syscall.ENOTEMPTY) {
+			return nil
+		}
+		return fmt.Errorf("error removing symlink dir %s: %v", parentDir, err)
+	}
+	klog.Infof("removed empty symlink directory %s", parentDir)
 	return nil
 }
 
