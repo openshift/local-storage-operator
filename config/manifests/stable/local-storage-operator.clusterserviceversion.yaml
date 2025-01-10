@@ -149,7 +149,7 @@ spec:
     - local storage
   links:
     - name: Documentation
-      url: https://github.com/openshift/local-storage-operator/tree/master/docs
+      url: https://github.com/openshift/local-storage-operator/tree/main/docs
     - name: Source Repository
       url: https://github.com/openshift/local-storage-operator
   version: 4.19.0
