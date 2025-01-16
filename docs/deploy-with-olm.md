@@ -22,14 +22,14 @@ the operator using this method.
 
 
 Run
-`oc apply -f https://raw.githubusercontent.com/openshift/local-storage-operator/master/examples/olm/catalog-create-subscribe.yaml`
+`oc apply -f https://raw.githubusercontent.com/openshift/local-storage-operator/main/examples/olm/catalog-create-subscribe.yaml`
 For Kubernetes substitute `oc` with `kubectl`
 
 ### Create a CR with Node Selector
 
 The following example assumes that each worker node includes a raw disk attached at ``/dev/xvdf`` that we want to allocate for local-storage provisioning.  Of course you can have different devices, or only have disks on a subset of your worker nodes.
 
-Gather the kubernetes hostname value for your nodes, (in our example we're using only worker nodes, you can omit the label selector if you have master nodes you're deploying pods on):
+Gather the kubernetes hostname value for your nodes, (in our example we're using only worker nodes, you can omit the label selector if you have control plane nodes you're deploying pods on):
 
 ```bash
 oc describe no -l node-role.kubernetes.io/worker | grep hostname
