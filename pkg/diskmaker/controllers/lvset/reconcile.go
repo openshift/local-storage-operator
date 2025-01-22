@@ -111,7 +111,7 @@ func (r *LocalVolumeSetReconciler) Reconcile(ctx context.Context, request ctrl.R
 	if !lvset.DeletionTimestamp.IsZero() {
 		// update metrics for deletion timestamp
 		localmetrics.SetLVSDeletionTimestampMetric(lvset.GetName(), lvset.GetDeletionTimestamp().Unix())
-		return ctrl.Result{}, nil
+		return ctrl.Result{Requeue: true, RequeueAfter: fastRequeueTime}, nil
 	}
 	// since deletion timestamp is notset, clear out its metrics
 	localmetrics.RemoveLVSDeletionTimestampMetric(lvset.GetName())
