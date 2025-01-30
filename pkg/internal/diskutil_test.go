@@ -344,6 +344,7 @@ func TestGetPathByID(t *testing.T) {
 	testcases := []struct {
 		label               string
 		blockDevice         BlockDevice
+		existingDeviceId    string
 		fakeGlobfunc        func(string) ([]string, error)
 		fakeEvalSymlinkfunc func(string) (string, error)
 		expected            string
@@ -395,6 +396,19 @@ func TestGetPathByID(t *testing.T) {
 			},
 			expected: "/dev/disk/by-id/wwn-abcde",
 		},
+		{
+			label:            "Prefer supplied path over anything else",
+			blockDevice:      BlockDevice{Name: "sdb", KName: "sdb", PathByID: ""},
+			existingDeviceId: "scsi-abcde",
+			fakeGlobfunc: func(path string) ([]string, error) {
+				return []string{"/dev/disk/by-id/abcde", "/dev/disk/by-id/wwn-abcde", "/dev/disk/by-id/scsi-abcde"}, nil
+
+			},
+			fakeEvalSymlinkfunc: func(string) (string, error) {
+				return "/dev/sdb", nil
+			},
+			expected: "/dev/disk/by-id/scsi-abcde",
+		},
 	}
 
 	for _, tc := range testcases {
@@ -405,7 +419,7 @@ func TestGetPathByID(t *testing.T) {
 			FilePathEvalSymLinks = filepath.EvalSymlinks
 		}()
 
-		actual, err := tc.blockDevice.GetPathByID("" /*existing symlink path*/)
+		actual, err := tc.blockDevice.GetPathByID(tc.existingDeviceId)
 		assert.NoError(t, err)
 		assert.Equalf(t, tc.expected, actual, "[%s] failed to get device path by ID", tc.label)
 
