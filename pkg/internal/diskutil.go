@@ -160,7 +160,7 @@ func (b BlockDevice) GetDevPath() (path string, err error) {
 }
 
 // GetPathByID check on BlockDevice
-func (b *BlockDevice) GetPathByID() (string, error) {
+func (b *BlockDevice) GetPathByID(existingDeviceID string) (string, error) {
 
 	// return if previously populated value is valid
 	if len(b.PathByID) > 0 && strings.HasPrefix(b.PathByID, DiskByIDDir) {
@@ -184,8 +184,19 @@ func (b *BlockDevice) GetPathByID() (string, error) {
 	sortedSymlinks := make([][]string, len(preferredPatterns))
 
 	for _, path := range allDisks {
+		symLinkName := filepath.Base(path)
+		if existingDeviceID != "" && symLinkName == existingDeviceID {
+			isMatch, err := PathEvalsToDiskLabel(path, b.KName)
+			if err != nil {
+				return "", err
+			}
+			if isMatch {
+				b.PathByID = path
+				return path, nil
+			}
+		}
+
 		for i, pattern := range preferredPatterns {
-			symLinkName := filepath.Base(path)
 			if strings.HasPrefix(symLinkName, pattern) {
 				sortedSymlinks[i] = append(sortedSymlinks[i], path)
 				break

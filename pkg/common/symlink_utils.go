@@ -13,7 +13,7 @@ import (
 // `target`: the path in the symlinkdir to symlink to. device-id if it exists, KNAME if it doesn't
 // `idExists`: is set if the device-id exists
 // `err`
-func GetSymLinkSourceAndTarget(dev internal.BlockDevice, symlinkDir string) (string, string, bool, error) {
+func GetSymLinkSourceAndTarget(dev internal.BlockDevice, symlinkDir, existingSymlink string) (string, string, bool, error) {
 	var source string
 	var target string
 	var idExists = true
@@ -25,7 +25,7 @@ func GetSymLinkSourceAndTarget(dev internal.BlockDevice, symlinkDir string) (str
 		return source, target, false, err
 	}
 	// determine symlink source
-	source, err = dev.GetPathByID()
+	source, err = dev.GetPathByID(existingSymlink)
 	if errors.As(err, &internal.IDPathNotFoundError{}) {
 		// no disk-by-id
 		idExists = false

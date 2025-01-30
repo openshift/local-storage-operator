@@ -405,7 +405,7 @@ func TestGetPathByID(t *testing.T) {
 			FilePathEvalSymLinks = filepath.EvalSymlinks
 		}()
 
-		actual, err := tc.blockDevice.GetPathByID()
+		actual, err := tc.blockDevice.GetPathByID("" /*existing symlink path*/)
 		assert.NoError(t, err)
 		assert.Equalf(t, tc.expected, actual, "[%s] failed to get device path by ID", tc.label)
 
@@ -453,7 +453,7 @@ func TestGetPathByIDFail(t *testing.T) {
 			FilePathEvalSymLinks = filepath.EvalSymlinks
 		}()
 
-		actual, err := tc.blockDevice.GetPathByID()
+		actual, err := tc.blockDevice.GetPathByID("" /*existing symlinkpath */)
 		assert.Error(t, err)
 		assert.Equalf(t, tc.expected, actual, "[%s] failed to get device path by ID", tc.label)
 

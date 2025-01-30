@@ -156,13 +156,19 @@ func (r *LocalVolumeSetReconciler) Reconcile(ctx context.Context, request ctrl.R
 	var totalProvisionedPVs int
 	var noMatch []string
 	for _, blockDevice := range validDevices {
-		symlinkSourcePath, symlinkPath, idExists, err := common.GetSymLinkSourceAndTarget(blockDevice, symLinkDir)
+		existingSymlink, err := getSymlinkedForCurrentSC(symLinkDir, blockDevice)
+		if err != nil {
+			klog.ErrorS(err, "error reading existing symlinks for device",
+				"blockDevice", blockDevice.Name)
+			continue
+		}
+
+		symlinkSourcePath, symlinkPath, idExists, err := common.GetSymLinkSourceAndTarget(blockDevice, symLinkDir, existingSymlink)
 		if err != nil {
 			klog.ErrorS(err, "error discovering symlink source and target",
 				"blockDevice", blockDevice.Name)
 			continue
 		}
-
 		if !idExists {
 			klog.InfoS("Using real device path, this could have problems if device name changes",
 				"blockDevice", blockDevice.Name)
@@ -346,6 +352,24 @@ PathLoop:
 		noMatch = append(noMatch, path)
 	}
 	return count, currentDeviceSymlinked, noMatch, nil
+}
+
+func getSymlinkedForCurrentSC(symlinkDir string, currentDevice internal.BlockDevice) (string, error) {
+	paths, err := filepath.Glob(filepath.Join(symlinkDir, "/*"))
+	if err != nil {
+		return "", err
+	}
+
+	for _, path := range paths {
+		isMatch, err := internal.PathEvalsToDiskLabel(path, currentDevice.KName)
+		if err != nil {
+			return "", err
+		}
+		if isMatch {
+			return filepath.Base(path), nil
+		}
+	}
+	return "", nil
 }
 
 func (r *LocalVolumeSetReconciler) provisionPV(

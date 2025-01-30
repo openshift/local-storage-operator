@@ -168,7 +168,7 @@ func getValidBlockDevices() ([]internal.BlockDevice, error) {
 func getDiscoverdDevices(blockDevices []internal.BlockDevice) []v1alpha1.DiscoveredDevice {
 	discoveredDevices := make([]v1alpha1.DiscoveredDevice, 0)
 	for _, blockDevice := range blockDevices {
-		deviceID, err := blockDevice.GetPathByID()
+		deviceID, err := blockDevice.GetPathByID("" /*existing symlink path*/)
 		if err != nil {
 			klog.Warningf("failed to get persistent ID for the device %q. Error %v", blockDevice.Name, err)
 			deviceID = ""
