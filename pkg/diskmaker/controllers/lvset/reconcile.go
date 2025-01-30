@@ -75,20 +75,10 @@ func (r *LocalVolumeSetReconciler) Reconcile(ctx context.Context, request ctrl.R
 	}
 
 	if !r.cacheSynced {
-		pvList := &corev1.PersistentVolumeList{}
-		err := r.Client.List(context.TODO(), pvList)
+		err = r.syncCaches()
 		if err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to initialize PV cache: %w", err)
+			return ctrl.Result{}, err
 		}
-		for _, pv := range pvList.Items {
-			// skip non-owned PVs
-			if !common.PVMatchesProvisioner(&pv, r.runtimeConfig.Name) ||
-				!common.IsLocalVolumeSetPV(&pv) {
-				continue
-			}
-			common.AddOrUpdatePV(r.runtimeConfig, &pv)
-		}
-		r.cacheSynced = true
 	}
 
 	// ignore LocalVolmeSets whose LabelSelector doesn't match this node
@@ -178,7 +168,6 @@ func (r *LocalVolumeSetReconciler) Reconcile(ctx context.Context, request ctrl.R
 		var alreadyProvisionedCount int
 		var currentDeviceSymlinked bool
 		alreadyProvisionedCount, currentDeviceSymlinked, noMatch, err = getAlreadySymlinked(symLinkDir, blockDevice, blockDevices)
-		_ = currentDeviceSymlinked
 
 		totalProvisionedPVs = alreadyProvisionedCount
 
@@ -244,6 +233,24 @@ func (r *LocalVolumeSetReconciler) Reconcile(ctx context.Context, request ctrl.R
 	}
 
 	return ctrl.Result{Requeue: true, RequeueAfter: requeueTime}, nil
+}
+
+func (r *LocalVolumeSetReconciler) syncCaches() error {
+	pvList := &corev1.PersistentVolumeList{}
+	err := r.Client.List(context.TODO(), pvList)
+	if err != nil {
+		return fmt.Errorf("failed to initialize PV cache: %w", err)
+	}
+	for _, pv := range pvList.Items {
+		// skip non-owned PVs
+		if !common.PVMatchesProvisioner(&pv, r.runtimeConfig.Name) ||
+			!common.IsLocalVolumeSetPV(&pv) {
+			continue
+		}
+		common.AddOrUpdatePV(r.runtimeConfig, &pv)
+	}
+	r.cacheSynced = true
+	return nil
 }
 
 // runs filters and matchers on the blockDeviceList and returns valid devices
