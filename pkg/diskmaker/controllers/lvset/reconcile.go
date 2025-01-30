@@ -75,20 +75,10 @@ func (r *LocalVolumeSetReconciler) Reconcile(ctx context.Context, request ctrl.R
 	}
 
 	if !r.cacheSynced {
-		pvList := &corev1.PersistentVolumeList{}
-		err := r.Client.List(context.TODO(), pvList)
+		err = r.syncCaches()
 		if err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to initialize PV cache: %w", err)
+			return ctrl.Result{}, err
 		}
-		for _, pv := range pvList.Items {
-			// skip non-owned PVs
-			if !common.PVMatchesProvisioner(&pv, r.runtimeConfig.Name) ||
-				!common.IsLocalVolumeSetPV(&pv) {
-				continue
-			}
-			common.AddOrUpdatePV(r.runtimeConfig, &pv)
-		}
-		r.cacheSynced = true
 	}
 
 	// ignore LocalVolmeSets whose LabelSelector doesn't match this node
@@ -182,13 +172,19 @@ func (r *LocalVolumeSetReconciler) Reconcile(ctx context.Context, request ctrl.R
 	var totalProvisionedPVs int
 	var noMatch []string
 	for _, blockDevice := range validDevices {
-		symlinkSourcePath, symlinkPath, idExists, err := common.GetSymLinkSourceAndTarget(blockDevice, symLinkDir)
+		existingSymlink, err := getSymlinkedForCurrentSC(symLinkDir, blockDevice)
+		if err != nil {
+			klog.ErrorS(err, "error reading existing symlinks for device",
+				"blockDevice", blockDevice.Name)
+			continue
+		}
+
+		symlinkSourcePath, symlinkPath, idExists, err := common.GetSymLinkSourceAndTarget(blockDevice, symLinkDir, existingSymlink)
 		if err != nil {
 			klog.ErrorS(err, "error discovering symlink source and target",
 				"blockDevice", blockDevice.Name)
 			continue
 		}
-
 		if !idExists {
 			klog.InfoS("Using real device path, this could have problems if device name changes",
 				"blockDevice", blockDevice.Name)
@@ -198,7 +194,6 @@ func (r *LocalVolumeSetReconciler) Reconcile(ctx context.Context, request ctrl.R
 		var alreadyProvisionedCount int
 		var currentDeviceSymlinked bool
 		alreadyProvisionedCount, currentDeviceSymlinked, noMatch, err = getAlreadySymlinked(symLinkDir, blockDevice, blockDevices)
-		_ = currentDeviceSymlinked
 
 		totalProvisionedPVs = alreadyProvisionedCount
 
@@ -264,6 +259,24 @@ func (r *LocalVolumeSetReconciler) Reconcile(ctx context.Context, request ctrl.R
 	}
 
 	return ctrl.Result{Requeue: true, RequeueAfter: requeueTime}, nil
+}
+
+func (r *LocalVolumeSetReconciler) syncCaches() error {
+	pvList := &corev1.PersistentVolumeList{}
+	err := r.Client.List(context.TODO(), pvList)
+	if err != nil {
+		return fmt.Errorf("failed to initialize PV cache: %w", err)
+	}
+	for _, pv := range pvList.Items {
+		// skip non-owned PVs
+		if !common.PVMatchesProvisioner(&pv, r.runtimeConfig.Name) ||
+			!common.IsLocalVolumeSetPV(&pv) {
+			continue
+		}
+		common.AddOrUpdatePV(r.runtimeConfig, &pv)
+	}
+	r.cacheSynced = true
+	return nil
 }
 
 // runs filters and matchers on the blockDeviceList and returns valid devices
@@ -372,6 +385,24 @@ PathLoop:
 		noMatch = append(noMatch, path)
 	}
 	return count, currentDeviceSymlinked, noMatch, nil
+}
+
+func getSymlinkedForCurrentSC(symlinkDir string, currentDevice internal.BlockDevice) (string, error) {
+	paths, err := filepath.Glob(filepath.Join(symlinkDir, "/*"))
+	if err != nil {
+		return "", err
+	}
+
+	for _, path := range paths {
+		isMatch, err := internal.PathEvalsToDiskLabel(path, currentDevice.KName)
+		if err != nil {
+			return "", err
+		}
+		if isMatch {
+			return filepath.Base(path), nil
+		}
+	}
+	return "", nil
 }
 
 func (r *LocalVolumeSetReconciler) provisionPV(
