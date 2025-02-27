@@ -34,15 +34,14 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
 const (
-	ComponentName                = "localvolumeset-controller"
-	pvStorageClassField          = "spec.storageClassName"
-	LocalVolumeSetNameLabel      = "local.storage.openshift.io/localvolumeset-owner-name"
-	LocalVolumeSetNamespaceLabel = "local.storage.openshift.io/localvolumeset-owner-namespace"
+	ComponentName       = "localvolumeset-controller"
+	pvStorageClassField = "spec.storageClassName"
 )
 
 // LocalVolumeSetReconciler reconciles a LocalVolumeSet object
@@ -118,6 +117,17 @@ func (r *LocalVolumeSetReconciler) reconcile(ctx context.Context, request reconc
 }
 
 func (r *LocalVolumeSetReconciler) syncStorageClass(ctx context.Context, lvs *localv1alpha1.LocalVolumeSet) error {
+
+	// remove storageClass if the finalizer is removed
+	if !controllerutil.ContainsFinalizer(lvs, common.LocalVolumeProtectionFinalizer) {
+		removeError := r.removeStorageClass(ctx, lvs)
+		if removeError != nil {
+			klog.ErrorS(removeError, "error removing storageClass", "scName", lvs.Spec.StorageClassName)
+		}
+		// do not block on storageClass removal
+		return nil
+	}
+
 	deleteReclaimPolicy := corev1.PersistentVolumeReclaimDelete
 	firstConsumerBinding := storagev1.VolumeBindingWaitForFirstConsumer
 	storageClass := &storagev1.StorageClass{
@@ -127,17 +137,38 @@ func (r *LocalVolumeSetReconciler) syncStorageClass(ctx context.Context, lvs *lo
 			Labels: map[string]string{
 				common.OwnerNameLabel:      lvs.GetName(),
 				common.OwnerNamespaceLabel: lvs.GetNamespace(),
+				common.OwnerKindLabel:      localv1alpha1.LocalVolumeSetKind,
 			},
 		},
 		Provisioner:       "kubernetes.io/no-provisioner",
 		ReclaimPolicy:     &deleteReclaimPolicy,
 		VolumeBindingMode: &firstConsumerBinding,
 	}
-
-	err := r.Client.Create(ctx, storageClass)
-	if err != nil && !kerrors.IsAlreadyExists(err) {
-		return err
+	currentStorageClass := &storagev1.StorageClass{}
+	if err := r.Client.Get(ctx, client.ObjectKey{Name: lvs.Spec.StorageClassName}, currentStorageClass); err != nil {
+		if kerrors.IsNotFound(err) {
+			err := r.Client.Create(ctx, storageClass)
+			if err != nil && !kerrors.IsAlreadyExists(err) {
+				return err
+			}
+		} else {
+			return fmt.Errorf("failed to get storageclass %q: %v", lvs.Spec.StorageClassName, err)
+		}
 	}
+
+	ownerName := currentStorageClass.Labels[common.OwnerNameLabel]
+	ownerNamespace := currentStorageClass.Labels[common.OwnerNamespaceLabel]
+	_, hasOwnerKind := currentStorageClass.Labels[common.OwnerKindLabel]
+
+	// Only update the missed owner kind label storageclass which is used for upgrade scenario
+	if ownerName == lvs.GetName() &&
+		ownerNamespace == lvs.GetNamespace() &&
+		!hasOwnerKind {
+		if err := r.Client.Update(ctx, storageClass); err != nil {
+			return fmt.Errorf("failed to update storageclass %q: %v", lvs.Spec.StorageClassName, err)
+		}
+	}
+
 	return nil
 }
 
@@ -204,4 +235,55 @@ func (r *LocalVolumeSetReconciler) SetupWithManager(mgr ctrl.Manager) error {
 				return []reconcile.Request{req}
 			})).
 		Complete(r)
+}
+
+// removeStorageClass removes the storageClass associated with the LocalVolumeSet
+func (r *LocalVolumeSetReconciler) removeStorageClass(ctx context.Context, lvs *localv1alpha1.LocalVolumeSet) error {
+	klog.InfoS("removing storageClass", "storageClassName", lvs.Spec.StorageClassName)
+
+	// Fetch the storageClass
+	lvsStorageClass := &storagev1.StorageClass{}
+	err := r.Client.Get(ctx, client.ObjectKey{Name: lvs.Spec.StorageClassName}, lvsStorageClass)
+	if err != nil {
+		if kerrors.IsNotFound(err) {
+			klog.InfoS("storageClass not found, skipping deletion", "storageClassName", lvs.Spec.StorageClassName)
+			return nil
+		}
+		return fmt.Errorf("failed to get storageClass %q for LocalVolumeSet %q: %w", lvs.Spec.StorageClassName, lvs.Name, err)
+	}
+
+	// Check whether storageClass is owned by the LocalVolumeSet
+	if !isStorageClassOwnedByLocalVolumeSet(lvsStorageClass, lvs) {
+		klog.InfoS("storageClass does not have matching owner labels, skipping deletion", "storageClassName", lvs.Spec.StorageClassName)
+		return nil
+	}
+
+	// Delete the storageClass
+	if err := r.Client.Delete(ctx, lvsStorageClass); err != nil && !kerrors.IsNotFound(err) {
+		return fmt.Errorf("failed to delete storageClass %q: %w", lvs.Spec.StorageClassName, err)
+	}
+
+	klog.InfoS("Successfully deleted storageClass", "storageClassName", lvs.Spec.StorageClassName)
+	return nil
+}
+
+// isStorageClassOwnedByLocalVolumeSet checks whether the StorageClass has the owner labels
+func isStorageClassOwnedByLocalVolumeSet(sc *storagev1.StorageClass, lvs *localv1alpha1.LocalVolumeSet) bool {
+	if sc.Labels == nil {
+		return false
+	}
+
+	expectedLabels := map[string]string{
+		common.OwnerNameLabel:      lvs.GetName(),
+		common.OwnerNamespaceLabel: lvs.GetNamespace(),
+		common.OwnerKindLabel:      localv1alpha1.LocalVolumeSetKind,
+	}
+
+	for key, expectedValue := range expectedLabels {
+		if actualValue, exists := sc.Labels[key]; !exists || actualValue != expectedValue {
+			klog.V(4).InfoS("StorageClass label mismatch", "key", key, "expected", expectedValue, "found", actualValue)
+			return false
+		}
+	}
+	return true
 }
