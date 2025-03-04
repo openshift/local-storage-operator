@@ -552,7 +552,7 @@ func (r *LocalVolumeReconciler) findMatchingDisks(diskConfig *DiskConfig, blockD
 				baseDeviceName := filepath.Base(diskDevPath)
 				blockDevice, matched := hasExactDisk(blockDevices, baseDeviceName)
 				if matched {
-					matchedDeviceID, err := blockDevice.GetPathByID()
+					matchedDeviceID, err := blockDevice.GetPathByID("" /*existing symlinkpath */)
 					// This means no /dev/disk/by-id entry was created for requested device.
 					if err != nil {
 						klog.ErrorS(err, "unable to find disk ID for local pool",
