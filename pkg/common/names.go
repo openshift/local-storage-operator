@@ -22,6 +22,8 @@ const (
 	OwnerNamespaceLabel = "local.storage.openshift.io/owner-namespace"
 	// OwnerNameLabel references the owning object
 	OwnerNameLabel = "local.storage.openshift.io/owner-name"
+	// OwnerKindLabel references the owning object's kind
+	OwnerKindLabel = "local.storage.openshift.io/owner-kind"
 
 	// DiskMakerImageEnv is used by the operator to read the DISKMAKER_IMAGE from the environment
 	DiskMakerImageEnv = "DISKMAKER_IMAGE"

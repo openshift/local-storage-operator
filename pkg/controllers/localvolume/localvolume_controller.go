@@ -48,11 +48,8 @@ import (
 type localDiskData map[string]map[string]string
 
 const (
-	componentName       = "local-storage-operator"
-	localDiskLocation   = "/mnt/local-storage"
-	ownerNamespaceLabel = "local.storage.openshift.io/owner-namespace"
-	ownerNameLabel      = "local.storage.openshift.io/owner-name"
-
+	componentName        = "local-storage-operator"
+	localDiskLocation    = "/mnt/local-storage"
 	localVolumeFinalizer = "storage.openshift.com/local-volume-protection"
 )
 
@@ -336,12 +333,16 @@ func addOwnerLabels(meta *metav1.ObjectMeta, cr *localv1.LocalVolume) bool {
 		meta.Labels = map[string]string{}
 		changed = true
 	}
-	if v, exists := meta.Labels[ownerNamespaceLabel]; !exists || v != cr.Namespace {
-		meta.Labels[ownerNamespaceLabel] = cr.Namespace
+	if v, exists := meta.Labels[common.OwnerNamespaceLabel]; !exists || v != cr.Namespace {
+		meta.Labels[common.OwnerNamespaceLabel] = cr.Namespace
 		changed = true
 	}
-	if v, exists := meta.Labels[ownerNameLabel]; !exists || v != cr.Name {
-		meta.Labels[ownerNameLabel] = cr.Name
+	if v, exists := meta.Labels[common.OwnerNameLabel]; !exists || v != cr.Name {
+		meta.Labels[common.OwnerNameLabel] = cr.Name
+		changed = true
+	}
+	if v, exists := meta.Labels[common.OwnerKindLabel]; !exists || v != localv1.LocalVolumeKind {
+		meta.Labels[common.OwnerKindLabel] = localv1.LocalVolumeKind
 		changed = true
 	}
 
@@ -366,8 +367,9 @@ func generateStorageClass(cr *localv1.LocalVolume, scName string) (*storagev1.St
 
 func getOwnerLabelSelector(cr *localv1.LocalVolume) labels.Selector {
 	ownerLabels := labels.Set{
-		ownerNamespaceLabel: cr.Namespace,
-		ownerNameLabel:      cr.Name,
+		common.OwnerNamespaceLabel: cr.Namespace,
+		common.OwnerNameLabel:      cr.Name,
+		common.OwnerKindLabel:      localv1.LocalVolumeKind,
 	}
 	return labels.SelectorFromSet(ownerLabels)
 }
