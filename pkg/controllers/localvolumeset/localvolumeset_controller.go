@@ -48,9 +48,10 @@ const (
 type LocalVolumeSetReconciler struct {
 	// This client, initialized using mgr.Client() above, is a split client
 	// that reads objects from the cache and writes to the apiserver
-	Client   client.Client
-	Scheme   *runtime.Scheme
-	LvSetMap *common.StorageClassOwnerMap
+	Client    client.Client
+	apiClient apiUpdater
+	Scheme    *runtime.Scheme
+	LvSetMap  *common.StorageClassOwnerMap
 }
 
 // Reconcile reads that state of the cluster for a LocalVolumeSet object and makes changes based on the state read
@@ -144,36 +145,15 @@ func (r *LocalVolumeSetReconciler) syncStorageClass(ctx context.Context, lvs *lo
 		ReclaimPolicy:     &deleteReclaimPolicy,
 		VolumeBindingMode: &firstConsumerBinding,
 	}
-	currentStorageClass := &storagev1.StorageClass{}
-	if err := r.Client.Get(ctx, client.ObjectKey{Name: lvs.Spec.StorageClassName}, currentStorageClass); err != nil {
-		if kerrors.IsNotFound(err) {
-			err := r.Client.Create(ctx, storageClass)
-			if err != nil && !kerrors.IsAlreadyExists(err) {
-				return err
-			}
-		} else {
-			return fmt.Errorf("failed to get storageclass %q: %v", lvs.Spec.StorageClassName, err)
-		}
+	if _, _, err := r.apiClient.applyStorageClass(ctx, storageClass); err != nil {
+		return fmt.Errorf("error syncing StorageClass %s: %w", storageClass.Name, err)
 	}
-
-	ownerName := currentStorageClass.Labels[common.OwnerNameLabel]
-	ownerNamespace := currentStorageClass.Labels[common.OwnerNamespaceLabel]
-	_, hasOwnerKind := currentStorageClass.Labels[common.OwnerKindLabel]
-
-	// Only update the missed owner kind label storageclass which is used for upgrade scenario
-	if ownerName == lvs.GetName() &&
-		ownerNamespace == lvs.GetNamespace() &&
-		!hasOwnerKind {
-		if err := r.Client.Update(ctx, storageClass); err != nil {
-			return fmt.Errorf("failed to update storageclass %q: %v", lvs.Spec.StorageClassName, err)
-		}
-	}
-
 	return nil
 }
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *LocalVolumeSetReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	r.apiClient = newAPIUpdater(mgr)
 	// Allows us to list PVs by a particular field selector. Handled and indexed by cache.
 	err := mgr.GetFieldIndexer().IndexField(context.TODO(), &corev1.PersistentVolume{}, pvStorageClassField,
 		func(o client.Object) []string {

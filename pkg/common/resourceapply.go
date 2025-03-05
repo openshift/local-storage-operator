@@ -1,4 +1,4 @@
-package localvolume
+package common
 
 import (
 	"context"
@@ -11,8 +11,9 @@ import (
 	storageclientv1 "k8s.io/client-go/kubernetes/typed/storage/v1"
 )
 
-// ApplyStorageclass
-func applyStorageClass(ctx context.Context, client storageclientv1.StorageClassesGetter, required *storagev1.StorageClass) (*storagev1.StorageClass, bool, error) {
+// ApplyStorageClass applies the given StorageClass to the cluster if it does not already exist or is different
+// Returns the StorageClass as it exists in the cluster, whether it was created or updated, and any error that occurred.
+func ApplyStorageClass(ctx context.Context, client storageclientv1.StorageClassesGetter, required *storagev1.StorageClass) (*storagev1.StorageClass, bool, error) {
 	existing, err := client.StorageClasses().Get(ctx, required.Name, metav1.GetOptions{})
 	if apierrors.IsNotFound(err) {
 		actual, err := client.StorageClasses().Create(ctx, required, metav1.CreateOptions{})

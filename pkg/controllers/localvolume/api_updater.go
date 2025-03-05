@@ -7,6 +7,7 @@ import (
 	"time"
 
 	localv1 "github.com/openshift/local-storage-operator/api/v1"
+	"github.com/openshift/local-storage-operator/pkg/common"
 	commontypes "github.com/openshift/local-storage-operator/pkg/common"
 
 	corev1 "k8s.io/api/core/v1"
@@ -86,7 +87,7 @@ func (s *sdkAPIUpdater) syncStatus(oldInstance, newInstance *localv1.LocalVolume
 }
 
 func (s *sdkAPIUpdater) applyStorageClass(ctx context.Context, sc *storagev1.StorageClass) (*storagev1.StorageClass, bool, error) {
-	return applyStorageClass(ctx, s.clientset.StorageV1(), sc)
+	return common.ApplyStorageClass(ctx, s.clientset.StorageV1(), sc)
 }
 
 func (s *sdkAPIUpdater) listStorageClasses(listOptions metav1.ListOptions) (*storagev1.StorageClassList, error) {
