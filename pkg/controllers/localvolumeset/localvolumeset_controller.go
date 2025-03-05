@@ -133,8 +133,7 @@ func (r *LocalVolumeSetReconciler) syncStorageClass(ctx context.Context, lvs *lo
 	firstConsumerBinding := storagev1.VolumeBindingWaitForFirstConsumer
 	storageClass := &storagev1.StorageClass{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      lvs.Spec.StorageClassName,
-			Namespace: lvs.GetNamespace(),
+			Name: lvs.Spec.StorageClassName,
 			Labels: map[string]string{
 				common.OwnerNameLabel:      lvs.GetName(),
 				common.OwnerNamespaceLabel: lvs.GetNamespace(),

@@ -11,6 +11,8 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/kubernetes"
+	fakeClient "k8s.io/client-go/kubernetes/fake"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
@@ -47,10 +49,18 @@ func newFakeLocalVolumeSetReconciler(t *testing.T, objs ...runtime.Object) *Loca
 	}
 
 	client := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(crsWithStatus...).WithRuntimeObjects(objs...).WithIndex(&corev1.PersistentVolume{}, "spec.storageClassName", pvSCIndexer).Build()
+	apiUpdater := newFakeAPIUpdater(fakeClient.NewSimpleClientset())
 
 	return &LocalVolumeSetReconciler{
-		Client:   client,
-		Scheme:   scheme,
-		LvSetMap: &common.StorageClassOwnerMap{},
+		Client:    client,
+		apiClient: apiUpdater,
+		Scheme:    scheme,
+		LvSetMap:  &common.StorageClassOwnerMap{},
+	}
+}
+
+func newFakeAPIUpdater(clientset kubernetes.Interface) *sdkAPIUpdater {
+	return &sdkAPIUpdater{
+		clientset: clientset,
 	}
 }
