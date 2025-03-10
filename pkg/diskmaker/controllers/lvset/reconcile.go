@@ -26,6 +26,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	provCommon "sigs.k8s.io/sig-storage-local-static-provisioner/pkg/common"
 	provDeleter "sigs.k8s.io/sig-storage-local-static-provisioner/pkg/deleter"
 )
@@ -555,25 +556,25 @@ func (r *LocalVolumeSetReconciler) WithManager(mgr ctrl.Manager) error {
 		// update owned-pv cache used by provisioner/deleter libs and enequeue owning lvset
 		// only the cache is touched by
 		Watches(&corev1.PersistentVolume{}, &handler.Funcs{
-			GenericFunc: func(ctx context.Context, e event.GenericEvent, q workqueue.RateLimitingInterface) {
+			GenericFunc: func(ctx context.Context, e event.GenericEvent, q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
 				pv, ok := e.Object.(*corev1.PersistentVolume)
 				if ok && common.IsLocalVolumeSetPV(pv) {
 					common.HandlePVChange(r.runtimeConfig, pv, q, watchNamespace, false)
 				}
 			},
-			CreateFunc: func(ctx context.Context, e event.CreateEvent, q workqueue.RateLimitingInterface) {
+			CreateFunc: func(ctx context.Context, e event.CreateEvent, q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
 				pv, ok := e.Object.(*corev1.PersistentVolume)
 				if ok && common.IsLocalVolumeSetPV(pv) {
 					common.HandlePVChange(r.runtimeConfig, pv, q, watchNamespace, false)
 				}
 			},
-			UpdateFunc: func(ctx context.Context, e event.UpdateEvent, q workqueue.RateLimitingInterface) {
+			UpdateFunc: func(ctx context.Context, e event.UpdateEvent, q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
 				pv, ok := e.ObjectNew.(*corev1.PersistentVolume)
 				if ok && common.IsLocalVolumeSetPV(pv) {
 					common.HandlePVChange(r.runtimeConfig, pv, q, watchNamespace, false)
 				}
 			},
-			DeleteFunc: func(ctx context.Context, e event.DeleteEvent, q workqueue.RateLimitingInterface) {
+			DeleteFunc: func(ctx context.Context, e event.DeleteEvent, q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
 				pv, ok := e.Object.(*corev1.PersistentVolume)
 				if ok && common.IsLocalVolumeSetPV(pv) {
 					common.HandlePVChange(r.runtimeConfig, pv, q, watchNamespace, true)

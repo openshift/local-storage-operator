@@ -147,7 +147,7 @@ func consumePV(t *testing.T, ctx *framework.Context, pv corev1.PersistentVolume)
 			VolumeName:       pv.Name,
 			StorageClassName: &pv.Spec.StorageClassName,
 			AccessModes:      []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
-			Resources: corev1.ResourceRequirements{
+			Resources: corev1.VolumeResourceRequirements{
 				Requests: corev1.ResourceList{
 					corev1.ResourceStorage: pv.Spec.Capacity[corev1.ResourceStorage],
 				},
