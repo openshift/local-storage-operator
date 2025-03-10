@@ -2,8 +2,9 @@ approvers:
   - jsafrane
   - tsmetana
   - gnufied
-  - bertinatto
   - dobsonj
   - RomanBednar
   - mpatlasov
+  - dfajmon
+  - rhrmo
 component: "Storage / Operators"
