@@ -35,20 +35,14 @@ else
 GOBIN=$(shell go env GOBIN)
 endif
 
-update: rbac manifests generate fmt
+update: manifests generate fmt
 .PHONY: update
 
 verify: vet
-	./hack/verify-rbac.sh
 	./hack/verify-manifests.sh
 	./hack/verify-generate.sh
 	./hack/verify-gofmt.sh
 .PHONY: verify
-
-rbac: controller-gen ## Generate ClusterRole and Role objects.
-	$(CONTROLLER_GEN) rbac:roleName=local-storage-operator webhook paths="./pkg/controllers/..." output:artifacts:config=config/rbac
-	$(CONTROLLER_GEN) rbac:roleName=local-storage-admin paths="./pkg/diskmaker/controllers/..."  output:artifacts:config=config/rbac/diskmaker
-.PHONY: rbac
 
 manifests: controller-gen ## Generate CustomResourceDefinition objects.
 	$(CONTROLLER_GEN) rbac:roleName=local-storage-operator crd paths="./api/..." output:artifacts:config=config/manifests/stable
