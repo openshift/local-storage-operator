@@ -204,9 +204,22 @@ spec:
           - apiGroups:
             - local.storage.openshift.io
             resources:
-            - "*"
+            - localvolumes
+            - localvolumes/status
+            - localvolumesets
+            - localvolumesets/status
+            - localvolumediscoveries
+            - localvolumediscoveries/status
+            - localvolumediscoveryresults
+            - localvolumediscoveryresults/status
             verbs:
-            - "*"
+            - get
+            - list
+            - watch
+            - create
+            - update
+            - patch
+            - delete
           - apiGroups:
             - ""
             resources:
@@ -219,7 +232,13 @@ spec:
             - configmaps
             - secrets
             verbs:
-            - "*"
+            - get
+            - list
+            - watch
+            - create
+            - update
+            - patch
+            - delete
           - apiGroups:
             - apps
             resources:
@@ -228,13 +247,25 @@ spec:
             - replicasets
             - statefulsets
             verbs:
-            - "*"
+            - get
+            - list
+            - watch
+            - create
+            - update
+            - patch
+            - delete
           - apiGroups:
             - events.k8s.io
             resources:
             - events
             verbs:
-            - "*"
+            - get
+            - list
+            - watch
+            - create
+            - update
+            - patch
+            - delete
           - apiGroups:
             - monitoring.coreos.com
             resources:
@@ -261,7 +292,14 @@ spec:
           - apiGroups:
             - local.storage.openshift.io
             resources:
-            - "*"
+            - localvolumes
+            - localvolumes/status
+            - localvolumesets
+            - localvolumesets/status
+            - localvolumediscoveries
+            - localvolumediscoveries/status
+            - localvolumediscoveryresults
+            - localvolumediscoveryresults/status
             verbs:
             - get
             - list
@@ -276,20 +314,38 @@ spec:
             resources:
             - storageclasses
             verbs:
-            - "*"
+            - get
+            - list
+            - watch
+            - create
+            - update
+            - patch
+            - delete
           - apiGroups:
             - ""
             resources:
             - persistentvolumeclaims
             - events
             verbs:
-              - "*"
+            - get
+            - list
+            - watch
+            - create
+            - update
+            - patch
+            - delete
           - apiGroups:
             - events.k8s.io
             resources:
             - events
             verbs:
-            - "*"
+            - get
+            - list
+            - watch
+            - create
+            - update
+            - patch
+            - delete
           - apiGroups:
             - ""
             resources:
@@ -309,6 +365,14 @@ spec:
             - create
             - delete
             - update
+          - apiGroups:
+            - config.openshift.io
+            resources:
+            - infrastructures
+            verbs:
+            - get
+            - list
+            - watch
           serviceAccountName: local-storage-operator
         - rules:
           - apiGroups:

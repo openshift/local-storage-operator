@@ -71,17 +71,6 @@ func (r *LocalVolumeReconciler) deregisterLVFromStorageClass(lv localv1.LocalVol
 	}
 }
 
-//+kubebuilder:rbac:groups=local.storage.openshift.io,namespace=default,resources=*,verbs=*
-//+kubebuilder:rbac:groups="",namespace=default,resources=pods;services;services/finalizers;endpoints;persistentvolumeclaims;events;configmaps;secrets,verbs="*"
-//+kubebuilder:rbac:groups=rbac.authorization.k8s.io,namespace=default,resources=roles,verbs=get;list;watch;create;update;patch;delete
-//+kubebuilder:rbac:groups=apps,namespace=default,resources=deployments;daemonsets;replicasets;statefulsets,verbs=*
-//+kubebuilder:rbac:groups=monitoring.coreos.com,resources=servicemonitors,namespace=default,verbs=get;list;watch;create;update;patch;delete
-//+kubebuilder:rbac:groups=apps,resourceNames=local-storage-operator,namespace=default,resources=deployments/finalizers,verbs=update
-//+kubebuilder:rbac:groups=storage.k8s.io,resources=storageclasses,verbs=*
-//+kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=clusterroles;clusterrolebindings;rolebindings,verbs=get;list;watch;create;update;patch;delete
-//+kubebuilder:rbac:groups="",resources=nodes,verbs=get;list;watch
-//+kubebuilder:rbac:groups=config.openshift.io,resources=infrastructures,verbs=get;list;watch
-
 func (r *LocalVolumeReconciler) Reconcile(ctx context.Context, request ctrl.Request) (ctrl.Result, error) {
 	klog.InfoS("Reconciling LocalVolume", "namespace", request.Namespace, "name", request.Name)
 	localStorageProvider := &localv1.LocalVolume{}
