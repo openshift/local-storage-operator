@@ -205,9 +205,13 @@ spec:
             - local.storage.openshift.io
             resources:
             - localvolumes
+            - localvolumes/status
             - localvolumesets
+            - localvolumesets/status
             - localvolumediscoveries
+            - localvolumediscoveries/status
             - localvolumediscoveryresults
+            - localvolumediscoveryresults/status
             verbs:
             - get
             - list
@@ -289,9 +293,13 @@ spec:
             - local.storage.openshift.io
             resources:
             - localvolumes
+            - localvolumes/status
             - localvolumesets
+            - localvolumesets/status
             - localvolumediscoveries
+            - localvolumediscoveries/status
             - localvolumediscoveryresults
+            - localvolumediscoveryresults/status
             verbs:
             - get
             - list
@@ -357,6 +365,14 @@ spec:
             - create
             - delete
             - update
+          - apiGroups:
+            - config.openshift.io
+            resources:
+            - infrastructures
+            verbs:
+            - get
+            - list
+            - watch
           serviceAccountName: local-storage-operator
         - rules:
           - apiGroups:
