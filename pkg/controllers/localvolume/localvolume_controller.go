@@ -402,6 +402,7 @@ func (r *LocalVolumeReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	r.apiClient = newAPIUpdater(mgr)
 	r.LvMap = &common.StorageClassOwnerMap{}
 	return ctrl.NewControllerManagedBy(mgr).
+		Named(componentName).
 		For(&localv1.LocalVolume{}).
 		Watches(&appsv1.DaemonSet{}, handler.EnqueueRequestForOwner(mgr.GetScheme(), mgr.GetRESTMapper(), &localv1.LocalVolume{})).
 		//  watch for storageclass, enqueue owner
