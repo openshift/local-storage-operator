@@ -241,6 +241,7 @@ func (r *DaemonReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		})
 
 	return ctrl.NewControllerManagedBy(mgr).
+		Named(controllerName).
 		For(&v1.LocalVolume{}).
 		Watches(&localv1alpha1.LocalVolumeSet{}, enqueueOnlyNamespace).
 		// watch provisioner, diskmaker-manager daemonsets

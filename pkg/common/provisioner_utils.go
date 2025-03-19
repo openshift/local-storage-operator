@@ -245,7 +245,7 @@ func GeneratePVName(file, node, class string) string {
 	return fmt.Sprintf("local-pv-%x", h.Sum32())
 }
 
-func HandlePVChange(runtimeConfig *provCommon.RuntimeConfig, pv *corev1.PersistentVolume, q workqueue.RateLimitingInterface, watchNamespace string, isDelete bool) {
+func HandlePVChange(runtimeConfig *provCommon.RuntimeConfig, pv *corev1.PersistentVolume, q workqueue.TypedRateLimitingInterface[reconcile.Request], watchNamespace string, isDelete bool) {
 	// if provisioner name is not known, enqueue to initialize the cache and discover provisioner name
 	if runtimeConfig.Name == "" {
 		q.Add(reconcile.Request{NamespacedName: types.NamespacedName{Namespace: watchNamespace}})

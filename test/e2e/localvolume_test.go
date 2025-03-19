@@ -40,7 +40,7 @@ var (
 	lvStorageClassName = "test-local-sc"
 )
 
-func LocalVolumeTest(ctx *framework.TestCtx, cleanupFuncs *[]cleanupFn) func(*testing.T) {
+func LocalVolumeTest(ctx *framework.Context, cleanupFuncs *[]cleanupFn) func(*testing.T) {
 	return func(t *testing.T) {
 		f := framework.Global
 		namespace, err := ctx.GetOperatorNamespace()
