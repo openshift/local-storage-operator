@@ -82,7 +82,7 @@ func TestLocalStorage(t *testing.T) {
 	// Run tests with setup and teardown
 	for _, testName := range testNames {
 		testWrapper := testMap[testName]
-		context := framework.NewTestCtx(t)
+		context := framework.NewContext(t)
 
 		// a list of functions that will be run at the end of every test suite
 		// they will be run even if an interrupt is sent
