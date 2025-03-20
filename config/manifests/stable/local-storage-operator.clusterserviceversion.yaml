@@ -436,6 +436,10 @@ spec:
               spec:
                 serviceAccountName: local-storage-operator
                 priorityClassName: openshift-user-critical
+                securityContext:
+                  runAsNonRoot: true
+                  seccompProfile:
+                    type: RuntimeDefault
                 containers:
                   - name: local-storage-operator
                     image: quay.io/openshift/origin-local-storage-operator:latest
@@ -452,6 +456,11 @@ spec:
                         memory: 50Mi
                         cpu: 10m
                     terminationMessagePolicy: FallbackToLogsOnError
+                    securityContext:
+                      allowPrivilegeEscalation: false
+                      capabilities:
+                        drop:
+                        - ALL
                     env:
                       - name: WATCH_NAMESPACE
                         valueFrom:
