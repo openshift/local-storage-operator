@@ -263,11 +263,6 @@ func addOwnerLabels(meta *metav1.ObjectMeta, cr *localv1.LocalVolume) bool {
 	return changed
 }
 
-//+kubebuilder:rbac:groups=local.storage.openshift.io,namespace=default,resources=*,verbs=get;list;watch;create;update
-//+kubebuilder:rbac:groups=security.openshift.io,resources=securitycontextconstraints,verbs=use,resourceNames=privileged
-//+kubebuilder:rbac:groups="",resources=nodes,verbs=get;list;watch
-//+kubebuilder:rbac:groups="";storage.k8s.io,resources=configmaps;storageclasses;persistentvolumeclaims;persistentvolumes,verbs=*
-
 func (r *LocalVolumeReconciler) Reconcile(ctx context.Context, request ctrl.Request) (ctrl.Result, error) {
 	requeueTime := defaultRequeueTime
 
