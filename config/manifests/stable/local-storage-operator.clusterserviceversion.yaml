@@ -457,6 +457,7 @@ spec:
                         cpu: 10m
                     terminationMessagePolicy: FallbackToLogsOnError
                     securityContext:
+                      readOnlyRootFilesystem: true
                       allowPrivilegeEscalation: false
                       capabilities:
                         drop:
