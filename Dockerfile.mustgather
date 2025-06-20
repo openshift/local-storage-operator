@@ -1,4 +1,4 @@
-FROM registry.ci.openshift.org/ocp/4.19:must-gather
+FROM registry.ci.openshift.org/ocp/4.20:must-gather
 
 COPY must-gather/gather /usr/bin/
 RUN chmod +x /usr/bin/gather
