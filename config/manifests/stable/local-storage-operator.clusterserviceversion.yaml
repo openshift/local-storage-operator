@@ -116,6 +116,7 @@ metadata:
     createdAt: "2019-08-14T00:00:00Z"
     description: Configure and use local storage volumes.
     olm.skipRange: ">=4.3.0 <4.18.0"
+    olm.properties: '[{"type": "olm.maxOpenShiftVersion", "value": "4.19"}]'
     operators.openshift.io/infrastructure-features: '["disconnected"]'
     operators.operatorframework.io/internal-objects: '["localvolumediscoveryresults.local.storage.openshift.io"]'
     # This annotation injection is a workaround for BZ-1950047, since the associated
