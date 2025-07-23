@@ -27,6 +27,8 @@ MUSTGATHER_IMAGE = $(REGISTRY)/$(REPO):mustgather-$(VERSION)
 BUNDLE_IMAGE = $(REGISTRY)/$(REPO):bundle-$(VERSION)
 INDEX_IMAGE = $(REGISTRY)/$(REPO):index-$(VERSION)
 REV=$(shell git describe --long --tags --match='v*' --dirty 2>/dev/null || git rev-list -n1 HEAD)
+BIN_PATH=$(CURPATH)/bin
+export PATH := $(BIN_PATH):$(PATH)
 
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
 ifeq (,$(shell go env GOBIN))
@@ -45,7 +47,7 @@ verify: vet
 	./hack/verify-gofmt.sh
 .PHONY: verify
 
-metadata:
+metadata: yq
 	./hack/update-metadata.sh
 .PHONY: metadata
 
@@ -73,7 +75,13 @@ test: ## Run unit tests.
 	go test ./pkg/... -coverprofile cover.out
 .PHONY: test
 
-CONTROLLER_GEN = $(shell pwd)/bin/controller-gen
+YQ = $(BIN_PATH)/yq
+yq:
+	mkdir -p $(BIN_PATH)
+	curl -L -o $(YQ) https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
+	chmod +x $(YQ)
+
+CONTROLLER_GEN = $(BIN_PATH)/controller-gen
 controller-gen: ## Download controller-gen locally if necessary.
 	$(call go-get-tool,$(CONTROLLER_GEN),sigs.k8s.io/controller-tools/cmd/controller-gen@v0.18.0)
 
