@@ -35,14 +35,19 @@ else
 GOBIN=$(shell go env GOBIN)
 endif
 
-update: manifests generate fmt
+update: metadata manifests generate fmt
 .PHONY: update
 
 verify: vet
+	./hack/verify-metadata.sh
 	./hack/verify-manifests.sh
 	./hack/verify-generate.sh
 	./hack/verify-gofmt.sh
 .PHONY: verify
+
+metadata:
+	./hack/update-metadata.sh
+.PHONY: metadata
 
 manifests: controller-gen ## Generate CustomResourceDefinition objects.
 	$(CONTROLLER_GEN) rbac:roleName=local-storage-operator crd paths="./api/..." output:artifacts:config=config/manifests/stable
