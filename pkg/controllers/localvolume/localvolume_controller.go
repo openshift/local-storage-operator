@@ -209,7 +209,7 @@ func (r *LocalVolumeReconciler) cleanupLocalVolumeDeployment(ctx context.Context
 	if err != nil {
 		msg := fmt.Sprintf("error releasing unbound persistent volumes for localvolume %s: %v", common.LocalVolumeKey(lv), err)
 		r.apiClient.recordEvent(lv, corev1.EventTypeWarning, releasingPersistentVolumesFailed, msg)
-		return fmt.Errorf(msg)
+		return fmt.Errorf("%s", msg)
 	}
 
 	// finalizer should be unset only when no owned PVs are found
@@ -217,7 +217,7 @@ func (r *LocalVolumeReconciler) cleanupLocalVolumeDeployment(ctx context.Context
 	if err != nil {
 		msg := fmt.Sprintf("error listing persistent volumes for localvolume %s: %v", common.LocalVolumeKey(lv), err)
 		r.apiClient.recordEvent(lv, corev1.EventTypeWarning, listingPersistentVolumesFailed, msg)
-		return fmt.Errorf(msg)
+		return fmt.Errorf("%s", msg)
 	}
 
 	if len(ownedPVs) > 0 {
@@ -229,7 +229,7 @@ func (r *LocalVolumeReconciler) cleanupLocalVolumeDeployment(ctx context.Context
 		klog.InfoS("owned PVs found, not removing finalizer", "pvNames", pvNames)
 		msg := fmt.Sprintf("localvolume %s has owned persistentvolumes in use", common.LocalVolumeKey(lv))
 		r.apiClient.recordEvent(lv, corev1.EventTypeWarning, localVolumeDeletionFailed, msg)
-		return fmt.Errorf(msg)
+		return fmt.Errorf("%s", msg)
 	}
 
 	err = r.removeUnExpectedStorageClasses(ctx, lv, sets.NewString())

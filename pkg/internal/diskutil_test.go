@@ -44,9 +44,9 @@ func TestHelperProcess(t *testing.T) {
 	defer os.Exit(0)
 	switch os.Getenv("COMMAND") {
 	case "lsblk":
-		fmt.Fprintf(os.Stdout, os.Getenv("LSBLKOUT"))
+		fmt.Fprintf(os.Stdout, "%s", os.Getenv("LSBLKOUT"))
 	case "blkid":
-		fmt.Fprintf(os.Stdout, os.Getenv("BLKIDOUT"))
+		fmt.Fprintf(os.Stdout, "%s", os.Getenv("BLKIDOUT"))
 	}
 }
 
