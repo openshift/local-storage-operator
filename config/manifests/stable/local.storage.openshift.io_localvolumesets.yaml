@@ -3,7 +3,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.12.1
+    controller-gen.kubebuilder.io/version: v0.18.0
   name: localvolumesets.local.storage.openshift.io
 spec:
   group: local.storage.openshift.io
@@ -20,14 +20,19 @@ spec:
         description: LocalVolumeSet is the Schema for the localvolumesets API
         properties:
           apiVersion:
-            description: 'APIVersion defines the versioned schema of this representation
-              of an object. Servers should convert recognized schemas to the latest
-              internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
             type: string
           kind:
-            description: 'Kind is a string value representing the REST resource this
-              object represents. Servers may infer this from the endpoint the client
-              submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
             type: string
           metadata:
             type: object
@@ -39,20 +44,19 @@ spec:
                   a device in the device discovery
                 properties:
                   deviceMechanicalProperties:
-                    description: DeviceMechanicalProperty denotes whether Rotational
-                      or NonRotational disks should be used. by default, it selects
-                      both
+                    description: |-
+                      DeviceMechanicalProperty denotes whether Rotational or NonRotational disks should be used.
+                      by default, it selects both
                     items:
                       description: DeviceMechanicalProperty holds the device's mechanical
                         spec. It can be rotational or nonRotational
                       type: string
                     type: array
                   deviceTypes:
-                    description: 'Devices is the list of devices that should be used
-                      for automatic detection. This would be one of the types supported
-                      by the local-storage operator. Currently, the supported types
-                      are: disk, part. If the list is empty only `disk` types will
-                      be selected'
+                    description: |-
+                      Devices is the list of devices that should be used for automatic detection.
+                      This would be one of the types supported by the local-storage operator. Currently,
+                      the supported types are: disk, part. If the list is empty only `disk` types will be selected
                     items:
                       description: DeviceType is the types that will be supported
                         by the LSO.
@@ -75,16 +79,16 @@ spec:
                     pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                     x-kubernetes-int-or-string: true
                   models:
-                    description: Models is a list of device models. If not empty,
-                      the device's model as outputted by lsblk needs to contain at
-                      least one of these strings.
+                    description: |-
+                      Models is a list of device models. If not empty, the device's model as outputted by lsblk needs
+                      to contain at least one of these strings.
                     items:
                       type: string
                     type: array
                   vendors:
-                    description: Vendors is a list of device vendors. If not empty,
-                      the device's model as outputted by lsblk needs to contain at
-                      least one of these strings.
+                    description: |-
+                      Vendors is a list of device vendors. If not empty, the device's model as outputted by lsblk needs
+                      to contain at least one of these strings.
                     items:
                       type: string
                     type: array
@@ -93,9 +97,9 @@ spec:
                 description: FSType type to create when volumeMode is Filesystem
                 type: string
               maxDeviceCount:
-                description: MaxDeviceCount is the maximum number of Devices that
-                  needs to be detected per node. If it is not specified, there will
-                  be no limit to the number of provisioned devices.
+                description: |-
+                  MaxDeviceCount is the maximum number of Devices that needs to be detected per node.
+                  If it is not specified, there will be no limit to the number of provisioned devices.
                 format: int32
                 type: integer
               nodeSelector:
@@ -106,79 +110,83 @@ spec:
                     description: Required. A list of node selector terms. The terms
                       are ORed.
                     items:
-                      description: A null or empty node selector term matches no objects.
-                        The requirements of them are ANDed. The TopologySelectorTerm
-                        type implements a subset of the NodeSelectorTerm.
+                      description: |-
+                        A null or empty node selector term matches no objects. The requirements of
+                        them are ANDed.
+                        The TopologySelectorTerm type implements a subset of the NodeSelectorTerm.
                       properties:
                         matchExpressions:
                           description: A list of node selector requirements by node's
                             labels.
                           items:
-                            description: A node selector requirement is a selector
-                              that contains values, a key, and an operator that relates
-                              the key and values.
+                            description: |-
+                              A node selector requirement is a selector that contains values, a key, and an operator
+                              that relates the key and values.
                             properties:
                               key:
                                 description: The label key that the selector applies
                                   to.
                                 type: string
                               operator:
-                                description: Represents a key's relationship to a
-                                  set of values. Valid operators are In, NotIn, Exists,
-                                  DoesNotExist. Gt, and Lt.
+                                description: |-
+                                  Represents a key's relationship to a set of values.
+                                  Valid operators are In, NotIn, Exists, DoesNotExist. Gt, and Lt.
                                 type: string
                               values:
-                                description: An array of string values. If the operator
-                                  is In or NotIn, the values array must be non-empty.
-                                  If the operator is Exists or DoesNotExist, the values
-                                  array must be empty. If the operator is Gt or Lt,
-                                  the values array must have a single element, which
-                                  will be interpreted as an integer. This array is
-                                  replaced during a strategic merge patch.
+                                description: |-
+                                  An array of string values. If the operator is In or NotIn,
+                                  the values array must be non-empty. If the operator is Exists or DoesNotExist,
+                                  the values array must be empty. If the operator is Gt or Lt, the values
+                                  array must have a single element, which will be interpreted as an integer.
+                                  This array is replaced during a strategic merge patch.
                                 items:
                                   type: string
                                 type: array
+                                x-kubernetes-list-type: atomic
                             required:
                             - key
                             - operator
                             type: object
                           type: array
+                          x-kubernetes-list-type: atomic
                         matchFields:
                           description: A list of node selector requirements by node's
                             fields.
                           items:
-                            description: A node selector requirement is a selector
-                              that contains values, a key, and an operator that relates
-                              the key and values.
+                            description: |-
+                              A node selector requirement is a selector that contains values, a key, and an operator
+                              that relates the key and values.
                             properties:
                               key:
                                 description: The label key that the selector applies
                                   to.
                                 type: string
                               operator:
-                                description: Represents a key's relationship to a
-                                  set of values. Valid operators are In, NotIn, Exists,
-                                  DoesNotExist. Gt, and Lt.
+                                description: |-
+                                  Represents a key's relationship to a set of values.
+                                  Valid operators are In, NotIn, Exists, DoesNotExist. Gt, and Lt.
                                 type: string
                               values:
-                                description: An array of string values. If the operator
-                                  is In or NotIn, the values array must be non-empty.
-                                  If the operator is Exists or DoesNotExist, the values
-                                  array must be empty. If the operator is Gt or Lt,
-                                  the values array must have a single element, which
-                                  will be interpreted as an integer. This array is
-                                  replaced during a strategic merge patch.
+                                description: |-
+                                  An array of string values. If the operator is In or NotIn,
+                                  the values array must be non-empty. If the operator is Exists or DoesNotExist,
+                                  the values array must be empty. If the operator is Gt or Lt, the values
+                                  array must have a single element, which will be interpreted as an integer.
+                                  This array is replaced during a strategic merge patch.
                                 items:
                                   type: string
                                 type: array
+                                x-kubernetes-list-type: atomic
                             required:
                             - key
                             - operator
                             type: object
                           type: array
+                          x-kubernetes-list-type: atomic
                       type: object
                       x-kubernetes-map-type: atomic
                     type: array
+                    x-kubernetes-list-type: atomic
                 required:
                 - nodeSelectorTerms
                 type: object
@@ -190,46 +198,46 @@ spec:
                 description: If specified, a list of tolerations to pass to the discovery
                   daemons.
                 items:
-                  description: The pod this Toleration is attached to tolerates any
-                    taint that matches the triple <key,value,effect> using the matching
-                    operator <operator>.
+                  description: |-
+                    The pod this Toleration is attached to tolerates any taint that matches
+                    the triple <key,value,effect> using the matching operator <operator>.
                   properties:
                     effect:
-                      description: Effect indicates the taint effect to match. Empty
-                        means match all taint effects. When specified, allowed values
-                        are NoSchedule, PreferNoSchedule and NoExecute.
+                      description: |-
+                        Effect indicates the taint effect to match. Empty means match all taint effects.
+                        When specified, allowed values are NoSchedule, PreferNoSchedule and NoExecute.
                       type: string
                     key:
-                      description: Key is the taint key that the toleration applies
-                        to. Empty means match all taint keys. If the key is empty,
-                        operator must be Exists; this combination means to match all
-                        values and all keys.
+                      description: |-
+                        Key is the taint key that the toleration applies to. Empty means match all taint keys.
+                        If the key is empty, operator must be Exists; this combination means to match all values and all keys.
                       type: string
                     operator:
-                      description: Operator represents a key's relationship to the
-                        value. Valid operators are Exists and Equal. Defaults to Equal.
-                        Exists is equivalent to wildcard for value, so that a pod
-                        can tolerate all taints of a particular category.
+                      description: |-
+                        Operator represents a key's relationship to the value.
+                        Valid operators are Exists and Equal. Defaults to Equal.
+                        Exists is equivalent to wildcard for value, so that a pod can
+                        tolerate all taints of a particular category.
                       type: string
                     tolerationSeconds:
-                      description: TolerationSeconds represents the period of time
-                        the toleration (which must be of effect NoExecute, otherwise
-                        this field is ignored) tolerates the taint. By default, it
-                        is not set, which means tolerate the taint forever (do not
-                        evict). Zero and negative values will be treated as 0 (evict
-                        immediately) by the system.
+                      description: |-
+                        TolerationSeconds represents the period of time the toleration (which must be
+                        of effect NoExecute, otherwise this field is ignored) tolerates the taint. By default,
+                        it is not set, which means tolerate the taint forever (do not evict). Zero and
+                        negative values will be treated as 0 (evict immediately) by the system.
                       format: int64
                       type: integer
                     value:
-                      description: Value is the taint value the toleration matches
-                        to. If the operator is Exists, the value should be empty,
-                        otherwise just a regular string.
+                      description: |-
+                        Value is the taint value the toleration matches to.
+                        If the operator is Exists, the value should be empty, otherwise just a regular string.
                       type: string
                   type: object
                 type: array
               volumeMode:
-                description: VolumeMode determines whether the PV created is Block
-                  or Filesystem. It will default to Filesystem.
+                description: |-
+                  VolumeMode determines whether the PV created is Block or Filesystem.
+                  It will default to Filesystem.
                 type: string
             required:
             - storageClassName
@@ -243,6 +251,9 @@ spec:
                   description: OperatorCondition is just the standard condition fields.
                   properties:
                     lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
                       format: date-time
                       type: string
                     message:
@@ -250,10 +261,20 @@ spec:
                     reason:
                       type: string
                     status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
                       type: string
                     type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
                       type: string
                   required:
+                  - lastTransitionTime
+                  - status
                   - type
                   type: object
                 type: array

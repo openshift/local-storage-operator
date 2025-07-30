@@ -22,7 +22,7 @@ func (r *LocalVolumeSetReconciler) syncFinalizer(lvSet *localv1alpha1.LocalVolum
 		err := common.ReleaseAvailablePVs(lvSet, r.Client)
 		if err != nil {
 			msg := fmt.Sprintf("error releasing unbound persistent volumes for localvolumeset %s: %v", common.LocalVolumeSetKey(lvSet), err)
-			return fmt.Errorf(msg)
+			return fmt.Errorf("%s", msg)
 		}
 
 		// finalizer should be unset only when no owned PVs are found
@@ -46,7 +46,7 @@ func (r *LocalVolumeSetReconciler) syncFinalizer(lvSet *localv1alpha1.LocalVolum
 			}
 			klog.InfoS("owned PVs found, not removing finalizer", "pvNames", pvNames)
 			msg := fmt.Sprintf("localvolumeset %s has owned persistentvolumes in use", common.LocalVolumeSetKey(lvSet))
-			return fmt.Errorf(msg)
+			return fmt.Errorf("%s", msg)
 		}
 	}
 

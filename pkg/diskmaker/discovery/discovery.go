@@ -70,7 +70,7 @@ func (discovery *DeviceDiscovery) Start() error {
 		message := "failed to start device discovery"
 		e := diskmaker.NewEvent(diskmaker.ErrorCreatingDiscoveryResultObject, fmt.Sprintf("%s. Error: %+v", message, err), "")
 		discovery.eventSync.Report(e, discovery.localVolumeDiscovery)
-		return errors.Wrapf(err, message)
+		return errors.Wrapf(err, "%s", message)
 	}
 
 	err = discovery.discoverDevices()
@@ -115,7 +115,7 @@ func (discovery *DeviceDiscovery) discoverDevices() error {
 		message := "failed to discover devices"
 		e := diskmaker.NewEvent(diskmaker.ErrorListingBlockDevices, fmt.Sprintf("%s. Error: %+v", message, err), "")
 		discovery.eventSync.Report(e, discovery.localVolumeDiscovery)
-		return errors.Wrapf(err, message)
+		return errors.Wrapf(err, "%s", message)
 	}
 
 	klog.Infof("valid block devices: %+v", validDevices)
@@ -135,7 +135,7 @@ func (discovery *DeviceDiscovery) discoverDevices() error {
 			message := "failed to update LocalVolumeDiscoveryResult status"
 			e := diskmaker.NewEvent(diskmaker.ErrorUpdatingDiscoveryResultObject, fmt.Sprintf("%s. Error: %+v", message, err), "")
 			discovery.eventSync.Report(e, discovery.localVolumeDiscovery)
-			return errors.Wrapf(err, message)
+			return errors.Wrapf(err, "%s", message)
 		}
 		message := "successfully updated discovered device details in the LocalVolumeDiscoveryResult resource"
 		e := diskmaker.NewSuccessEvent(diskmaker.UpdatedDiscoveredDeviceList, message, "")
