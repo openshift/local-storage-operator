@@ -28,6 +28,8 @@ BUNDLE_IMAGE = $(REGISTRY)/$(REPO):bundle-$(VERSION)
 INDEX_IMAGE = $(REGISTRY)/$(REPO):index-$(VERSION)
 REV=$(shell git describe --long --tags --match='v*' --dirty 2>/dev/null || git rev-list -n1 HEAD)
 BIN_PATH=$(CURPATH)/bin
+YQ = $(BIN_PATH)/yq
+YQ_VERSION = v4.47.1
 export PATH := $(BIN_PATH):$(PATH)
 
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
@@ -36,6 +38,11 @@ GOBIN=$(shell go env GOPATH)/bin
 else
 GOBIN=$(shell go env GOBIN)
 endif
+
+# Include the library makefile
+include $(addprefix ./vendor/github.com/openshift/build-machinery-go/make/, \
+        targets/openshift/yq.mk \
+)
 
 update: metadata manifests generate fmt
 .PHONY: update
@@ -47,7 +54,7 @@ verify: vet
 	./hack/verify-gofmt.sh
 .PHONY: verify
 
-metadata: yq
+metadata: ensure-yq
 	./hack/update-metadata.sh
 .PHONY: metadata
 
@@ -74,12 +81,6 @@ test: ## Run unit tests.
 	$(call go-get-tool,$(ENVTEST_ASSETS_DIR),sigs.k8s.io/controller-runtime/tools/setup-envtest@latest)
 	go test ./pkg/... -coverprofile cover.out
 .PHONY: test
-
-YQ = $(BIN_PATH)/yq
-yq:
-	mkdir -p $(BIN_PATH)
-	curl -L -o $(YQ) https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
-	chmod +x $(YQ)
 
 CONTROLLER_GEN = $(BIN_PATH)/controller-gen
 controller-gen: ## Download controller-gen locally if necessary.
@@ -139,7 +140,7 @@ bundle: push
 	./hack/create-bundle.sh $(OPERATOR_IMAGE) $(DISKMAKER_IMAGE) $(BUNDLE_IMAGE) $(INDEX_IMAGE)
 .PHONY: bundle
 
-clean:
+clean: clean-yq
 	rm -f $(TARGET_DIR)/diskmaker $(TARGET_DIR)/local-storage-operator
 .PHONY: clean
 
