@@ -11,6 +11,7 @@ require (
 	github.com/mitchellh/go-homedir v1.1.0
 	github.com/onsi/gomega v1.38.0
 	github.com/openshift/api v0.0.0-20250725072657-92b1455121e1
+	github.com/openshift/build-machinery-go v0.0.0-20250602125535-1b6d00b8c37c
 	github.com/openshift/client-go v0.0.0-20250710075018-396b36f983ee
 	github.com/openshift/library-go v0.0.0-20250725103737-7f9bc3eb865a
 	github.com/pborman/uuid v1.2.1
