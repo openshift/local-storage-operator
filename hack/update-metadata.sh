@@ -7,7 +7,12 @@ set -o pipefail
 # Usage:
 #   ./hack/update-metadata.sh [OCP_VERSION]
 #
-#   OCP_VERSION is optional and defaults to the version in PACKAGE_MANIFEST.
+#   OCP_VERSION is an optional argument. If no argument is provided, it defaults
+#   to the version found in .channels[0].currentCSV in PACKAGE_MANIFEST.
+#   This means you can run `./hack/update-metadata.sh` to update the manifests
+#   using the current package version, or you can for example run
+#   `./hack/update-metadata.sh 4.20` to set the package version to 4.20.
+#   Both PACKAGE_MANIFEST and CSV_MANIFEST will be updated by this script.
 
 PACKAGE_MANIFEST=config/manifests/local-storage-operator.package.yaml
 CHANNEL=$(yq '.channels[0].name' ${PACKAGE_MANIFEST})
