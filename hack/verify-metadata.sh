@@ -10,6 +10,6 @@ trap "test -d $tmpdir && rm -rf $tmpdir" EXIT
 echo "Backup config directory to $tmpdir first"
 cp -r config $tmpdir/config
 
-make manifests
+make metadata
 
 diff -r --no-dereference $tmpdir/config config

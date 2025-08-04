@@ -1,5 +1,9 @@
 #!/bin/bash
 
+set -o errexit
+set -o nounset
+set -o pipefail
+
 tmpdir=$(mktemp -d -t api.XXXXXX)
 trap "test -d $tmpdir && rm -rf $tmpdir" EXIT
 
