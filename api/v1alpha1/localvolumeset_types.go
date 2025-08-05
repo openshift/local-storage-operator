@@ -52,8 +52,9 @@ const (
 // DeviceInclusionSpec holds the inclusion filter spec
 type DeviceInclusionSpec struct {
 	// Devices is the list of devices that should be used for automatic detection.
-	// This would be one of the types supported by the local-storage operator. Currently,
-	// the supported types are: disk, part. If the list is empty only `disk` types will be selected
+	// This would be one of the types supported by the local-storage operator.
+	// Currently, the supported types are: disk, part, loop, mpath.
+	// If the list is empty only `disk` types will be selected.
 	// +optional
 	DeviceTypes []DeviceType `json:"deviceTypes,omitempty"`
 	// DeviceMechanicalProperty denotes whether Rotational or NonRotational disks should be used.
