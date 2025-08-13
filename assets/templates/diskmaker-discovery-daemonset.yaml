@@ -15,6 +15,9 @@ spec:
         target.workload.openshift.io/management: '{"effect": "PreferredDuringScheduling"}'
       labels:
         app: diskmaker-discovery
+        openshift.storage.network-policy.operand-dns: allow
+        openshift.storage.network-policy.operand-api-server: allow
+        openshift.storage.network-policy.operand-metrics: allow
     spec:
       containers:
       - args:

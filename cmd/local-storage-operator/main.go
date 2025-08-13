@@ -33,6 +33,7 @@ import (
 	lvcontroller "github.com/openshift/local-storage-operator/pkg/controllers/localvolume"
 	lvdcontroller "github.com/openshift/local-storage-operator/pkg/controllers/localvolumediscovery"
 	lvscontroller "github.com/openshift/local-storage-operator/pkg/controllers/localvolumeset"
+	networkpolicy "github.com/openshift/local-storage-operator/pkg/controllers/networkpolicy"
 	nodedaemoncontroller "github.com/openshift/local-storage-operator/pkg/controllers/nodedaemon"
 	"github.com/openshift/local-storage-operator/pkg/utils"
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
@@ -115,6 +116,14 @@ func main() {
 	})
 	if err != nil {
 		klog.ErrorS(err, "unable to start manager")
+		os.Exit(1)
+	}
+
+	if err = (&networkpolicy.NetworkPolicyReconciler{
+		Client: mgr.GetClient(),
+		Scheme: mgr.GetScheme(),
+	}).SetupWithManager(mgr); err != nil {
+		klog.ErrorS(err, "unable to create NetworkPolicy controller")
 		os.Exit(1)
 	}
 
