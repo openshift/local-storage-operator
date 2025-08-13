@@ -147,3 +147,6 @@ replace (
 )
 
 replace k8s.io/kms => k8s.io/kms v0.33.3
+
+// DO NOT MERGE: testing https://github.com/openshift/library-go/pull/1992
+replace github.com/openshift/library-go => github.com/dobsonj/library-go v0.0.0-20250813170550-0bb8ed551982

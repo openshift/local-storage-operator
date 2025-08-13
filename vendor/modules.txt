@@ -275,7 +275,7 @@ github.com/openshift/client-go/config/applyconfigurations/internal
 github.com/openshift/client-go/config/clientset/versioned/scheme
 github.com/openshift/client-go/config/clientset/versioned/typed/config/v1
 github.com/openshift/client-go/security/clientset/versioned/scheme
-# github.com/openshift/library-go v0.0.0-20250725103737-7f9bc3eb865a
+# github.com/openshift/library-go v0.0.0-20250725103737-7f9bc3eb865a => github.com/dobsonj/library-go v0.0.0-20250813170550-0bb8ed551982
 ## explicit; go 1.24.0
 github.com/openshift/library-go/pkg/config/clusterstatus
 github.com/openshift/library-go/pkg/config/leaderelection
@@ -1221,3 +1221,4 @@ sigs.k8s.io/yaml/goyaml.v2
 # k8s.io/pod-security-admission => k8s.io/pod-security-admission v0.33.3
 # k8s.io/sample-apiserver => k8s.io/sample-apiserver v0.33.3
 # k8s.io/kms => k8s.io/kms v0.33.3
+# github.com/openshift/library-go => github.com/dobsonj/library-go v0.0.0-20250813170550-0bb8ed551982
