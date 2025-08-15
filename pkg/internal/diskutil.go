@@ -174,13 +174,14 @@ func (b *BlockDevice) GetPathByID(existingDeviceID string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("error listing files in %s: %v", DiskByIDDir, err)
 	}
-	preferredPatterns := []string{"wwn", "scsi", "nvme", ""}
+	preferredPatterns := []string{"wwn", "scsi", "nvme-eui", "nvme", ""}
 
 	// sortedSymlinks sorts symlinks in 4 buckets.
 	// 	- [0] - syminks that match wwn
 	//	- [1] - symlinks that match scsi
-	//	- [2] - symlinks that match nvme
-	//	- [3] - symlinks that does not any of these
+	//	- [2] - symlinks that match nvme.eui - those are stable on vSphere
+	//	- [3] - symlinks that match nvme - those are not stable on vSphere, but should be stable on other platforms
+	//	- [4] - symlinks that does not any of these
 	sortedSymlinks := make([][]string, len(preferredPatterns))
 
 	for _, path := range allDisks {
