@@ -409,6 +409,18 @@ func TestGetPathByID(t *testing.T) {
 			},
 			expected: "/dev/disk/by-id/scsi-abcde",
 		},
+		{
+			label:       "Prefer nvme-eui paths if available",
+			blockDevice: BlockDevice{Name: "nvme0n1", KName: "nvme0n1", PathByID: ""},
+			fakeGlobfunc: func(path string) ([]string, error) {
+				return []string{"/dev/disk/by-id/nvme-VMware_Virtual_NVMe_Disk_VMware_NVME_0000_2", "/dev/disk/by-id/nvme-eui.252745b7300c1778000c296efa5e7ea0"}, nil
+
+			},
+			fakeEvalSymlinkfunc: func(string) (string, error) {
+				return "/dev/nvme0n1", nil
+			},
+			expected: "/dev/disk/by-id/nvme-eui.252745b7300c1778000c296efa5e7ea0",
+		},
 	}
 
 	for _, tc := range testcases {
