@@ -28,15 +28,15 @@ if [ -z "${CHANNEL}" ] ||
 fi
 
 CSV_MANIFEST=config/manifests/${CHANNEL}/${PACKAGE_NAME}.clusterserviceversion.yaml
-METADATA_NAME=$(yq '.metadata.name' ${CSV_MANIFEST})
-SKIP_RANGE=$(yq '.metadata.annotations["olm.skipRange"]' ${CSV_MANIFEST})
-MAX_OCP_VERSION=$(yq '.metadata.annotations["olm.properties"]' ${CSV_MANIFEST})
-SPEC_VERSION=$(yq '.spec.version' ${CSV_MANIFEST})
-ALM_STATUS_DESC=$(yq '.spec.labels.alm-status-descriptors' ${CSV_MANIFEST})
+METADATA_NAME=$(yq ' "" + .metadata.name' ${CSV_MANIFEST})
+SKIP_RANGE=$(yq ' "" + .metadata.annotations["olm.skipRange"]' ${CSV_MANIFEST})
+OLM_PROPERTIES=$(yq ' "" + .metadata.annotations["olm.properties"]' ${CSV_MANIFEST}) # sets olm.maxOpenShiftVersion
+SPEC_VERSION=$(yq ' "" + .spec.version' ${CSV_MANIFEST})
+ALM_STATUS_DESC=$(yq ' "" + .spec.labels.alm-status-descriptors' ${CSV_MANIFEST})
 
 if [ -z "${METADATA_NAME}" ] ||
    [ -z "${SKIP_RANGE}" ] ||
-   [ -z "${MAX_OCP_VERSION}" ] ||
+   [ -z "${OLM_PROPERTIES}" ] ||
    [ -z "${SPEC_VERSION}" ] ||
    [ -z "${ALM_STATUS_DESC}" ]; then
 	echo "Failed to parse ${CSV_MANIFEST}"
@@ -53,13 +53,13 @@ fi
 export NEW_CURRENT_CSV="${PACKAGE_NAME}.v${PACKAGE_VERSION}"
 export NEW_METADATA_NAME="${PACKAGE_NAME}.v${PACKAGE_VERSION}"
 export NEW_SKIP_RANGE=$(echo ${SKIP_RANGE} | sed "s/ <.*$/ <${PACKAGE_VERSION}/")
-export NEW_MAX_OCP_VERSION=$(echo ${MAX_OCP_VERSION} | jq -c ". | .[].value = \"${MAJOR_VERSION}.$((MINOR_VERSION + 1))\"")
+export NEW_OLM_PROPERTIES=$(echo "${OLM_PROPERTIES}" | jq -c 'map(if .type=="olm.maxOpenShiftVersion" then .value="'${MAJOR_VERSION}.$((MINOR_VERSION + 1))'" else . end)')
 export NEW_SPEC_VERSION="${PACKAGE_VERSION}"
 export NEW_ALM_STATUS_DESC="${PACKAGE_NAME}.v${PACKAGE_VERSION}"
 
 if [ -z "${NEW_METADATA_NAME}" ] ||
    [ -z "${NEW_SKIP_RANGE}" ] ||
-   [ -z "${NEW_MAX_OCP_VERSION}" ] ||
+   [ -z "${NEW_OLM_PROPERTIES}" ] ||
    [ -z "${NEW_SPEC_VERSION}" ] ||
    [ -z "${NEW_ALM_STATUS_DESC}" ]; then
 	echo "Failed to generate new values for ${CSV_MANIFEST}"
@@ -73,7 +73,7 @@ echo "Updating OLM metadata to ${PACKAGE_VERSION}"
 yq -i '
   .metadata.name = strenv(NEW_METADATA_NAME) |
   .metadata.annotations["olm.skipRange"] = strenv(NEW_SKIP_RANGE) |
-  .metadata.annotations["olm.properties"] = strenv(NEW_MAX_OCP_VERSION) |
+  .metadata.annotations["olm.properties"] = strenv(NEW_OLM_PROPERTIES) |
   .spec.version = strenv(NEW_SPEC_VERSION) |
   .spec.labels.alm-status-descriptors = strenv(NEW_ALM_STATUS_DESC)
 ' ${CSV_MANIFEST}
