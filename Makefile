@@ -54,8 +54,16 @@ verify: vet
 	./hack/verify-gofmt.sh
 .PHONY: verify
 
+# Bump OCP version in CSV and OLM metadata
+#
+# Example:
+#   make metadata OCP_VERSION=4.20.0
 metadata: ensure-yq
+ifdef OCP_VERSION
+	./hack/update-metadata.sh $(OCP_VERSION)
+else
 	./hack/update-metadata.sh
+endif
 .PHONY: metadata
 
 manifests: controller-gen ## Generate CustomResourceDefinition objects.
