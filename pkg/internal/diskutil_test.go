@@ -388,7 +388,12 @@ func TestGetPathByID(t *testing.T) {
 			label:       "Prefer wwn path even if scsi is if available",
 			blockDevice: BlockDevice{Name: "sdb", KName: "sdb", PathByID: ""},
 			fakeGlobfunc: func(path string) ([]string, error) {
-				return []string{"/dev/disk/by-id/abcde", "/dev/disk/by-id/wwn-abcde", "/dev/disk/by-id/scsi-abcde"}, nil
+				return []string{
+					"/dev/disk/by-id/abcde",
+					"/dev/disk/by-id/wwn-abcde",
+					"/dev/disk/by-id/scsi-abcde",
+					"/dev/disk/by-id/scsi-3faeb3bf4dc5abcde",
+				}, nil
 
 			},
 			fakeEvalSymlinkfunc: func(string) (string, error) {
@@ -420,6 +425,78 @@ func TestGetPathByID(t *testing.T) {
 				return "/dev/nvme0n1", nil
 			},
 			expected: "/dev/disk/by-id/nvme-eui.252745b7300c1778000c296efa5e7ea0",
+		},
+		{
+			label:       "Prefer scsi-2* symlinks over scsi-0*",
+			blockDevice: BlockDevice{Name: "sdb", KName: "sdb", PathByID: ""},
+			fakeGlobfunc: func(path string) ([]string, error) {
+				return []string{
+					"/dev/disk/by-id/abcde",
+					"/dev/disk/by-id/scsi-0NVME_MODEL_abcde",
+					"/dev/disk/by-id/scsi-2ace42e0035eabcde",
+				}, nil
+
+			},
+			fakeEvalSymlinkfunc: func(string) (string, error) {
+				return "/dev/sdb", nil
+			},
+			expected: "/dev/disk/by-id/scsi-2ace42e0035eabcde",
+		},
+		{
+			label:       "Prefer scsi-3* symlinks over scsi-*",
+			blockDevice: BlockDevice{Name: "sdb", KName: "sdb", PathByID: ""},
+			fakeGlobfunc: func(path string) ([]string, error) {
+				return []string{
+					"/dev/disk/by-id/scsi-abcde",
+					"/dev/disk/by-id/scsi-1NVME_MODEL_abcde",
+					"/dev/disk/by-id/scsi-0NVME_MODEL_abcde",
+					"/dev/disk/by-id/scsi-SNVME_MODEL_abcde",
+					"/dev/disk/by-id/scsi-2ace42e0035eabcde",
+					"/dev/disk/by-id/scsi-3faeb3bf4dc5abcde",
+					"/dev/disk/by-id/scsi-8099d84230c9abcde",
+				}, nil
+
+			},
+			fakeEvalSymlinkfunc: func(string) (string, error) {
+				return "/dev/sdb", nil
+			},
+			expected: "/dev/disk/by-id/scsi-3faeb3bf4dc5abcde",
+		},
+		{
+			label:       "Prefer scsi symlinks over nvme",
+			blockDevice: BlockDevice{Name: "sdb", KName: "sdb", PathByID: ""},
+			fakeGlobfunc: func(path string) ([]string, error) {
+				return []string{
+					"/dev/disk/by-id/abcde",
+					"/dev/disk/by-id/nvme-abcde",
+					"/dev/disk/by-id/scsi-abcde",
+				}, nil
+
+			},
+			fakeEvalSymlinkfunc: func(string) (string, error) {
+				return "/dev/sdb", nil
+			},
+			expected: "/dev/disk/by-id/scsi-abcde",
+		},
+		{
+			label:            "Prefer existingDeviceId over higher priroity scsi paths",
+			blockDevice:      BlockDevice{Name: "sdb", KName: "sdb", PathByID: ""},
+			existingDeviceId: "scsi-0NVME_MODEL_abcde",
+			fakeGlobfunc: func(path string) ([]string, error) {
+				return []string{
+					"/dev/disk/by-id/scsi-abcde",
+					"/dev/disk/by-id/scsi-1NVME_MODEL_abcde",
+					"/dev/disk/by-id/scsi-0NVME_MODEL_abcde",
+					"/dev/disk/by-id/scsi-SNVME_MODEL_abcde",
+					"/dev/disk/by-id/scsi-2ace42e0035eabcde",
+					"/dev/disk/by-id/scsi-3faeb3bf4dc5abcde",
+					"/dev/disk/by-id/scsi-8099d84230c9abcde",
+				}, nil
+			},
+			fakeEvalSymlinkfunc: func(string) (string, error) {
+				return "/dev/sdb", nil
+			},
+			expected: "/dev/disk/by-id/scsi-0NVME_MODEL_abcde",
 		},
 	}
 
