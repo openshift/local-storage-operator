@@ -174,11 +174,25 @@ func (b *BlockDevice) GetPathByID(existingDeviceID string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("error listing files in %s: %v", DiskByIDDir, err)
 	}
-	preferredPatterns := []string{"wwn", "scsi", "nvme-eui", "nvme", ""}
+	preferredPatterns := []string{
+		"wwn",
+		"scsi-3",
+		"scsi-2",
+		"scsi-8",
+		"scsi-S",
+		"scsi-1",
+		"scsi-0",
+		"scsi",
+		"nvme-eui",
+		"nvme",
+		"",
+	}
 
 	// sortedSymlinks sorts symlinks in 4 buckets.
-	// 	- [0] - syminks that match wwn
-	//	- [1] - symlinks that match scsi
+	// 	- [0] - symlinks that match wwn
+	//	- [1] - symlinks that match scsi - these are further sorted by the "328S10" prefix priority list used by lsscsi:
+	//              https://github.com/doug-gilbert/lsscsi/blob/f9bcd7ac55486dbd3f26c8c5b7567fad7e1cbf5c/src/lsscsi.c#L1825
+	//              scsi-3* for example is more stable and less likely to change than scsi-0*.
 	//	- [2] - symlinks that match nvme.eui - those are stable on vSphere
 	//	- [3] - symlinks that match nvme - those are not stable on vSphere, but should be stable on other platforms
 	//	- [4] - symlinks that does not any of these
