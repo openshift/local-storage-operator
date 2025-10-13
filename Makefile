@@ -94,6 +94,10 @@ CONTROLLER_GEN = $(BIN_PATH)/controller-gen
 controller-gen: ## Download controller-gen locally if necessary.
 	$(call go-get-tool,$(CONTROLLER_GEN),sigs.k8s.io/controller-tools/cmd/controller-gen@v0.18.0)
 
+clean-controller-gen:
+	rm -f $(CONTROLLER_GEN)
+.PHONY: clean-controller-gen
+
 # go-get-tool will 'go get' any package $2 and install it to $1.
 define go-get-tool
 @[ -f $(1) ] || { \
@@ -147,7 +151,7 @@ bundle: push
 	./hack/create-bundle.sh $(OPERATOR_IMAGE) $(DISKMAKER_IMAGE) $(BUNDLE_IMAGE) $(INDEX_IMAGE)
 .PHONY: bundle
 
-clean: clean-yq
+clean: clean-controller-gen clean-yq
 	rm -f $(TARGET_DIR)/diskmaker $(TARGET_DIR)/local-storage-operator
 .PHONY: clean
 
