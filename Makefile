@@ -86,13 +86,17 @@ ENVTEST_ASSETS_DIR=$(shell pwd)/testbin
 
 test: ## Run unit tests.
 	mkdir -p ${ENVTEST_ASSETS_DIR}
-	$(call go-get-tool,$(ENVTEST_ASSETS_DIR),sigs.k8s.io/controller-runtime/tools/setup-envtest@latest)
+	$(call go-get-tool,$(ENVTEST_ASSETS_DIR),sigs.k8s.io/controller-runtime/tools/setup-envtest@release-0.21)
 	go test ./pkg/... -coverprofile cover.out
 .PHONY: test
 
 CONTROLLER_GEN = $(BIN_PATH)/controller-gen
 controller-gen: ## Download controller-gen locally if necessary.
 	$(call go-get-tool,$(CONTROLLER_GEN),sigs.k8s.io/controller-tools/cmd/controller-gen@v0.18.0)
+
+clean-controller-gen:
+	rm -f $(CONTROLLER_GEN)
+.PHONY: clean-controller-gen
 
 # go-get-tool will 'go get' any package $2 and install it to $1.
 define go-get-tool
@@ -147,7 +151,7 @@ bundle: push
 	./hack/create-bundle.sh $(OPERATOR_IMAGE) $(DISKMAKER_IMAGE) $(BUNDLE_IMAGE) $(INDEX_IMAGE)
 .PHONY: bundle
 
-clean: clean-yq
+clean: clean-controller-gen clean-yq
 	rm -f $(TARGET_DIR)/diskmaker $(TARGET_DIR)/local-storage-operator
 .PHONY: clean
 
