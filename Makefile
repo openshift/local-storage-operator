@@ -78,7 +78,7 @@ ENVTEST_ASSETS_DIR=$(shell pwd)/testbin
 
 test: ## Run unit tests.
 	mkdir -p ${ENVTEST_ASSETS_DIR}
-	$(call go-get-tool,$(ENVTEST_ASSETS_DIR),sigs.k8s.io/controller-runtime/tools/setup-envtest@latest)
+	$(call go-get-tool,$(ENVTEST_ASSETS_DIR),sigs.k8s.io/controller-runtime/tools/setup-envtest@release-0.21)
 	go test ./pkg/... -coverprofile cover.out
 .PHONY: test
 
