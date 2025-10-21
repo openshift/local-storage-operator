@@ -33,6 +33,7 @@ BUNDLE_IMAGE=$3
 INDEX_IMAGE=$4
 
 # Prepare output dir
+[ ! -d opm-bundle ] || rm -r opm-bundle # start clean
 mkdir -p opm-bundle
 pushd opm-bundle
 cp -r -v ../config/* .
