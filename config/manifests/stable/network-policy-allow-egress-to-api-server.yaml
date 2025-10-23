@@ -1,7 +1,7 @@
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
- name: allow-egress-to-api-server
+ name: lso-allow-egress-to-api-server
  annotations:
   include.release.openshift.io/hypershift: "true"
   include.release.openshift.io/ibm-cloud-managed: "true"
@@ -11,7 +11,7 @@ metadata:
 spec:
  podSelector:
    matchLabels:
-     openshift.storage.network-policy.api-server: allow
+     openshift.storage.network-policy.lso.api-server: allow
  egress:
  - ports:
    - protocol: TCP

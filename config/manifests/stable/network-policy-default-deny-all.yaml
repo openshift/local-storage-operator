@@ -1,7 +1,7 @@
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
- name: default-deny-all
+ name: lso-default-deny-all
  annotations:
   include.release.openshift.io/hypershift: "true"
   include.release.openshift.io/ibm-cloud-managed: "true"

@@ -1,7 +1,7 @@
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
- name: allow-ingress-to-diskmaker-metrics
+ name: lso-allow-ingress-to-diskmaker-metrics
  annotations:
   include.release.openshift.io/hypershift: "true"
   include.release.openshift.io/ibm-cloud-managed: "true"
@@ -11,7 +11,7 @@ metadata:
 spec:
  podSelector:
    matchLabels:
-     openshift.storage.network-policy.diskmaker-metrics: allow
+     openshift.storage.network-policy.lso.diskmaker-metrics: allow
  ingress:
  - ports:
    - protocol: TCP
