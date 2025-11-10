@@ -33,12 +33,14 @@ SKIP_RANGE=$(yq ' "" + .metadata.annotations["olm.skipRange"]' ${CSV_MANIFEST})
 OLM_PROPERTIES=$(yq ' "" + .metadata.annotations["olm.properties"]' ${CSV_MANIFEST}) # sets olm.maxOpenShiftVersion
 SPEC_VERSION=$(yq ' "" + .spec.version' ${CSV_MANIFEST})
 ALM_STATUS_DESC=$(yq ' "" + .spec.labels.alm-status-descriptors' ${CSV_MANIFEST})
+MUST_GATHER_IMAGE=$(yq ' "" + .metadata.annotations["operators.openshift.io/must-gather-image"]' ${CSV_MANIFEST})
 
 if [ -z "${METADATA_NAME}" ] ||
    [ -z "${SKIP_RANGE}" ] ||
    [ -z "${OLM_PROPERTIES}" ] ||
    [ -z "${SPEC_VERSION}" ] ||
-   [ -z "${ALM_STATUS_DESC}" ]; then
+   [ -z "${ALM_STATUS_DESC}" ] ||
+   [ -z "${MUST_GATHER_IMAGE}" ]; then
 	echo "Failed to parse ${CSV_MANIFEST}"
 	exit 1
 fi
@@ -56,12 +58,14 @@ export NEW_SKIP_RANGE=$(echo ${SKIP_RANGE} | sed "s/ <.*$/ <${PACKAGE_VERSION}/"
 export NEW_OLM_PROPERTIES=$(echo "${OLM_PROPERTIES}" | jq -c 'map(if .type=="olm.maxOpenShiftVersion" then .value="'${MAJOR_VERSION}.$((MINOR_VERSION + 1))'" else . end)')
 export NEW_SPEC_VERSION="${PACKAGE_VERSION}"
 export NEW_ALM_STATUS_DESC="${PACKAGE_NAME}.v${PACKAGE_VERSION}"
+export NEW_MUST_GATHER_IMAGE=$(echo ${MUST_GATHER_IMAGE} | sed "s/:v[0-9]*\.[0-9]*\.[0-9]*$/:v${PACKAGE_VERSION}/")
 
 if [ -z "${NEW_METADATA_NAME}" ] ||
    [ -z "${NEW_SKIP_RANGE}" ] ||
    [ -z "${NEW_OLM_PROPERTIES}" ] ||
    [ -z "${NEW_SPEC_VERSION}" ] ||
-   [ -z "${NEW_ALM_STATUS_DESC}" ]; then
+   [ -z "${NEW_ALM_STATUS_DESC}" ] ||
+   [ -z "${NEW_MUST_GATHER_IMAGE}" ]; then
 	echo "Failed to generate new values for ${CSV_MANIFEST}"
 	exit 1
 fi
@@ -74,6 +78,7 @@ yq -i '
   .metadata.name = strenv(NEW_METADATA_NAME) |
   .metadata.annotations["olm.skipRange"] = strenv(NEW_SKIP_RANGE) |
   .metadata.annotations["olm.properties"] = strenv(NEW_OLM_PROPERTIES) |
+  .metadata.annotations["operators.openshift.io/must-gather-image"] = strenv(NEW_MUST_GATHER_IMAGE) |
   .spec.version = strenv(NEW_SPEC_VERSION) |
   .spec.labels.alm-status-descriptors = strenv(NEW_ALM_STATUS_DESC)
 ' ${CSV_MANIFEST}
