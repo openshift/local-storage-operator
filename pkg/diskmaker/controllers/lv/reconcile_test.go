@@ -760,6 +760,8 @@ func evaluate(tc *testContext, expectedPVs *corev1.PersistentVolumeList) (bool, 
 		for _, expectedPV := range expectedPVs.Items {
 			actualPV.SetResourceVersion("")
 			expectedPV.SetResourceVersion("")
+			actualPV.TypeMeta = metav1.TypeMeta{}
+			expectedPV.TypeMeta = metav1.TypeMeta{}
 			if reflect.DeepEqual(actualPV, expectedPV) {
 				actualPVsValuesCopy = RemoveIndex(actualPVsValuesCopy, a)
 			}
@@ -786,6 +788,8 @@ func evaluate(tc *testContext, expectedPVs *corev1.PersistentVolumeList) (bool, 
 			for e, expectedPV := range expectedPVsValuesCopy {
 				actualPV.SetResourceVersion("")
 				expectedPV.SetResourceVersion("")
+				actualPV.TypeMeta = metav1.TypeMeta{}
+				expectedPV.TypeMeta = metav1.TypeMeta{}
 				if reflect.DeepEqual(actualPV, expectedPV) {
 					expectedPVsValuesCopy = RemoveIndex(expectedPVsValuesCopy, e)
 				}
