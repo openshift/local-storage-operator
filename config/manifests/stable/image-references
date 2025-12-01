@@ -18,4 +18,4 @@ spec:
   - name: local-storage-mustgather
     from:
       kind: DockerImage
-      name: quay.io/openshift/origin-local-storage-mustgather:latest
+      name: registry.redhat.io/openshift4/ose-local-storage-mustgather-rhel9:v4.18.0
