@@ -119,6 +119,7 @@ metadata:
     olm.skipRange: ">=4.3.0 <4.20.0"
     operators.openshift.io/infrastructure-features: '["disconnected"]'
     operators.operatorframework.io/internal-objects: '["localvolumediscoveryresults.local.storage.openshift.io"]'
+    operators.openshift.io/must-gather-image: registry.redhat.io/openshift4/ose-local-storage-mustgather-rhel9:v4.20.0
     # This annotation injection is a workaround for BZ-1950047, since the associated
     # annotation in spec.install.spec.deployments.template.metadata is presently ignored.
     # TODO: remove the next line after BZ-1950047 is resolved.
