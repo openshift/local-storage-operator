@@ -2,17 +2,17 @@ package e2e
 
 import (
 	"context"
-	goctx "context"
 	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/credentials"
-	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/ec2"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/credentials"
+	"github.com/aws/aws-sdk-go-v2/service/ec2"
+	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/onsi/gomega"
 	localv1alpha1 "github.com/openshift/local-storage-operator/api/v1alpha1"
 	"github.com/openshift/local-storage-operator/pkg/common"
@@ -69,7 +69,7 @@ func populateDeviceInfo(t *testing.T, ctx *framework.TestCtx, nodeEnv []nodeDisk
 	}
 	matcher.Eventually(func() error {
 		t.Log("creating localvolumediscovery")
-		return f.Client.Create(goctx.TODO(), localVolumeDiscovery, &framework.CleanupOptions{TestContext: ctx})
+		return f.Client.Create(context.TODO(), localVolumeDiscovery, &framework.CleanupOptions{TestContext: ctx})
 	}, time.Minute, time.Second*2).ShouldNot(gomega.HaveOccurred(), "creating localvolumediscovery")
 
 	// get discovery, and match disks on nodes with nodeEnv entries
@@ -78,7 +78,7 @@ func populateDeviceInfo(t *testing.T, ctx *framework.TestCtx, nodeEnv []nodeDisk
 	matcher.Eventually(func() bool {
 		t.Log("fetching localvolumediscoveryresults")
 		matcher.Eventually(func() error {
-			return f.Client.List(goctx.TODO(), discoveryResults)
+			return f.Client.List(context.TODO(), discoveryResults)
 		}, time.Minute, time.Second*2).ShouldNot(gomega.HaveOccurred(), "fetching localvolumediscoveryresults")
 
 		t.Log("matching localvolumediscoveryresults with LocalVolume device IDs")
@@ -139,20 +139,19 @@ func populateDeviceInfo(t *testing.T, ctx *framework.TestCtx, nodeEnv []nodeDisk
 // do not provide more than 20 disksizes
 // do not use more than once per node
 // this function is async
-func createAndAttachAWSVolumes(t *testing.T, ec2Client *ec2.EC2, ctx *framework.Context, namespace string, nodeEnv []nodeDisks) {
+func createAndAttachAWSVolumes(t *testing.T, ec2Client *ec2.Client, ctx *framework.Context, namespace string, nodeEnv []nodeDisks) {
 	for _, nodeEntry := range nodeEnv {
 		go createAndAttachAWSVolumesForNode(t, nodeEntry, ec2Client)
 	}
 }
-func createAndAttachAWSVolumesForNode(t *testing.T, nodeEntry nodeDisks, ec2Client *ec2.EC2) {
+func createAndAttachAWSVolumesForNode(t *testing.T, nodeEntry nodeDisks, ec2Client *ec2.Client) {
 	node := nodeEntry.node
 	if len(nodeEntry.disks) > 20 {
 		err := fmt.Errorf("can't provision more than 20 disks per node")
 		t.Errorf("failed to create and attach aws disks for node %q: %+v", nodeEntry.node.Name, err)
 	}
-	volumes := make([]*ec2.Volume, len(nodeEntry.disks))
 	volumeLetters := []string{"g", "h", "i", "j", "k", "l", "m", "n", "o", "p", "q", "r", "s", "t", "u", "v", "w", "x", "y", "z"}
-	volumeIDs := make([]*string, 0)
+	volumeIDs := make([]string, 0)
 	instanceID, _, zone, err := getAWSNodeInfo(node)
 	if err != nil {
 		t.Errorf("failed to create and attach aws disks for node %q: %+v", nodeEntry.node.Name, err)
@@ -164,12 +163,12 @@ func createAndAttachAWSVolumesForNode(t *testing.T, nodeEntry nodeDisks, ec2Clie
 		diskName := fmt.Sprintf("sd%s", volumeLetters[i])
 		createInput := &ec2.CreateVolumeInput{
 			AvailabilityZone: aws.String(zone),
-			Size:             aws.Int64(int64(diskSize)),
-			VolumeType:       aws.String("gp2"),
-			TagSpecifications: []*ec2.TagSpecification{
+			Size:             aws.Int32(int32(diskSize)),
+			VolumeType:       "gp2",
+			TagSpecifications: []ec2types.TagSpecification{
 				{
-					ResourceType: aws.String("volume"),
-					Tags: []*ec2.Tag{
+					ResourceType: "volume",
+					Tags: []ec2types.Tag{
 						{
 							Key:   aws.String("Name"),
 							Value: aws.String(diskName),
@@ -186,32 +185,31 @@ func createAndAttachAWSVolumesForNode(t *testing.T, nodeEntry nodeDisks, ec2Clie
 				},
 			},
 		}
-		volume, err := ec2Client.CreateVolume(createInput)
+		volume, err := ec2Client.CreateVolume(context.TODO(), createInput)
 		if err != nil {
 			err := fmt.Errorf("expect to create AWS volume with input %v: %w", createInput, err)
 			t.Errorf("failed to create and attach aws disks for node %q: %+v", nodeEntry.node.Name, err)
 		}
 		t.Logf("creating volume: %q (%dGi)", *volume.VolumeId, *volume.Size)
-		volumes[i] = volume
-		volumeIDs = append(volumeIDs, volume.VolumeId)
+		volumeIDs = append(volumeIDs, *volume.VolumeId)
 	}
 	// attach and poll for attachment to complete
 	err = wait.Poll(time.Second*5, time.Minute*4, func() (bool, error) {
 		describeVolumeInput := &ec2.DescribeVolumesInput{
 			VolumeIds: volumeIDs,
 		}
-		describedVolumes, err := ec2Client.DescribeVolumes(describeVolumeInput)
+		describedVolumes, err := ec2Client.DescribeVolumes(context.TODO(), describeVolumeInput)
 		if err != nil {
 			return false, err
 		}
 		allAttached := true
 		for i, volume := range describedVolumes.Volumes {
-			if *volume.State == ec2.VolumeStateInUse {
+			if volume.State == ec2types.VolumeStateInUse {
 				t.Logf("volume attachment complete: %q (%dGi)", *volume.VolumeId, *volume.Size)
 				continue
 			}
 			allAttached = false
-			if *volume.State == ec2.VolumeStateAvailable {
+			if volume.State == ec2types.VolumeStateAvailable {
 
 				t.Logf("volume attachment starting: %q (%dGi)", *volume.VolumeId, *volume.Size)
 				attachInput := &ec2.AttachVolumeInput{
@@ -219,7 +217,7 @@ func createAndAttachAWSVolumesForNode(t *testing.T, nodeEntry nodeDisks, ec2Clie
 					InstanceId: aws.String(instanceID),
 					Device:     aws.String(fmt.Sprintf("/dev/sd%s", volumeLetters[i])),
 				}
-				_, err = ec2Client.AttachVolume(attachInput)
+				_, err = ec2Client.AttachVolume(context.TODO(), attachInput)
 				if err != nil {
 					return false, err
 				}
@@ -233,7 +231,7 @@ func createAndAttachAWSVolumesForNode(t *testing.T, nodeEntry nodeDisks, ec2Clie
 	}
 }
 
-func cleanupAWSDisks(t *testing.T, ec2Client *ec2.EC2) error {
+func cleanupAWSDisks(t *testing.T, ec2Client *ec2.Client) error {
 	volumes, err := getAWSTestVolumes(ec2Client)
 	if err != nil {
 		return fmt.Errorf("failed to list AWS volumes: %+v", err)
@@ -242,7 +240,7 @@ func cleanupAWSDisks(t *testing.T, ec2Client *ec2.EC2) error {
 	for _, volume := range volumes {
 		t.Logf("detatching AWS disks with volumeId: %q (%dGi)", *volume.VolumeId, *volume.Size)
 		input := &ec2.DetachVolumeInput{VolumeId: volume.VolumeId}
-		_, err := ec2Client.DetachVolume(input)
+		_, err := ec2Client.DetachVolume(context.TODO(), input)
 		if err != nil {
 			t.Logf("detaching disk failed: %+v", err)
 		}
@@ -254,14 +252,14 @@ func cleanupAWSDisks(t *testing.T, ec2Client *ec2.EC2) error {
 		}
 		allDeleted := true
 		for _, volume := range volumes {
-			if *volume.State != ec2.VolumeStateAvailable {
-				t.Logf("volume %q is in state %q, waiting for state %q", *volume.VolumeId, *volume.State, ec2.VolumeStateAvailable)
+			if volume.State != ec2types.VolumeStateAvailable {
+				t.Logf("volume %q is in state %q, waiting for state %q", *volume.VolumeId, volume.State, ec2types.VolumeStateAvailable)
 				allDeleted = false
 				continue
 			}
 			t.Logf("deleting AWS disks with volumeId: %q (%dGi)", *volume.VolumeId, *volume.Size)
 			input := &ec2.DeleteVolumeInput{VolumeId: volume.VolumeId}
-			_, err := ec2Client.DeleteVolume(input)
+			_, err := ec2Client.DeleteVolume(context.TODO(), input)
 			if err != nil {
 				t.Logf("deleting disk failed: %+v", err)
 				allDeleted = false
@@ -290,12 +288,12 @@ func getAWSNodeInfo(node corev1.Node) (string, string, string, error) {
 	return instanceID, region, zone, nil
 }
 
-func getAWSTestVolumes(ec2Client *ec2.EC2) ([]*ec2.Volume, error) {
-	output, err := ec2Client.DescribeVolumes(&ec2.DescribeVolumesInput{
-		Filters: []*ec2.Filter{
+func getAWSTestVolumes(ec2Client *ec2.Client) ([]ec2types.Volume, error) {
+	output, err := ec2Client.DescribeVolumes(context.TODO(), &ec2.DescribeVolumesInput{
+		Filters: []ec2types.Filter{
 			{
 				Name:   aws.String("tag:purpose"),
-				Values: []*string{aws.String(awsPurposeTag)},
+				Values: []string{awsPurposeTag},
 			},
 		},
 	})
@@ -304,7 +302,7 @@ func getAWSTestVolumes(ec2Client *ec2.EC2) ([]*ec2.Volume, error) {
 
 }
 
-func getEC2Client(region string) (*ec2.EC2, error) {
+func getEC2Client(region string) (*ec2.Client, error) {
 	f := framework.Global
 	// get AWS credentials
 	awsCreds := &corev1.Secret{}
@@ -324,14 +322,14 @@ func getEC2Client(region string) (*ec2.EC2, error) {
 		return nil, fmt.Errorf("cloud credential key not found")
 	}
 
-	sess, err := session.NewSession(&aws.Config{
-		Region:      aws.String(region),
-		Credentials: credentials.NewStaticCredentials(string(id), string(key), ""),
-	})
+	cfg, err := config.LoadDefaultConfig(context.TODO(),
+		config.WithRegion(region),
+		config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(string(id), string(key), "")),
+	)
 	if err != nil {
 		return nil, err
 	}
 
 	// initialize client
-	return ec2.New(sess), nil
+	return ec2.NewFromConfig(cfg), nil
 }

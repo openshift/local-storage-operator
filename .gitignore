@@ -6,3 +6,4 @@ debug.test
 *.swp
 opm-bundle/
 Dockerfile.diskmaker.hack
+setup-envtest
