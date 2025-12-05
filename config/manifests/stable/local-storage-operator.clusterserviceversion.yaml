@@ -481,7 +481,7 @@ spec:
                       - name: MUSTGATHER_IMAGE
                         # This env. var is not used by the operator.
                         # It is here only to be matched by ART pipeline and added to related-images automatically.
-                        value: quay.io/openshift/origin-local-storage-mustgather:latest
+                        value: registry.redhat.io/openshift4/ose-local-storage-mustgather-rhel9:v4.21.0
   customresourcedefinitions:
     owned:
       - displayName: Local Volume
