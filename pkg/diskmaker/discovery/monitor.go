@@ -71,6 +71,12 @@ func rawUdevBlockMonitor(c chan string, matches, exclusions []string) {
 		return
 	}
 
+	defer func() {
+		if waitErr := cmd.Wait(); waitErr != nil {
+			klog.Warningf("udevadm monitor exited with error: %v", waitErr)
+		}
+	}()
+
 	scanner := bufio.NewScanner(stdout)
 	for scanner.Scan() {
 		text := scanner.Text()
