@@ -164,7 +164,7 @@ func createAndAttachAWSVolumesForNode(t *testing.T, nodeEntry nodeDisks, ec2Clie
 		createInput := &ec2.CreateVolumeInput{
 			AvailabilityZone: aws.String(zone),
 			Size:             aws.Int32(int32(diskSize)),
-			VolumeType:       "gp2",
+			VolumeType:       "gp3",
 			TagSpecifications: []ec2types.TagSpecification{
 				{
 					ResourceType: "volume",
