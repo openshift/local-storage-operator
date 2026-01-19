@@ -119,6 +119,7 @@ metadata:
     olm.properties: '[{"type": "olm.maxOpenShiftVersion", "value": "4.19"}]'
     operators.openshift.io/infrastructure-features: '["disconnected"]'
     operators.operatorframework.io/internal-objects: '["localvolumediscoveryresults.local.storage.openshift.io"]'
+    operators.openshift.io/must-gather-image: registry.redhat.io/openshift4/ose-local-storage-mustgather-rhel9:v4.18.0
     # This annotation injection is a workaround for BZ-1950047, since the associated
     # annotation in spec.install.spec.deployments.template.metadata is presently ignored.
     # TODO: remove the next line after BZ-1950047 is resolved.
@@ -403,7 +404,7 @@ spec:
                       - name: MUSTGATHER_IMAGE
                         # This env. var is not used by the operator.
                         # It is here only to be matched by ART pipeline and added to related-images automatically.
-                        value: quay.io/openshift/origin-local-storage-mustgather:latest
+                        value: registry.redhat.io/openshift4/ose-local-storage-mustgather-rhel9:v4.18.0
   customresourcedefinitions:
     owned:
       - displayName: Local Volume
