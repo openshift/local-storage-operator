@@ -39,6 +39,14 @@ spec:
           spec:
             description: LocalVolumeSetSpec defines the desired state of LocalVolumeSet
             properties:
+              defaultDeviceLinkPolicy:
+                description: DefaultDeviceLinkPolicy defines the default device link
+                  policy for this object.
+                enum:
+                - None
+                - CurrentLinkTarget
+                - PreferredLinkTarget
+                type: string
               deviceInclusionSpec:
                 description: DeviceInclusionSpec is the filtration rule for including
                   a device in the device discovery
