@@ -3,13 +3,13 @@ updates:
     update_list:
     # replace metadata.name value
     - search: "local-storage-operator.v4.18.0"
-      replace: "local-storage-operator.v{FULL_VER}"
+      replace: "local-storage-operator.v4.18.0-{DATE_TIME}"
     # replace entire version line, otherwise would replace 4.3.0 anywhere
     - search: "version: 4.18.0"
-      replace: "version: {FULL_VER}"
+      replace: "version: 4.18.0-{DATE_TIME}"
     - search: 'olm.skipRange: ">=4.3.0 <4.18.0"'
-      replace: 'olm.skipRange: ">=4.3.0 <{FULL_VER}"'
+      replace: 'olm.skipRange: ">=4.3.0 <4.18.0-{DATE_TIME}"'
   - file: "local-storage-operator.package.yaml"
     update_list:
     - search: "currentCSV: local-storage-operator.v4.18.0"
-      replace: "currentCSV: local-storage-operator.{FULL_VER}"
+      replace: "currentCSV: local-storage-operator.v4.18.0-{DATE_TIME}"
