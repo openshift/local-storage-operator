@@ -2,14 +2,14 @@ updates:
   - file: "stable/local-storage-operator.clusterserviceversion.yaml" # relative to this file
     update_list:
     # replace metadata.name value
-    - search: "local-storage-operator.v{MAJOR}.{MINOR}.0"
+    - search: "local-storage-operator.v4.18.0"
       replace: "local-storage-operator.v{FULL_VER}"
     # replace entire version line, otherwise would replace 4.3.0 anywhere
-    - search: "version: {MAJOR}.{MINOR}.0"
+    - search: "version: 4.18.0"
       replace: "version: {FULL_VER}"
-    - search: 'olm.skipRange: ">=4.3.0 <{MAJOR}.{MINOR}.0"'
+    - search: 'olm.skipRange: ">=4.3.0 <4.18.0"'
       replace: 'olm.skipRange: ">=4.3.0 <{FULL_VER}"'
   - file: "local-storage-operator.package.yaml"
     update_list:
-    - search: "currentCSV: local-storage-operator.v{MAJOR}.{MINOR}.0"
+    - search: "currentCSV: local-storage-operator.v4.18.0"
       replace: "currentCSV: local-storage-operator.{FULL_VER}"
