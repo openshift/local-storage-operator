@@ -33,38 +33,23 @@ type LocalVolumeDeviceLink struct {
 	// metadata is the standard object's metadata and has
 	// ownerRef set to the LocalVolume or LocalVolumeSet object.
 	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata
-	// +optional
 	metav1.ObjectMeta `json:"metadata,omitzero"`
 	// spec holds user settable values for the device link
 	// +required
 	Spec LocalVolumeDeviceLinkSpec `json:"spec,omitzero"`
-	// status holds observed values for the device link
+	// status holds observed values for the device link.
+	// if not set, this means local-storage-operator has not synced
+	// this particular volume yet on the node.
 	// +optional
 	Status LocalVolumeDeviceLinkStatus `json:"status,omitzero"`
 }
 
-// +kubebuilder:validation:Enum=None;CurrentLinkTarget;PreferredLinkTarget
-type LocalVolumeDeviceLinkPolicy string
-
-const (
-	// LocalVolumeDeviceLinkPolicyNone means no policy has been selected for
-	// the device and LSO generates an alert if there is a mismatch between
-	// .status.currentLinkTarget and .status.preferredLinkTarget
-	LocalVolumeDeviceLinkPolicyNone = "None" // default
-	// LocalVolumeDeviceLinkPolicyCurrentLinkTarget silences the alert and
-	// keeps the existing symlink pointing to .status.currentLinkTarget
-	LocalVolumeDeviceLinkPolicyCurrentLinkTarget = "CurrentLinkTarget"
-	// LocalVolumeDeviceLinkPolicyPreferredLinkTarget silences the alert and
-	// changes the symlink to point to .status.preferredLinkTarget
-	LocalVolumeDeviceLinkPolicyPreferredLinkTarget = "PreferredLinkTarget"
-)
-
 // LocalVolumeDeviceLinkSpec defines the desired state of the device link
-// +kubebuilder:validation:MinProperties=1
 type LocalVolumeDeviceLinkSpec struct {
 	// persistentVolumeName is the name of the persistent volume linked to the device
 	// +required
 	PersistentVolumeName string `json:"persistentVolumeName"`
+
 	// policy expresses how to manage symlinks for the device.
 	// "None" means no policy has been chosen, and will generate an alert if
 	// there is a mismatch between .status.currentLinkTarget and
@@ -76,11 +61,10 @@ type LocalVolumeDeviceLinkSpec struct {
 	// The default value is "None".
 	// +default="None"
 	// +optional
-	Policy LocalVolumeDeviceLinkPolicy `json:"policy,omitempty"`
+	Policy DeviceLinkPolicy `json:"policy,omitempty"`
 }
 
 // LocalVolumeDeviceLinkStatus stores the observed state of the device link
-// +kubebuilder:validation:MinProperties=1
 type LocalVolumeDeviceLinkStatus struct {
 	// currentLinkTarget is the current by-id symlink used for the device
 	// +required
@@ -90,12 +74,15 @@ type LocalVolumeDeviceLinkStatus struct {
 	PreferredLinkTarget string `json:"preferredLinkTarget"`
 	// validLinkTargets is the list of valid by-id symlinks for the device
 	// +required
+	// +listType=set
 	ValidLinkTargets []string `json:"validLinkTargets"`
 	// filesystemUUID is the UUID of the filesystem found on the device (when available)
 	// +optional
 	FilesystemUUID string `json:"filesystemUUID,omitempty"`
-	// conditions is a list of operator conditions
+	// conditions is a list of operator conditions.
 	// +optional
+	// +listType=map
+	// +listMapKey=type
 	Conditions []operatorv1.OperatorCondition `json:"conditions,omitempty"`
 }
 
@@ -110,3 +97,21 @@ type LocalVolumeDeviceLinkList struct {
 
 	Items []LocalVolumeDeviceLink `json:"items"`
 }
+
+// DeviceLinkPolicy defines how symlinks for given volumes should be treated
+// by the LSO. Valid values are - None, CurrentLinkTarget and PreferredLinkTarget
+// +kubebuilder:validation:Enum=None;CurrentLinkTarget;PreferredLinkTarget
+type DeviceLinkPolicy string
+
+const (
+	// DeviceLinkPolicyNone means no policy has been selected for
+	// the device and LSO generates an alert if there is a mismatch between
+	// .status.currentLinkTarget and .status.preferredLinkTarget
+	DeviceLinkPolicyNone = "None" // default
+	// DeviceLinkPolicyCurrentLinkTarget silences the alert and
+	// keeps the existing symlink pointing to .status.currentLinkTarget
+	DeviceLinkPolicyCurrentLinkTarget = "CurrentLinkTarget"
+	// DeviceLinkPolicyPreferredLinkTarget silences the alert and
+	// changes the symlink to point to .status.preferredLinkTarget
+	DeviceLinkPolicyPreferredLinkTarget = "PreferredLinkTarget"
+)

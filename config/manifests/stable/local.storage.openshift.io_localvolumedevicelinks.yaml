@@ -41,7 +41,6 @@ spec:
             type: object
           spec:
             description: spec holds user settable values for the device link
-            minProperties: 1
             properties:
               persistentVolumeName:
                 description: persistentVolumeName is the name of the persistent volume
@@ -68,11 +67,13 @@ spec:
             - persistentVolumeName
             type: object
           status:
-            description: status holds observed values for the device link
-            minProperties: 1
+            description: |-
+              status holds observed values for the device link.
+              if not set, this means local-storage-operator has not synced
+              this particular volume yet on the node.
             properties:
               conditions:
-                description: conditions is a list of operator conditions
+                description: conditions is a list of operator conditions.
                 items:
                   description: OperatorCondition is just the standard condition fields.
                   properties:
@@ -104,6 +105,9 @@ spec:
                   - type
                   type: object
                 type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
               currentLinkTarget:
                 description: currentLinkTarget is the current by-id symlink used for
                   the device
@@ -122,12 +126,14 @@ spec:
                 items:
                   type: string
                 type: array
+                x-kubernetes-list-type: set
             required:
             - currentLinkTarget
             - preferredLinkTarget
             - validLinkTargets
             type: object
         required:
+        - metadata
         - spec
         type: object
     served: true

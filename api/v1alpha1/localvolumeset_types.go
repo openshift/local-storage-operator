@@ -101,9 +101,6 @@ type LocalVolumeSetSpec struct {
 	// DeviceInclusionSpec is the filtration rule for including a device in the device discovery
 	// +optional
 	DeviceInclusionSpec *DeviceInclusionSpec `json:"deviceInclusionSpec,omitempty"`
-	// DefaultDeviceLinkPolicy defines the default device link policy for this object.
-	// +optional
-	DefaultDeviceLinkPolicy LocalVolumeDeviceLinkPolicy `json:"defaultDeviceLinkPolicy,omitempty"`
 }
 
 // LocalVolumeSetStatus defines the observed state of LocalVolumeSet
