@@ -48,6 +48,8 @@ type LocalVolumeDeviceLink struct {
 type LocalVolumeDeviceLinkSpec struct {
 	// persistentVolumeName is the name of the persistent volume linked to the device
 	// +required
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=253
 	PersistentVolumeName string `json:"persistentVolumeName"`
 
 	// policy expresses how to manage symlinks for the device.
@@ -75,6 +77,7 @@ type LocalVolumeDeviceLinkStatus struct {
 	// validLinkTargets is the list of valid by-id symlinks for the device
 	// +required
 	// +listType=set
+	// +kubebuilder:validation:MaxItems=128
 	ValidLinkTargets []string `json:"validLinkTargets"`
 	// filesystemUUID is the UUID of the filesystem found on the device (when available)
 	// +optional

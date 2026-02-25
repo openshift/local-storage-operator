@@ -45,6 +45,8 @@ spec:
               persistentVolumeName:
                 description: persistentVolumeName is the name of the persistent volume
                   linked to the device
+                maxLength: 253
+                minLength: 1
                 type: string
               policy:
                 default: None
@@ -125,6 +127,7 @@ spec:
                   for the device
                 items:
                   type: string
+                maxItems: 128
                 type: array
                 x-kubernetes-list-type: set
             required:
