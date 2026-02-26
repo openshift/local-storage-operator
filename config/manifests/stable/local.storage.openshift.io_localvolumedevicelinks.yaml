@@ -14,7 +14,7 @@ spec:
     singular: localvolumedevicelink
   scope: Namespaced
   versions:
-  - name: v1alpha1
+  - name: v1
     schema:
       openAPIV3Schema:
         description: |-
@@ -136,7 +136,6 @@ spec:
             - validLinkTargets
             type: object
         required:
-        - metadata
         - spec
         type: object
     served: true

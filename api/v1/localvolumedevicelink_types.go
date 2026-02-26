@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package v1alpha1
+package v1
 
 import (
 	operatorv1 "github.com/openshift/api/operator/v1"
@@ -33,15 +33,15 @@ type LocalVolumeDeviceLink struct {
 	// metadata is the standard object's metadata and has
 	// ownerRef set to the LocalVolume or LocalVolumeSet object.
 	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata
-	metav1.ObjectMeta `json:"metadata,omitzero"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
 	// spec holds user settable values for the device link
 	// +required
-	Spec LocalVolumeDeviceLinkSpec `json:"spec,omitzero"`
+	Spec LocalVolumeDeviceLinkSpec `json:"spec"`
 	// status holds observed values for the device link.
 	// if not set, this means local-storage-operator has not synced
 	// this particular volume yet on the node.
 	// +optional
-	Status LocalVolumeDeviceLinkStatus `json:"status,omitzero"`
+	Status LocalVolumeDeviceLinkStatus `json:"status,omitempty"`
 }
 
 // LocalVolumeDeviceLinkSpec defines the desired state of the device link

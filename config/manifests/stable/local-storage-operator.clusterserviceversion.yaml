@@ -106,7 +106,7 @@ metadata:
           }
         },
         {
-          "apiVersion": "local.storage.openshift.io/v1alpha1",
+          "apiVersion": "local.storage.openshift.io/v1",
           "kind": "LocalVolumeDeviceLink",
           "metadata": {
             "name": "local-pv-abcd"
@@ -617,7 +617,7 @@ spec:
         kind: LocalVolumeDeviceLink
         name: localvolumedevicelinks.local.storage.openshift.io
         description: LocalVolumeDeviceLink establishes a link between block devices on the node and PersistentVolumes created by Local Storage Operator
-        version: v1alpha1
+        version: v1
         specDescriptors:
           - description: PersistentVolumeName is the name of the persistent volume linked to the device
             displayName: PersistentVolumeName
