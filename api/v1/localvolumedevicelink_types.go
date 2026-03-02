@@ -74,7 +74,7 @@ type LocalVolumeDeviceLinkStatus struct {
 	// preferredLinkTarget is the preferred by-id symlink for the device
 	// +required
 	PreferredLinkTarget string `json:"preferredLinkTarget"`
-	// validLinkTargets is the list of valid by-id symlinks for the device
+	// validLinkTargets is the list of /dev/disk/by-id symlinks for the device that the local storage operator considers as valid.
 	// +required
 	// +listType=set
 	// +kubebuilder:validation:MaxItems=128
