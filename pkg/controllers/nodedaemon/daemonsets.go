@@ -63,19 +63,23 @@ func getDiskMakerDSMutateFn(
 	ownerRefs []metav1.OwnerReference,
 	nodeSelector *corev1.NodeSelector,
 	dataHash string,
+	tlsMinVersion string,
+	tlsCipherSuites string,
 ) func(*appsv1.DaemonSet) error {
 
 	return func(ds *appsv1.DaemonSet) error {
-		// read template for default values
-		dsBytes, err := assets.ReadFileAndReplace(
-			common.DiskMakerManagerDaemonSetTemplate,
-			[]string{
-				"${OBJECT_NAMESPACE}", request.Namespace,
-				"${CONTAINER_IMAGE}", common.GetDiskMakerImage(),
-				"${RBAC_PROXY_IMAGE}", common.GetKubeRBACProxyImage(),
-				"${PRIORITY_CLASS_NAME}", os.Getenv("PRIORITY_CLASS_NAME"),
-			},
-		)
+		pairs := []string{
+			"${OBJECT_NAMESPACE}", request.Namespace,
+			"${CONTAINER_IMAGE}", common.GetDiskMakerImage(),
+			"${RBAC_PROXY_IMAGE}", common.GetKubeRBACProxyImage(),
+			"${PRIORITY_CLASS_NAME}", os.Getenv("PRIORITY_CLASS_NAME"),
+			"${TLS_MIN_VERSION}", tlsMinVersion,
+		}
+		if tlsCipherSuites != "" {
+			pairs = append(pairs, "${TLS_CIPHER_SUITES}", tlsCipherSuites)
+		}
+
+		dsBytes, err := assets.ReadFileAndReplace(common.DiskMakerManagerDaemonSetTemplate, pairs)
 		if err != nil {
 			return err
 		}
