@@ -5,10 +5,12 @@ import (
 	"strings"
 	"time"
 
+	configv1 "github.com/openshift/api/config/v1"
 	v1 "github.com/openshift/local-storage-operator/api/v1"
 	localv1alpha1 "github.com/openshift/local-storage-operator/api/v1alpha1"
 	"github.com/openshift/local-storage-operator/pkg/common"
 	"github.com/openshift/local-storage-operator/pkg/localmetrics"
+	lsotls "github.com/openshift/local-storage-operator/pkg/tls"
 	prometheusv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -20,6 +22,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	errorutils "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/tools/record"
 	"k8s.io/klog/v2"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
@@ -52,8 +55,10 @@ type DaemonReconciler struct {
 	// that reads objects from the cache and writes to the apiserver
 	Client                        client.Client
 	Scheme                        *runtime.Scheme
+	Recorder                      record.EventRecorder
 	deletedStaticProvisioner      bool
 	deletedOrphanedServiceMonitor bool
+	lastObservedTLSConfig         map[string]interface{}
 }
 
 // Reconcile reads that state of the cluster for a LocalVolumeSet object and makes changes based on the state read
@@ -97,7 +102,14 @@ func (r *DaemonReconciler) Reconcile(ctx context.Context, request ctrl.Request) 
 
 	configMapDataHash := dataHash(configMap.Data)
 
-	diskMakerDSMutateFn := getDiskMakerDSMutateFn(request, tolerations, ownerRefs, nodeSelector, configMapDataHash)
+	tlsMinVersion, tlsCipherSuites, observedTLSConfig, err := lsotls.GetTLSProfileValues(ctx, r.Client, r.lastObservedTLSConfig)
+	if err != nil {
+		klog.Warningf("failed to get cluster TLS profile, proceeding with kube-rbac-proxy defaults: %v", err)
+	} else {
+		r.lastObservedTLSConfig = observedTLSConfig
+	}
+
+	diskMakerDSMutateFn := getDiskMakerDSMutateFn(request, tolerations, ownerRefs, nodeSelector, configMapDataHash, tlsMinVersion, tlsCipherSuites)
 	ds, opResult, err := CreateOrUpdateDaemonset(ctx, r.Client, diskMakerDSMutateFn)
 	if err != nil {
 		return ctrl.Result{}, err
@@ -240,6 +252,21 @@ func (r *DaemonReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			return []reconcile.Request{req}
 		})
 
+	watchNamespace, err := common.GetWatchNamespace()
+	if err != nil {
+		return err
+	}
+
+	// When the cluster TLS profile changes, re-reconcile watched namespace.
+	enqueueAllLocalVolumeNamespaces := handler.EnqueueRequestsFromMapFunc(
+		func(ctx context.Context, obj client.Object) []reconcile.Request {
+			return []reconcile.Request{{
+				NamespacedName: types.NamespacedName{Namespace: watchNamespace},
+			}}
+		})
+
+	r.Recorder = mgr.GetEventRecorderFor(controllerName)
+
 	return ctrl.NewControllerManagedBy(mgr).
 		Named(controllerName).
 		For(&v1.LocalVolume{}).
@@ -249,5 +276,7 @@ func (r *DaemonReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		// watch provisioner configmap
 		Watches(&corev1.ConfigMap{}, enqueueOnlyNamespace, builder.WithPredicates(common.EnqueueOnlyLabeledSubcomponents(common.ProvisionerConfigMapName))).
 		Watches(&v1.LocalVolume{}, enqueueOnlyNamespace).
+		// watch cluster TLS profile changes
+		Watches(&configv1.APIServer{}, enqueueAllLocalVolumeNamespaces).
 		Complete(r)
 }
