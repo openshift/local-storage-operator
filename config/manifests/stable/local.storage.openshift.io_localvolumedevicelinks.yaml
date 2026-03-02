@@ -111,23 +111,29 @@ spec:
                 - type
                 x-kubernetes-list-type: map
               currentLinkTarget:
-                description: currentLinkTarget is the current by-id symlink used for
-                  the device
+                description: |-
+                  currentLinkTarget is the current devicePath being used by local storage operator
+                  This could be /dev/disk/by-id symlink if available but since LocalVolume objects
+                  allow users to specify different path, it may be user's specified value in
+                  LocalVolume object.
                 type: string
               filesystemUUID:
                 description: filesystemUUID is the UUID of the filesystem found on
                   the device (when available)
                 type: string
               preferredLinkTarget:
-                description: preferredLinkTarget is the preferred by-id symlink for
-                  the device
+                description: |-
+                  preferredLinkTarget is the /dev/disk/by-id symlink for the device that the local storage
+                  operator evaluated as the most stable and the least error prone. The local storage operator
+                  recommends using this symlink, after a careful review of the cluster admin.
                 type: string
               validLinkTargets:
-                description: validLinkTargets is the list of valid by-id symlinks
-                  for the device
+                description: |-
+                  validLinkTargets is the list of /dev/disk/by-id symlinks for the device that the local
+                  storage operator considers as valid.
                 items:
                   type: string
-                maxItems: 128
+                maxItems: 256
                 type: array
                 x-kubernetes-list-type: set
             required:

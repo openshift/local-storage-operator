@@ -68,16 +68,22 @@ type LocalVolumeDeviceLinkSpec struct {
 
 // LocalVolumeDeviceLinkStatus stores the observed state of the device link
 type LocalVolumeDeviceLinkStatus struct {
-	// currentLinkTarget is the current by-id symlink used for the device
+	// currentLinkTarget is the current devicePath being used by local storage operator
+	// This could be /dev/disk/by-id symlink if available but since LocalVolume objects
+	// allow users to specify different path, it may be user's specified value in
+	// LocalVolume object.
 	// +required
 	CurrentLinkTarget string `json:"currentLinkTarget"`
-	// preferredLinkTarget is the /dev/disk/by-id symlink for the device that the local storage operator evaluated as the most stable and the least error prone. The local storage operator recommends using this symlink, after a careful review of the cluster admin.
+	// preferredLinkTarget is the /dev/disk/by-id symlink for the device that the local storage
+	// operator evaluated as the most stable and the least error prone. The local storage operator
+	// recommends using this symlink, after a careful review of the cluster admin.
 	// +required
 	PreferredLinkTarget string `json:"preferredLinkTarget"`
-	// validLinkTargets is the list of /dev/disk/by-id symlinks for the device that the local storage operator considers as valid.
+	// validLinkTargets is the list of /dev/disk/by-id symlinks for the device that the local
+	// storage operator considers as valid.
 	// +required
 	// +listType=set
-	// +kubebuilder:validation:MaxItems=128
+	// +kubebuilder:validation:MaxItems=256
 	ValidLinkTargets []string `json:"validLinkTargets"`
 	// filesystemUUID is the UUID of the filesystem found on the device (when available)
 	// +optional
