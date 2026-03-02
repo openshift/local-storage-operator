@@ -76,7 +76,7 @@ type LocalVolumeDeviceLinkStatus struct {
 	CurrentLinkTarget string `json:"currentLinkTarget"`
 	// preferredLinkTarget is the /dev/disk/by-id symlink for the device that the local storage
 	// operator evaluated as the most stable and the least error prone. The local storage operator
-	// recommends using this symlink, after a careful review of the cluster admin.
+	// recommends using this symlink, after a careful review by the cluster admin.
 	// +required
 	PreferredLinkTarget string `json:"preferredLinkTarget"`
 	// validLinkTargets is the list of /dev/disk/by-id symlinks for the device that the local
