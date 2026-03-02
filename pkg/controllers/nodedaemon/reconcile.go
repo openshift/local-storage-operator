@@ -5,10 +5,12 @@ import (
 	"strings"
 	"time"
 
+	configv1 "github.com/openshift/api/config/v1"
 	v1 "github.com/openshift/local-storage-operator/api/v1"
 	localv1alpha1 "github.com/openshift/local-storage-operator/api/v1alpha1"
 	"github.com/openshift/local-storage-operator/pkg/common"
 	"github.com/openshift/local-storage-operator/pkg/localmetrics"
+	lsotls "github.com/openshift/local-storage-operator/pkg/tls"
 	prometheusv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -97,7 +99,12 @@ func (r *DaemonReconciler) Reconcile(ctx context.Context, request ctrl.Request) 
 
 	configMapDataHash := dataHash(configMap.Data)
 
-	diskMakerDSMutateFn := getDiskMakerDSMutateFn(request, tolerations, ownerRefs, nodeSelector, configMapDataHash)
+	tlsMinVersion, tlsCipherSuites, err := lsotls.GetTLSProfileValues(ctx, r.Client)
+	if err != nil {
+		klog.Warningf("failed to get cluster TLS profile, proceeding with kube-rbac-proxy defaults: %v", err)
+	}
+
+	diskMakerDSMutateFn := getDiskMakerDSMutateFn(request, tolerations, ownerRefs, nodeSelector, configMapDataHash, tlsMinVersion, tlsCipherSuites)
 	ds, opResult, err := CreateOrUpdateDaemonset(ctx, r.Client, diskMakerDSMutateFn)
 	if err != nil {
 		return ctrl.Result{}, err
@@ -240,6 +247,28 @@ func (r *DaemonReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			return []reconcile.Request{req}
 		})
 
+	// When the cluster TLS profile changes, re-reconcile all LocalVolume namespaces.
+	enqueueAllLocalVolumeNamespaces := handler.EnqueueRequestsFromMapFunc(
+		func(ctx context.Context, obj client.Object) []reconcile.Request {
+			lvList := &v1.LocalVolumeList{}
+			if err := r.Client.List(ctx, lvList); err != nil {
+				klog.Errorf("failed to list LocalVolumes on APIServer change: %v", err)
+				return nil
+			}
+			seen := make(map[string]struct{})
+			var requests []reconcile.Request
+			for _, lv := range lvList.Items {
+				if _, ok := seen[lv.Namespace]; ok {
+					continue
+				}
+				seen[lv.Namespace] = struct{}{}
+				requests = append(requests, reconcile.Request{
+					NamespacedName: types.NamespacedName{Namespace: lv.Namespace},
+				})
+			}
+			return requests
+		})
+
 	return ctrl.NewControllerManagedBy(mgr).
 		Named(controllerName).
 		For(&v1.LocalVolume{}).
@@ -249,5 +278,7 @@ func (r *DaemonReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		// watch provisioner configmap
 		Watches(&corev1.ConfigMap{}, enqueueOnlyNamespace, builder.WithPredicates(common.EnqueueOnlyLabeledSubcomponents(common.ProvisionerConfigMapName))).
 		Watches(&v1.LocalVolume{}, enqueueOnlyNamespace).
+		// watch cluster TLS profile changes
+		Watches(&configv1.APIServer{}, enqueueAllLocalVolumeNamespaces).
 		Complete(r)
 }
