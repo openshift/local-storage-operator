@@ -49,7 +49,6 @@ spec:
                 minLength: 1
                 type: string
               policy:
-                default: None
                 description: |-
                   policy expresses how to manage symlinks for the device.
                   "None" means no policy has been chosen, and will generate an alert if
@@ -59,7 +58,8 @@ spec:
                   pointing to .status.currentLinkTarget.
                   "PreferredLinkTarget" silences the alert and changes the symlink to point
                   to .status.preferredLinkTarget.
-                  The default value is "None".
+                  The default value is determined by local-storage-operator and is subject
+                  to change. In this version of operator, default is `None`.
                 enum:
                 - None
                 - CurrentLinkTarget
@@ -116,21 +116,27 @@ spec:
                   This could be /dev/disk/by-id symlink if available but since LocalVolume objects
                   allow users to specify different path, it may be user's specified value in
                   LocalVolume object.
+                maxLength: 4096
+                minLength: 1
                 type: string
               filesystemUUID:
                 description: filesystemUUID is the UUID of the filesystem found on
                   the device (when available)
+                maxLength: 4096
+                minLength: 1
                 type: string
               preferredLinkTarget:
                 description: |-
                   preferredLinkTarget is the /dev/disk/by-id symlink for the device that the local storage
                   operator evaluated as the most stable and the least error prone. The local storage operator
                   recommends using this symlink, after a careful review by the cluster admin.
+                maxLength: 4096
+                minLength: 1
                 type: string
               validLinkTargets:
                 description: |-
                   validLinkTargets is the list of /dev/disk/by-id symlinks for the device that the local
-                  storage operator considers as valid.
+                  storage operator considers as valid. The list may contain at most 256 entries.
                 items:
                   type: string
                 maxItems: 256

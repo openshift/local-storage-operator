@@ -60,8 +60,8 @@ type LocalVolumeDeviceLinkSpec struct {
 	// pointing to .status.currentLinkTarget.
 	// "PreferredLinkTarget" silences the alert and changes the symlink to point
 	// to .status.preferredLinkTarget.
-	// The default value is "None".
-	// +default="None"
+	// The default value is determined by local-storage-operator and is subject
+	// to change. In this version of operator, default is `None`.
 	// +optional
 	Policy DeviceLinkPolicy `json:"policy,omitempty"`
 }
@@ -73,20 +73,26 @@ type LocalVolumeDeviceLinkStatus struct {
 	// allow users to specify different path, it may be user's specified value in
 	// LocalVolume object.
 	// +required
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=4096
 	CurrentLinkTarget string `json:"currentLinkTarget"`
 	// preferredLinkTarget is the /dev/disk/by-id symlink for the device that the local storage
 	// operator evaluated as the most stable and the least error prone. The local storage operator
 	// recommends using this symlink, after a careful review by the cluster admin.
 	// +required
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=4096
 	PreferredLinkTarget string `json:"preferredLinkTarget"`
 	// validLinkTargets is the list of /dev/disk/by-id symlinks for the device that the local
-	// storage operator considers as valid.
+	// storage operator considers as valid. The list may contain at most 256 entries.
 	// +required
 	// +listType=set
 	// +kubebuilder:validation:MaxItems=256
 	ValidLinkTargets []string `json:"validLinkTargets"`
 	// filesystemUUID is the UUID of the filesystem found on the device (when available)
 	// +optional
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=4096
 	FilesystemUUID string `json:"filesystemUUID,omitempty"`
 	// conditions is a list of operator conditions.
 	// +optional
@@ -116,11 +122,11 @@ const (
 	// DeviceLinkPolicyNone means no policy has been selected for
 	// the device and LSO generates an alert if there is a mismatch between
 	// .status.currentLinkTarget and .status.preferredLinkTarget
-	DeviceLinkPolicyNone = "None" // default
+	DeviceLinkPolicyNone DeviceLinkPolicy = "None" // default
 	// DeviceLinkPolicyCurrentLinkTarget silences the alert and
 	// keeps the existing symlink pointing to .status.currentLinkTarget
-	DeviceLinkPolicyCurrentLinkTarget = "CurrentLinkTarget"
+	DeviceLinkPolicyCurrentLinkTarget DeviceLinkPolicy = "CurrentLinkTarget"
 	// DeviceLinkPolicyPreferredLinkTarget silences the alert and
 	// changes the symlink to point to .status.preferredLinkTarget
-	DeviceLinkPolicyPreferredLinkTarget = "PreferredLinkTarget"
+	DeviceLinkPolicyPreferredLinkTarget DeviceLinkPolicy = "PreferredLinkTarget"
 )
