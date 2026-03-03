@@ -41,7 +41,7 @@ type LocalVolumeDeviceLink struct {
 	// if not set, this means local-storage-operator has not synced
 	// this particular volume yet on the node.
 	// +optional
-	Status LocalVolumeDeviceLinkStatus `json:"status,omitempty"`
+	Status LocalVolumeDeviceLinkStatus `json:"status,omitzero"`
 }
 
 // LocalVolumeDeviceLinkSpec defines the desired state of the device link
