@@ -104,6 +104,17 @@ metadata:
               ]
             }
           }
+        },
+        {
+          "apiVersion": "local.storage.openshift.io/v1",
+          "kind": "LocalVolumeDeviceLink",
+          "metadata": {
+            "name": "local-pv-abcd"
+          },
+          "spec": {
+            "persistentVolumeName": "local-pv-abcd",
+            "policy": "CurrentLinkTarget"
+          }
         }
       ]
     categories: Storage
@@ -601,3 +612,34 @@ spec:
           - description: DiscoveredDevices contains the list of devices discovered on the node
             displayName: DiscoveredDevices
             path: discoveredDevices
+      - displayName: Local Volume Device Link
+        group: local.storage.openshift.io
+        kind: LocalVolumeDeviceLink
+        name: localvolumedevicelinks.local.storage.openshift.io
+        description: LocalVolumeDeviceLink establishes a link between block devices on the node and PersistentVolumes created by Local Storage Operator
+        version: v1
+        specDescriptors:
+          - description: PersistentVolumeName is the name of the persistent volume linked to the device
+            displayName: PersistentVolumeName
+            path: persistentVolumeName
+          - description: Policy expresses how to manage symlinks for the device
+            displayName: Policy
+            path: policy
+        statusDescriptors:
+          - description: CurrentLinkTarget is the current by-id symlink used for the device
+            displayName: CurrentLinkTarget
+            path: currentLinkTarget
+          - description: PreferredLinkTarget is the preferred by-id symlink for the device
+            displayName: PreferredLinkTarget
+            path: preferredLinkTarget
+          - description: ValidLinkTargets is the list of valid by-id symlinks for the device
+            displayName: ValidLinkTargets
+            path: validLinkTargets
+          - description: FilesystemUUID is the UUID of the filesystem found on the device (when available)
+            displayName: FilesystemUUID
+            path: filesystemUUID
+          - description: Last known condition of this object
+            displayName: Conditions
+            path: conditions
+            x-descriptors:
+              - 'urn:alm:descriptor:io.kubernetes.conditions'

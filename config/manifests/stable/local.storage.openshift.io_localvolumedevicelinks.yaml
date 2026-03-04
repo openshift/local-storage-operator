@@ -1,0 +1,156 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.18.0
+  name: localvolumedevicelinks.local.storage.openshift.io
+spec:
+  group: local.storage.openshift.io
+  names:
+    kind: LocalVolumeDeviceLink
+    listKind: LocalVolumeDeviceLinkList
+    plural: localvolumedevicelinks
+    singular: localvolumedevicelink
+  scope: Namespaced
+  versions:
+  - name: v1
+    schema:
+      openAPIV3Schema:
+        description: |-
+          LocalVolumeDeviceLink establishes a link between block devices on the node
+          and PersistentVolumes created by Local Storage Operator. It stores discovered
+          symlinks for the device and influences LSO's symlink selection process.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: spec holds user settable values for the device link
+            properties:
+              persistentVolumeName:
+                description: persistentVolumeName is the name of the persistent volume
+                  linked to the device
+                maxLength: 253
+                minLength: 1
+                type: string
+              policy:
+                description: |-
+                  policy expresses how to manage symlinks for the device.
+                  "None" means no policy has been chosen, and will generate an alert if
+                  there is a mismatch between .status.currentLinkTarget and
+                  .status.preferredLinkTarget.
+                  "CurrentLinkTarget" silences the alert and keeps the existing symlink
+                  pointing to .status.currentLinkTarget.
+                  "PreferredLinkTarget" silences the alert and changes the symlink to point
+                  to .status.preferredLinkTarget.
+                  The default value is determined by local-storage-operator and is subject
+                  to change. In this version of operator, default is `None`.
+                enum:
+                - None
+                - CurrentLinkTarget
+                - PreferredLinkTarget
+                type: string
+            required:
+            - persistentVolumeName
+            type: object
+          status:
+            description: |-
+              status holds observed values for the device link.
+              if not set, this means local-storage-operator has not synced
+              this particular volume yet on the node.
+            properties:
+              conditions:
+                description: conditions is a list of operator conditions.
+                items:
+                  description: OperatorCondition is just the standard condition fields.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      type: string
+                    reason:
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - status
+                  - type
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
+              currentLinkTarget:
+                description: |-
+                  currentLinkTarget is the current devicePath being used by local storage operator
+                  This could be /dev/disk/by-id symlink if available but since LocalVolume objects
+                  allow users to specify different path, it may be user's specified value in
+                  LocalVolume object.
+                maxLength: 4096
+                minLength: 1
+                type: string
+              filesystemUUID:
+                description: filesystemUUID is the UUID of the filesystem found on
+                  the device (when available)
+                maxLength: 4096
+                minLength: 1
+                type: string
+              preferredLinkTarget:
+                description: |-
+                  preferredLinkTarget is the /dev/disk/by-id symlink for the device that the local storage
+                  operator evaluated as the most stable and the least error prone. The local storage operator
+                  recommends using this symlink, after a careful review by the cluster admin.
+                maxLength: 4096
+                minLength: 1
+                type: string
+              validLinkTargets:
+                description: |-
+                  validLinkTargets is the list of /dev/disk/by-id symlinks for the device that the local
+                  storage operator considers as valid. The list may contain at most 256 entries.
+                items:
+                  type: string
+                maxItems: 256
+                type: array
+                x-kubernetes-list-type: set
+            required:
+            - currentLinkTarget
+            - preferredLinkTarget
+            - validLinkTargets
+            type: object
+        required:
+        - spec
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
