@@ -75,20 +75,20 @@ type LocalVolumeDeviceLinkStatus struct {
 	// +required
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=4096
-	CurrentLinkTarget string `json:"currentLinkTarget"`
+	CurrentLinkTarget string `json:"currentLinkTarget,omitempty"`
 	// preferredLinkTarget is the /dev/disk/by-id symlink for the device that the local storage
 	// operator evaluated as the most stable and the least error prone. The local storage operator
 	// recommends using this symlink, after a careful review by the cluster admin.
 	// +required
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=4096
-	PreferredLinkTarget string `json:"preferredLinkTarget"`
+	PreferredLinkTarget string `json:"preferredLinkTarget,omitempty"`
 	// validLinkTargets is the list of /dev/disk/by-id symlinks for the device that the local
 	// storage operator considers as valid. The list may contain at most 256 entries.
 	// +required
 	// +listType=set
 	// +kubebuilder:validation:MaxItems=256
-	ValidLinkTargets []string `json:"validLinkTargets"`
+	ValidLinkTargets []string `json:"validLinkTargets,omitempty"`
 	// filesystemUUID is the UUID of the filesystem found on the device (when available)
 	// +optional
 	// +kubebuilder:validation:MinLength=1
