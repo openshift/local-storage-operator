@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"time"
 
+	configv1 "github.com/openshift/api/config/v1"
 	operatorv1 "github.com/openshift/api/operator/v1"
 	"github.com/openshift/library-go/pkg/operator/resource/resourceread"
 	localv1alpha1 "github.com/openshift/local-storage-operator/api/v1alpha1"
@@ -28,6 +29,7 @@ import (
 	"github.com/openshift/local-storage-operator/pkg/common"
 	"github.com/openshift/local-storage-operator/pkg/controllers/nodedaemon"
 	"github.com/openshift/local-storage-operator/pkg/localmetrics"
+	lsotls "github.com/openshift/local-storage-operator/pkg/tls"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -88,10 +90,17 @@ func (r *LocalVolumeDiscoveryReconciler) Reconcile(ctx context.Context, request 
 		return ctrl.Result{}, err
 	}
 
+	tlsMinVersion, tlsCipherSuites, err := lsotls.GetTLSProfileValues(ctx, r.Client)
+	if err != nil {
+		klog.Warningf("failed to get cluster TLS profile, proceeding with kube-rbac-proxy defaults: %v", err)
+	}
+
 	diskMakerDSMutateFn := getDiskMakerDiscoveryDSMutateFn(request, instance.Spec.Tolerations,
 		getEnvVars(instance.Name, string(instance.UID)),
 		getOwnerRefs(instance),
-		instance.Spec.NodeSelector)
+		instance.Spec.NodeSelector,
+		tlsMinVersion,
+		tlsCipherSuites)
 	ds, opResult, err := nodedaemon.CreateOrUpdateDaemonset(ctx, r.Client, diskMakerDSMutateFn)
 	if err != nil {
 		message := fmt.Sprintf("failed to create discovery daemonset. Error %+v", err)
@@ -151,18 +160,22 @@ func getDiskMakerDiscoveryDSMutateFn(request reconcile.Request,
 	tolerations []corev1.Toleration,
 	envVars []corev1.EnvVar,
 	ownerRefs []metav1.OwnerReference,
-	nodeSelector *corev1.NodeSelector) func(*appsv1.DaemonSet) error {
+	nodeSelector *corev1.NodeSelector,
+	tlsMinVersion string,
+	tlsCipherSuites string) func(*appsv1.DaemonSet) error {
 
 	return func(ds *appsv1.DaemonSet) error {
-		// read template for default values
-		dsBytes, err := assets.ReadFileAndReplace(
-			common.DiskMakerDiscoveryDaemonSetTemplate,
-			[]string{
-				"${OBJECT_NAMESPACE}", request.Namespace,
-				"${CONTAINER_IMAGE}", common.GetDiskMakerImage(),
-				"${RBAC_PROXY_IMAGE}", common.GetKubeRBACProxyImage(),
-			},
-		)
+		pairs := []string{
+			"${OBJECT_NAMESPACE}", request.Namespace,
+			"${CONTAINER_IMAGE}", common.GetDiskMakerImage(),
+			"${RBAC_PROXY_IMAGE}", common.GetKubeRBACProxyImage(),
+			"${TLS_MIN_VERSION}", tlsMinVersion,
+		}
+		if tlsCipherSuites != "" {
+			pairs = append(pairs, "${TLS_CIPHER_SUITES}", tlsCipherSuites)
+		}
+
+		dsBytes, err := assets.ReadFileAndReplace(common.DiskMakerDiscoveryDaemonSetTemplate, pairs)
 		if err != nil {
 			return err
 		}
@@ -290,8 +303,30 @@ func getEnvVars(objName, uid string) []corev1.EnvVar {
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *LocalVolumeDiscoveryReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	// When the cluster TLS profile changes, re-reconcile all LocalVolumeDiscovery objects.
+	enqueueAllDiscoveries := handler.EnqueueRequestsFromMapFunc(
+		func(ctx context.Context, obj client.Object) []reconcile.Request {
+			lvdList := &localv1alpha1.LocalVolumeDiscoveryList{}
+			if err := r.Client.List(ctx, lvdList); err != nil {
+				klog.Errorf("failed to list LocalVolumeDiscoveries on APIServer change: %v", err)
+				return nil
+			}
+			requests := make([]reconcile.Request, 0, len(lvdList.Items))
+			for _, lvd := range lvdList.Items {
+				requests = append(requests, reconcile.Request{
+					NamespacedName: types.NamespacedName{
+						Namespace: lvd.Namespace,
+						Name:      lvd.Name,
+					},
+				})
+			}
+			return requests
+		})
+
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&localv1alpha1.LocalVolumeDiscovery{}).
 		Watches(&appsv1.DaemonSet{}, handler.EnqueueRequestForOwner(mgr.GetScheme(), mgr.GetRESTMapper(), &localv1alpha1.LocalVolumeDiscovery{})).
+		// watch cluster TLS profile changes
+		Watches(&configv1.APIServer{}, enqueueAllDiscoveries).
 		Complete(r)
 }
