@@ -138,7 +138,7 @@ metadata:
     features.operators.openshift.io/disconnected: "true"
     features.operators.openshift.io/fips-compliant: "true"
     features.operators.openshift.io/proxy-aware: "true"
-    features.operators.openshift.io/tls-profiles: "false"
+    features.operators.openshift.io/tls-profiles: "true"
     features.operators.openshift.io/csi: "false"
     features.operators.openshift.io/token-auth-aws: "false"
     features.operators.openshift.io/token-auth-azure: "false"
@@ -382,6 +382,7 @@ spec:
                 - config.openshift.io
               resources:
                 - infrastructures
+                - apiservers
               verbs:
                 - get
                 - list
