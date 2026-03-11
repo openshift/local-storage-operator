@@ -160,6 +160,8 @@ func (b BlockDevice) GetDevPath() (path string, err error) {
 }
 
 // GetPathByID check on BlockDevice
+// This usually returns preferred Path for the device according to current
+// heuristics of LSO
 func (b *BlockDevice) GetPathByID(existingDeviceID string) (string, error) {
 
 	// return if previously populated value is valid
