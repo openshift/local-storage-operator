@@ -55,7 +55,7 @@ func TestFindMatchingDisk(t *testing.T) {
 		fakeGlobFunc          func(string) ([]string, error)
 		fakeEvalSymlink       func(string) (string, error)
 		userSpecifiedDisk     []string
-		matchingDevices       []DiskLocation
+		matchingDevices       []internal.DiskLocation
 	}{
 		{
 			name: "when devices match by their device names",
@@ -87,16 +87,16 @@ func TestFindMatchingDisk(t *testing.T) {
 				},
 			},
 			userSpecifiedDisk: []string{"/dev/sdc1", "/dev/sdc2"},
-			matchingDevices: []DiskLocation{
+			matchingDevices: []internal.DiskLocation{
 				{
-					diskNamePath:     "/dev/sdc1",
-					userProvidedPath: "/dev/sdc1",
-					diskID:           "/dev/disk/by-id/wwn-abcde",
+					DiskNamePath:     "/dev/sdc1",
+					UserProvidedPath: "/dev/sdc1",
+					DiskID:           "/dev/disk/by-id/wwn-abcde",
 				},
 				{
-					diskNamePath:     "/dev/sdc2",
-					userProvidedPath: "/dev/sdc2",
-					diskID:           "/dev/disk/by-id/wwn-xyz",
+					DiskNamePath:     "/dev/sdc2",
+					UserProvidedPath: "/dev/sdc2",
+					DiskID:           "/dev/disk/by-id/wwn-xyz",
 				},
 			},
 		},
@@ -134,9 +134,9 @@ func TestFindMatchingDisk(t *testing.T) {
 				for _, expectedDiskLocation := range test.matchingDevices {
 					matchFound := false
 					for _, foundLocation := range foundDevices {
-						if foundLocation.diskNamePath == expectedDiskLocation.diskNamePath &&
-							foundLocation.diskID == expectedDiskLocation.diskID &&
-							foundLocation.userProvidedPath == expectedDiskLocation.userProvidedPath {
+						if foundLocation.DiskNamePath == expectedDiskLocation.DiskNamePath &&
+							foundLocation.DiskID == expectedDiskLocation.DiskID &&
+							foundLocation.UserProvidedPath == expectedDiskLocation.UserProvidedPath {
 							matchFound = true
 						}
 					}
@@ -225,7 +225,13 @@ func TestCreateSymLinkByDeviceID(t *testing.T) {
 	}
 	d, _ := getFakeDiskMaker(t, tmpSymLinkTargetDir, lv, sc)
 	d.fsInterface = FakeFileSystemInterface{}
-	diskLocation := DiskLocation{fakeDisk.Name(), fakeDiskByID.Name(), fakeDisk.Name(), internal.BlockDevice{}, false}
+	diskLocation := internal.DiskLocation{
+		DiskNamePath:     fakeDisk.Name(),
+		UserProvidedPath: fakeDiskByID.Name(),
+		DiskID:           fakeDisk.Name(),
+		BlockDevice:      internal.BlockDevice{},
+		ForceWipe:        false,
+	}
 
 	d.runtimeConfig = &provCommon.RuntimeConfig{
 		UserConfig: &provCommon.UserConfig{
@@ -292,7 +298,13 @@ func TestWipeDeviceWhenCreateSymLinkByDeviceName(t *testing.T) {
 
 			d, _ := getFakeDiskMaker(t, tmpSymLinkTargetDir, lv, sc)
 			d.fsInterface = FakeFileSystemInterface{}
-			diskLocation := DiskLocation{fname, "", fname, internal.BlockDevice{}, test.forceWipe}
+			diskLocation := internal.DiskLocation{
+				DiskNamePath:     fname,
+				UserProvidedPath: "",
+				DiskID:           fname,
+				BlockDevice:      internal.BlockDevice{},
+				ForceWipe:        test.forceWipe,
+			}
 			d.createSymlink(diskLocation, fname, path.Join(tmpSymLinkTargetDir, "diskName"), false)
 
 			// assert that target symlink is created for disk name when no disk ID is available

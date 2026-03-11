@@ -58,16 +58,6 @@ func init() {
 	watchNamespace, _ = common.GetWatchNamespace()
 }
 
-type DiskLocation struct {
-	// diskNamePath stores full device name path - "/dev/sda"
-	diskNamePath string
-	// path that was supplied by the user in LocalVolume CR
-	userProvidedPath string
-	diskID           string
-	blockDevice      internal.BlockDevice
-	forceWipe        bool
-}
-
 type LocalVolumeReconciler struct {
 	Client          client.Client
 	Scheme          *runtime.Scheme
@@ -85,7 +75,7 @@ type LocalVolumeReconciler struct {
 }
 
 func (r *LocalVolumeReconciler) createSymlink(
-	deviceNameLocation DiskLocation,
+	deviceNameLocation internal.DiskLocation,
 	symLinkSource string,
 	symLinkTarget string,
 	idExists bool,
@@ -152,7 +142,7 @@ func (r *LocalVolumeReconciler) createSymlink(
 		return false
 	}
 
-	if deviceNameLocation.forceWipe {
+	if deviceNameLocation.ForceWipe {
 		cmd := exec.Command("wipefs", "-a", "-f", symLinkSource)
 		err = cmd.Run()
 		if err != nil {
@@ -176,8 +166,8 @@ func (r *LocalVolumeReconciler) createSymlink(
 		r.eventSync.Report(r.localVolume, newDiskEvent(SymLinkedOnDeviceName, msg, symLinkSource, corev1.EventTypeWarning))
 		klog.Info(msg)
 	}
-	successMsg := fmt.Sprintf("found matching disk %s with id %s", deviceNameLocation.diskNamePath, deviceNameLocation.diskID)
-	r.eventSync.Report(r.localVolume, newDiskEvent(FoundMatchingDisk, successMsg, deviceNameLocation.diskNamePath, corev1.EventTypeNormal))
+	successMsg := fmt.Sprintf("found matching disk %s with id %s", deviceNameLocation.DiskNamePath, deviceNameLocation.DiskID)
+	r.eventSync.Report(r.localVolume, newDiskEvent(FoundMatchingDisk, successMsg, deviceNameLocation.DiskNamePath, corev1.EventTypeNormal))
 	return true
 }
 
@@ -187,7 +177,7 @@ func diskMakerLabels(crName string) map[string]string {
 	}
 }
 
-func (r *LocalVolumeReconciler) checkForExistingPV(deviceNameLocation DiskLocation) bool {
+func (r *LocalVolumeReconciler) checkForExistingPV(deviceNameLocation internal.DiskLocation) bool {
 	pvs := r.runtimeConfig.Cache.ListPVs()
 	nodeLabels := r.runtimeConfig.Node.GetLabels()
 
@@ -196,7 +186,7 @@ func (r *LocalVolumeReconciler) checkForExistingPV(deviceNameLocation DiskLocati
 		return false
 	}
 
-	deviceName := filepath.Base(deviceNameLocation.diskNamePath)
+	deviceName := filepath.Base(deviceNameLocation.DiskNamePath)
 
 	for i := range pvs {
 		pv := pvs[i]
@@ -288,7 +278,7 @@ func (r *LocalVolumeReconciler) Reconcile(ctx context.Context, request ctrl.Requ
 
 	if !r.cacheSynced {
 		pvList := &corev1.PersistentVolumeList{}
-		err := r.Client.List(context.TODO(), pvList)
+		err := r.Client.List(ctx, pvList)
 		if err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to initialize PV cache: %w", err)
 		}
@@ -428,29 +418,24 @@ func (r *LocalVolumeReconciler) Reconcile(ctx context.Context, request ctrl.Requ
 		return ctrl.Result{}, err
 	}
 
-	var errors []error
-
 	for storageClassName, deviceArray := range deviceMap {
 		var totalProvisionedPVs int
 		var blockDeviceList []internal.BlockDevice
 		symLinkDirPath := path.Join(r.symlinkLocation, storageClassName)
 		for _, deviceNameLocation := range deviceArray {
-			blockDeviceList = append(blockDeviceList, deviceNameLocation.blockDevice)
+			blockDeviceList = append(blockDeviceList, deviceNameLocation.BlockDevice)
 			source, target, idExists, err := getSymlinkSourceAndTarget(deviceNameLocation, symLinkDirPath)
 			if err != nil {
-				klog.ErrorS(err, "failed to get symlink source and target",
-					"deviceNameLocation", deviceNameLocation)
-				errors = append(errors, err)
+				klog.ErrorS(err, "failed to get symlink source and target", "deviceNameLocation", deviceNameLocation)
 				break
 			}
+
 			shouldCreatePV := r.createSymlink(deviceNameLocation, source, target, idExists)
 			if shouldCreatePV {
 				storageClass := &storagev1.StorageClass{}
 				err := r.Client.Get(ctx, types.NamespacedName{Name: storageClassName}, storageClass)
 				if err != nil {
-					klog.ErrorS(err, "failed to fetch storageClass",
-						"deviceNameLocation", deviceNameLocation)
-					errors = append(errors, err)
+					klog.ErrorS(err, "failed to fetch storageClass", "deviceNameLocation", deviceNameLocation)
 					break
 				}
 				lvOwnerLabels := map[string]string{
@@ -458,23 +443,24 @@ func (r *LocalVolumeReconciler) Reconcile(ctx context.Context, request ctrl.Requ
 					common.LocalVolumeOwnerNamespaceForPV: r.localVolume.Namespace,
 				}
 
-				err = common.CreateLocalPV(
-					lv,
-					r.runtimeConfig,
-					*storageClass,
-					mountPointMap,
-					r.Client,
-					target,
-					filepath.Base(deviceNameLocation.diskNamePath),
-					idExists,
-					lvOwnerLabels,
-				)
+				err = common.CreateLocalPV(common.CreateLocalPVArgs{
+					LocalVolumeLikeObject: lv,
+					RuntimeConfig:         r.runtimeConfig,
+					StorageClass:          *storageClass,
+					MountPointMap:         mountPointMap,
+					Client:                r.Client,
+					SymLinkPath:           target,
+					DeviceName:            filepath.Base(deviceNameLocation.DiskNamePath),
+					IDExists:              idExists,
+					ExtraLabelsForPV:      lvOwnerLabels,
+					PreferredSymLink:      deviceNameLocation.DiskID,
+					CurrentSymlink:        source,
+					KName:                 deviceNameLocation.BlockDevice.KName,
+				})
 				if err == common.ErrTryAgain {
 					requeueTime = fastRequeueTime
 				} else if err != nil {
-					klog.ErrorS(err, "could not create local PV",
-						"deviceNameLocation", deviceNameLocation)
-					errors = append(errors, err)
+					klog.ErrorS(err, "could not create local PV", "deviceNameLocation", deviceNameLocation)
 					break
 				}
 
@@ -502,13 +488,13 @@ func (r *LocalVolumeReconciler) Reconcile(ctx context.Context, request ctrl.Requ
 	return ctrl.Result{Requeue: true, RequeueAfter: requeueTime}, nil
 }
 
-func getSymlinkSourceAndTarget(devLocation DiskLocation, symlinkDir string) (string, string, bool, error) {
-	if devLocation.diskID != "" {
-		target := path.Join(symlinkDir, filepath.Base(devLocation.diskID))
-		return devLocation.diskID, target, true, nil
+func getSymlinkSourceAndTarget(devLocation internal.DiskLocation, symlinkDir string) (string, string, bool, error) {
+	if devLocation.DiskID != "" {
+		target := path.Join(symlinkDir, filepath.Base(devLocation.DiskID))
+		return devLocation.DiskID, target, true, nil
 	} else {
-		target := path.Join(symlinkDir, filepath.Base(devLocation.userProvidedPath))
-		return devLocation.userProvidedPath, target, false, nil
+		target := path.Join(symlinkDir, filepath.Base(devLocation.UserProvidedPath))
+		return devLocation.UserProvidedPath, target, false, nil
 	}
 }
 
@@ -526,16 +512,22 @@ func ignoreDevices(dev internal.BlockDevice) bool {
 	return false
 }
 
-func (r *LocalVolumeReconciler) findMatchingDisks(diskConfig *DiskConfig, blockDevices []internal.BlockDevice) (map[string][]DiskLocation, error) {
+func (r *LocalVolumeReconciler) findMatchingDisks(diskConfig *DiskConfig, blockDevices []internal.BlockDevice) (map[string][]internal.DiskLocation, error) {
 
 	// blockDeviceMap is a map of storageclass and device locations
-	blockDeviceMap := make(map[string][]DiskLocation)
+	blockDeviceMap := make(map[string][]internal.DiskLocation)
 	addDiskToMap := func(scName, stableDeviceID, diskName, userDevicePath string, blockDevice internal.BlockDevice, forceWipe bool) {
 		deviceArray, ok := blockDeviceMap[scName]
 		if !ok {
-			deviceArray = []DiskLocation{}
+			deviceArray = []internal.DiskLocation{}
 		}
-		deviceArray = append(deviceArray, DiskLocation{diskName, userDevicePath, stableDeviceID, blockDevice, forceWipe})
+		deviceArray = append(deviceArray, internal.DiskLocation{
+			DiskNamePath:     diskName,
+			UserProvidedPath: userDevicePath,
+			DiskID:           stableDeviceID,
+			BlockDevice:      blockDevice,
+			ForceWipe:        forceWipe,
+		})
 		blockDeviceMap[scName] = deviceArray
 	}
 

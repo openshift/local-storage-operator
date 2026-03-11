@@ -225,17 +225,17 @@ func TestCreatePV(t *testing.T) {
 		}
 		testConfig.fakeVolUtil.AddNewDirEntries("/mnt/local-storage/", dirFiles)
 
-		err := common.CreateLocalPV(
-			&tc.lvset,
-			r.runtimeConfig,
-			tc.sc,
-			tc.mountPoints,
-			r.Client,
-			tc.symlinkpath,
-			tc.deviceName,
-			true,
-			map[string]string{},
-		)
+		err := common.CreateLocalPV(common.CreateLocalPVArgs{
+			LocalVolumeLikeObject: &tc.lvset,
+			RuntimeConfig:         r.runtimeConfig,
+			StorageClass:          tc.sc,
+			MountPointMap:         tc.mountPoints,
+			Client:                r.Client,
+			SymLinkPath:           tc.symlinkpath,
+			DeviceName:            tc.deviceName,
+			IDExists:              true,
+			ExtraLabelsForPV:      map[string]string{},
+		})
 		if tc.shouldErr {
 			assert.NotNil(t, err)
 		} else {
@@ -274,17 +274,17 @@ func TestCreatePV(t *testing.T) {
 		assert.Equal(t, *tc.sc.ReclaimPolicy, pv.Spec.PersistentVolumeReclaimPolicy)
 
 		// test idempotency by running again
-		err = common.CreateLocalPV(
-			&tc.lvset,
-			r.runtimeConfig,
-			tc.sc,
-			tc.mountPoints,
-			r.Client,
-			tc.symlinkpath,
-			tc.deviceName,
-			true,
-			map[string]string{},
-		)
+		err = common.CreateLocalPV(common.CreateLocalPVArgs{
+			LocalVolumeLikeObject: &tc.lvset,
+			RuntimeConfig:         r.runtimeConfig,
+			StorageClass:          tc.sc,
+			MountPointMap:         tc.mountPoints,
+			Client:                r.Client,
+			SymLinkPath:           tc.symlinkpath,
+			DeviceName:            tc.deviceName,
+			IDExists:              true,
+			ExtraLabelsForPV:      map[string]string{},
+		})
 		assert.Nil(t, err)
 
 	}
