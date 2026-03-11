@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 
 	localv1 "github.com/openshift/local-storage-operator/api/v1"
+	"github.com/openshift/local-storage-operator/pkg/internal"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -42,19 +43,42 @@ func GenerateMountMap(runtimeConfig *provCommon.RuntimeConfig) (sets.String, err
 	return mountPointMap, nil
 }
 
+// CreateLocalPVArgs holds the arguments for CreateLocalPV.
+type CreateLocalPVArgs struct {
+	LocalVolumeLikeObject runtime.Object
+	RuntimeConfig         *provCommon.RuntimeConfig
+	StorageClass          storagev1.StorageClass
+	MountPointMap         sets.String
+	Client                client.Client
+	SymLinkPath           string
+	// DevicePath is the full path to the device (e.g. /dev/sda).
+	// filepath.Base is applied internally where only the kernel name is needed.
+	DevicePath       string
+	IDExists         bool
+	ExtraLabelsForPV map[string]string
+
+	// preferredsymlink stores the preferred symlink according to
+	// LSO heuristics
+	PreferredSymLink string
+	// CurrentSymlink points to source to which
+	// SymLinkPath points to.
+	CurrentSymlink string
+	// Kernel name of the device
+	KName string
+}
+
 // CreateLocalPV is used to create a local PV against a symlink
 // after passing the same validations against that symlink that local-static-provisioner uses
-func CreateLocalPV(
-	obj runtime.Object,
-	runtimeConfig *provCommon.RuntimeConfig,
-	storageClass storagev1.StorageClass,
-	mountPointMap sets.String,
-	client client.Client,
-	symLinkPath string,
-	deviceName string,
-	idExists bool,
-	extraLabelsForPV map[string]string,
-) error {
+func CreateLocalPV(ctx context.Context, args CreateLocalPVArgs) error {
+	obj := args.LocalVolumeLikeObject
+	runtimeConfig := args.RuntimeConfig
+	storageClass := args.StorageClass
+	mountPointMap := args.MountPointMap
+	client := args.Client
+	symLinkPath := args.SymLinkPath
+	deviceName := filepath.Base(args.DevicePath)
+	idExists := args.IDExists
+	extraLabelsForPV := args.ExtraLabelsForPV
 	nodeLabels := runtimeConfig.Node.GetLabels()
 	hostname, found := nodeLabels[corev1.LabelHostname]
 	if !found {
@@ -89,6 +113,18 @@ func CreateLocalPV(
 	actualVolumeMode, err := provCommon.GetVolumeMode(runtimeConfig.VolUtil, symLinkPath)
 	if err != nil {
 		return fmt.Errorf("could not read the device's volume mode from the node: %w", err)
+	}
+
+	deviceHandler := internal.NewDeviceLinkHandler(args.CurrentSymlink, args.PreferredSymLink, client)
+
+	_, err = deviceHandler.Create(context.TODO(), pvName, runtimeConfig.Namespace)
+	if err != nil {
+		return fmt.Errorf("error creating localvolumedevicelink object: %w", err)
+	}
+
+	_, err = deviceHandler.UpdateStatusAndPV(ctx, args.KName, args.DevicePath)
+	if err != nil {
+		return fmt.Errorf("error updating localvolumedevicelink object: %w", err)
 	}
 
 	// Do not attempt to create or update existing PV's that have been released
