@@ -113,6 +113,10 @@ type LocalVolumeDeviceLinkList struct {
 	Items []LocalVolumeDeviceLink `json:"items"`
 }
 
+func init() {
+	SchemeBuilder.Register(&LocalVolumeDeviceLink{}, &LocalVolumeDeviceLinkList{})
+}
+
 // DeviceLinkPolicy defines how symlinks for given volumes should be treated
 // by the LSO. Valid values are - None, CurrentLinkTarget and PreferredLinkTarget
 // +kubebuilder:validation:Enum=None;CurrentLinkTarget;PreferredLinkTarget
