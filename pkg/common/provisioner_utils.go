@@ -122,9 +122,9 @@ func CreateLocalPV(ctx context.Context, args CreateLocalPVArgs) error {
 		return fmt.Errorf("error creating localvolumedevicelink object: %w", err)
 	}
 
-	_, err = deviceHandler.UpdateStatusAndPV(context.TODO(), args.DevicePath, args.KName)
+	_, err = deviceHandler.UpdateStatusAndPV(ctx, args.KName, args.DevicePath)
 	if err != nil {
-		return fmt.Errorf("error updarting localvolumedevicelink object: %w", err)
+		return fmt.Errorf("error updating localvolumedevicelink object: %w", err)
 	}
 
 	// Do not attempt to create or update existing PV's that have been released
