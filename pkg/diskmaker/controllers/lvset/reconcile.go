@@ -216,7 +216,7 @@ func (r *LocalVolumeSetReconciler) Reconcile(ctx context.Context, request ctrl.R
 			return ctrl.Result{}, err
 		}
 
-		klog.InfoS("provisioning PV", "blockDevice", blockDevice.Name)
+		klog.InfoS("provisioning PV", "blockDevice", blockDevice.Name, "withkname", blockDevice.KName)
 		r.eventReporter.Report(lvset, newDiskEvent(diskmaker.FoundMatchingDisk, "provisioning matching disk", blockDevice.KName, corev1.EventTypeNormal))
 		err = r.provisionPV(ctx, lvset, blockDevice, *storageClass, mountPointMap, symlinkSourcePath, symlinkPath, idExists)
 		if err == common.ErrTryAgain {

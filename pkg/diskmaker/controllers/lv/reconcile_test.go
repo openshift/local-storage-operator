@@ -333,7 +333,7 @@ func getFakeDiskMaker(t *testing.T, symlinkLocation string, objs ...runtime.Obje
 	assert.NoErrorf(t, err, "adding storagev1 to scheme")
 	err = appsv1.AddToScheme(scheme)
 	assert.NoErrorf(t, err, "adding appsv1 to scheme")
-	fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithRuntimeObjects(objs...).Build()
+	fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(&localv1.LocalVolumeDeviceLink{}).WithRuntimeObjects(objs...).Build()
 
 	fakeRecorder := record.NewFakeRecorder(20)
 

@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os/exec"
-	"sort"
 	"strings"
 
 	v1 "github.com/openshift/local-storage-operator/api/v1"
@@ -12,6 +11,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/klog/v2"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -120,7 +120,7 @@ func (dl *DeviceLinkHandler) UpdateStatusAndPV(ctx context.Context, kName, devic
 	updatedCopy.Status.ValidLinkTargets = validLinks
 	updatedCopy.Status.FilesystemUUID = filesystemUUID
 
-	err = dl.client.Update(ctx, updatedCopy)
+	err = dl.client.Status().Update(ctx, updatedCopy)
 
 	return updatedCopy, err
 }
@@ -131,19 +131,19 @@ func (dl *DeviceLinkHandler) getValidByIDSymlinks(kname string) ([]string, error
 		return nil, err
 	}
 
-	matches := make([]string, 0)
+	matches := sets.New[string]()
+
 	for _, path := range paths {
 		isMatch, err := PathEvalsToDiskLabel(path, kname)
 		if err != nil {
 			return nil, err
 		}
 		if isMatch {
-			matches = append(matches, path)
+			matches.Insert(path)
 		}
 	}
 
-	sort.Strings(matches)
-	return matches, nil
+	return sets.List(matches), nil
 }
 
 func getFilesystemUUID(devicePath string) (string, error) {
