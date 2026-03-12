@@ -218,7 +218,7 @@ func (r *LocalVolumeSetReconciler) Reconcile(ctx context.Context, request ctrl.R
 
 		klog.InfoS("provisioning PV", "blockDevice", blockDevice.Name)
 		r.eventReporter.Report(lvset, newDiskEvent(diskmaker.FoundMatchingDisk, "provisioning matching disk", blockDevice.KName, corev1.EventTypeNormal))
-		err = r.provisionPV(lvset, blockDevice, *storageClass, mountPointMap, symlinkSourcePath, symlinkPath, idExists)
+		err = r.provisionPV(ctx, lvset, blockDevice, *storageClass, mountPointMap, symlinkSourcePath, symlinkPath, idExists)
 		if err == common.ErrTryAgain {
 			requeueTime = fastRequeueTime
 		} else if err != nil {
@@ -407,6 +407,7 @@ func getSymlinkedForCurrentSC(symlinkDir string, currentDevice internal.BlockDev
 }
 
 func (r *LocalVolumeSetReconciler) provisionPV(
+	ctx context.Context,
 	obj *localv1alpha1.LocalVolumeSet,
 	dev internal.BlockDevice,
 	storageClass storagev1.StorageClass,
@@ -441,21 +442,36 @@ func (r *LocalVolumeSetReconciler) provisionPV(
 			klog.ErrorS(err, "failed to unlock device", "disk", devLabelPath)
 		}
 	}
+
+	// find what would be preferred symlink for the device
+	// TODO: This may not be a fatal error
+	preferredSymLink, err := dev.GetPathByID("")
+	if err != nil {
+		klog.ErrorS(err, "", "failed to get preferred device link", "disk", devLabelPath)
+		return err
+	}
+
+	createLocalPVArgs := common.CreateLocalPVArgs{
+		LocalVolumeLikeObject: obj,
+		RuntimeConfig:         r.runtimeConfig,
+		StorageClass:          storageClass,
+		MountPointMap:         mountPointMap,
+		Client:                r.Client,
+		SymLinkPath:           symlinkPath,
+		DevicePath:            devLabelPath,
+		IDExists:              idExists,
+		ExtraLabelsForPV:      map[string]string{},
+
+		CurrentSymlink:   symlinkSourcePath,
+		KName:            dev.KName,
+		PreferredSymLink: preferredSymLink,
+	}
+
 	defer unlockFunc()
 	if len(existingSymlinks) > 0 { // already claimed
 		for _, path := range existingSymlinks {
 			if path == symlinkPath { // symlinked in this folder, ensure the PV exists
-				return common.CreateLocalPV(common.CreateLocalPVArgs{
-					LocalVolumeLikeObject: obj,
-					RuntimeConfig:         r.runtimeConfig,
-					StorageClass:          storageClass,
-					MountPointMap:         mountPointMap,
-					Client:                r.Client,
-					SymLinkPath:           symlinkPath,
-					DeviceName:            dev.KName,
-					IDExists:              idExists,
-					ExtraLabelsForPV:      map[string]string{},
-				})
+				return common.CreateLocalPV(ctx, createLocalPVArgs)
 			}
 		}
 		err := fmt.Errorf("found existing symlinks for device %s in %s", dev.KName, filepath.Dir(symLinkDir))
@@ -473,7 +489,6 @@ func (r *LocalVolumeSetReconciler) provisionPV(
 		fileInfo, statErr := os.Stat(symlinkSourcePath)
 		if statErr != nil {
 			return fmt.Errorf("could not create symlink: %v,%w", err, statErr)
-
 			// existing file is symlink
 		} else if fileInfo.Mode() == os.ModeSymlink {
 			valid, evalErr := internal.PathEvalsToDiskLabel(symlinkSourcePath, dev.Name)
@@ -482,33 +497,13 @@ func (r *LocalVolumeSetReconciler) provisionPV(
 				// existing file evals to disk
 			} else if valid {
 				// if file exists and is accurate symlink, create pv
-				return common.CreateLocalPV(common.CreateLocalPVArgs{
-					LocalVolumeLikeObject: obj,
-					RuntimeConfig:         r.runtimeConfig,
-					StorageClass:          storageClass,
-					MountPointMap:         mountPointMap,
-					Client:                r.Client,
-					SymLinkPath:           symlinkPath,
-					DeviceName:            dev.KName,
-					IDExists:              idExists,
-					ExtraLabelsForPV:      map[string]string{},
-				})
+				return common.CreateLocalPV(ctx, createLocalPVArgs)
 			}
 		}
 	} else if err != nil {
 		return err
 	}
-	return common.CreateLocalPV(common.CreateLocalPVArgs{
-		LocalVolumeLikeObject: obj,
-		RuntimeConfig:         r.runtimeConfig,
-		StorageClass:          storageClass,
-		MountPointMap:         mountPointMap,
-		Client:                r.Client,
-		SymLinkPath:           symlinkPath,
-		DeviceName:            dev.KName,
-		IDExists:              idExists,
-		ExtraLabelsForPV:      map[string]string{},
-	})
+	return common.CreateLocalPV(ctx, createLocalPVArgs)
 }
 
 type LocalVolumeSetReconciler struct {

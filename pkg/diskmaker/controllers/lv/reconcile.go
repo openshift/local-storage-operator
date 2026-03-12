@@ -442,21 +442,22 @@ func (r *LocalVolumeReconciler) Reconcile(ctx context.Context, request ctrl.Requ
 					common.LocalVolumeOwnerNameForPV:      r.localVolume.Name,
 					common.LocalVolumeOwnerNamespaceForPV: r.localVolume.Namespace,
 				}
-
-				err = common.CreateLocalPV(common.CreateLocalPVArgs{
+				createLocalPVArgs := common.CreateLocalPVArgs{
 					LocalVolumeLikeObject: lv,
 					RuntimeConfig:         r.runtimeConfig,
 					StorageClass:          *storageClass,
 					MountPointMap:         mountPointMap,
 					Client:                r.Client,
 					SymLinkPath:           target,
-					DeviceName:            filepath.Base(deviceNameLocation.DiskNamePath),
+					DevicePath:            deviceNameLocation.DiskNamePath,
 					IDExists:              idExists,
 					ExtraLabelsForPV:      lvOwnerLabels,
 					PreferredSymLink:      deviceNameLocation.DiskID,
 					CurrentSymlink:        source,
 					KName:                 deviceNameLocation.BlockDevice.KName,
-				})
+				}
+
+				err = common.CreateLocalPV(ctx, createLocalPVArgs)
 				if err == common.ErrTryAgain {
 					requeueTime = fastRequeueTime
 				} else if err != nil {

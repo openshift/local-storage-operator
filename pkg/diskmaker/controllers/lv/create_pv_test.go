@@ -207,14 +207,14 @@ func TestCreatePV(t *testing.T) {
 		}
 		testConfig.fakeVolUtil.AddNewDirEntries("/mnt/local-storage/", dirFiles)
 
-		err := common.CreateLocalPV(common.CreateLocalPVArgs{
+		err := common.CreateLocalPV(t.Context(), common.CreateLocalPVArgs{
 			LocalVolumeLikeObject: &tc.lv,
 			RuntimeConfig:         r.runtimeConfig,
 			StorageClass:          tc.sc,
 			MountPointMap:         tc.mountPoints,
 			Client:                r.Client,
 			SymLinkPath:           tc.symlinkpath,
-			DeviceName:            tc.deviceName,
+			DevicePath:            tc.deviceName,
 			IDExists:              true,
 			ExtraLabelsForPV:      map[string]string{},
 		})
@@ -256,14 +256,14 @@ func TestCreatePV(t *testing.T) {
 		assert.Equal(t, *tc.sc.ReclaimPolicy, pv.Spec.PersistentVolumeReclaimPolicy)
 
 		// test idempotency by running again
-		err = common.CreateLocalPV(common.CreateLocalPVArgs{
+		err = common.CreateLocalPV(t.Context(), common.CreateLocalPVArgs{
 			LocalVolumeLikeObject: &tc.lv,
 			RuntimeConfig:         r.runtimeConfig,
 			StorageClass:          tc.sc,
 			MountPointMap:         tc.mountPoints,
 			Client:                r.Client,
 			SymLinkPath:           tc.symlinkpath,
-			DeviceName:            tc.deviceName,
+			DevicePath:            tc.deviceName,
 			IDExists:              true,
 			ExtraLabelsForPV:      map[string]string{},
 		})

@@ -51,9 +51,11 @@ type CreateLocalPVArgs struct {
 	MountPointMap         sets.String
 	Client                client.Client
 	SymLinkPath           string
-	DeviceName            string
-	IDExists              bool
-	ExtraLabelsForPV      map[string]string
+	// DevicePath is the full path to the device (e.g. /dev/sda).
+	// filepath.Base is applied internally where only the kernel name is needed.
+	DevicePath       string
+	IDExists         bool
+	ExtraLabelsForPV map[string]string
 
 	// preferredsymlink stores the preferred symlink according to
 	// LSO heuristics
@@ -67,14 +69,14 @@ type CreateLocalPVArgs struct {
 
 // CreateLocalPV is used to create a local PV against a symlink
 // after passing the same validations against that symlink that local-static-provisioner uses
-func CreateLocalPV(args CreateLocalPVArgs) error {
+func CreateLocalPV(ctx context.Context, args CreateLocalPVArgs) error {
 	obj := args.LocalVolumeLikeObject
 	runtimeConfig := args.RuntimeConfig
 	storageClass := args.StorageClass
 	mountPointMap := args.MountPointMap
 	client := args.Client
 	symLinkPath := args.SymLinkPath
-	deviceName := args.DeviceName
+	deviceName := filepath.Base(args.DevicePath)
 	idExists := args.IDExists
 	extraLabelsForPV := args.ExtraLabelsForPV
 	nodeLabels := runtimeConfig.Node.GetLabels()
@@ -120,7 +122,7 @@ func CreateLocalPV(args CreateLocalPVArgs) error {
 		return fmt.Errorf("error creating localvolumedevicelink object: %w", err)
 	}
 
-	_, err = deviceHandler.UpdateStatusAndPV(context.TODO(), args.DeviceName, args.KName)
+	_, err = deviceHandler.UpdateStatusAndPV(context.TODO(), args.DevicePath, args.KName)
 	if err != nil {
 		return fmt.Errorf("error updarting localvolumedevicelink object: %w", err)
 	}
