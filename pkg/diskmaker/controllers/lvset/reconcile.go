@@ -164,7 +164,7 @@ func (r *LocalVolumeSetReconciler) Reconcile(ctx context.Context, request ctrl.R
 	}
 
 	// find disks that match lvset filters and matchers
-	validDevices, delayedDevices := r.getValidDevices(lvset, blockDevices)
+	validDevices, delayedDevices, rejectedDevices := r.getValidDevices(lvset, blockDevices)
 
 	// update metrics for unmatched disks
 	localmetrics.SetLVSUnmatchedDiskMetric(nodeName, storageClassName, len(blockDevices)-len(validDevices))
@@ -254,12 +254,54 @@ func (r *LocalVolumeSetReconciler) Reconcile(ctx context.Context, request ctrl.R
 			"paths", noMatch, "directory", symLinkDir)
 	}
 
+	r.processRejectedDevicesForDeviceLinks(ctx, rejectedDevices, symLinkDir, storageClassName)
+
 	// shorten the requeueTime if there are delayed devices
 	if len(delayedDevices) > 1 && requeueTime == defaultRequeueTime {
 		requeueTime = deviceMinAge / 2
 	}
 
 	return ctrl.Result{Requeue: true, RequeueAfter: requeueTime}, nil
+}
+
+func (r *LocalVolumeSetReconciler) processRejectedDevicesForDeviceLinks(ctx context.Context, rejectedDevices []internal.BlockDevice, symLinkDir, storageClassName string) {
+	klog.V(2).Infof("processing rejected devices for LocalVolumeDeviceLink")
+	for _, blockDevice := range rejectedDevices {
+		existingSymlink, err := common.GetSymlinkedForCurrentSC(symLinkDir, blockDevice)
+		if err != nil {
+			klog.ErrorS(err, "error reading existing symlinks for device",
+				"blockDevice", blockDevice.Name)
+			continue
+		}
+		// there should be an existing symlink for the device, otherwise we can't create LVDL objects
+		if existingSymlink == "" {
+			continue
+		}
+		symlinkSourcePath, _, _, err := common.GetSymLinkSourceAndTarget(blockDevice, symLinkDir, existingSymlink)
+		if err != nil {
+			klog.ErrorS(err, "error discovering symlink source and target",
+				"blockDevice", blockDevice.Name)
+			continue
+		}
+		preferredSymLink, err := blockDevice.GetPathByID("")
+		if err != nil {
+			klog.ErrorS(err, "", "failed to get preferred device link", "disk", blockDevice.Name)
+			continue
+		}
+
+		devicePath, err := blockDevice.GetDevPath()
+		if err != nil {
+			klog.ErrorS(err, "failed to get /dev path for block device", "disk", blockDevice.Name)
+			continue
+		}
+
+		pvName := common.GeneratePVName(existingSymlink, r.runtimeConfig.Node.Name, storageClassName)
+		deviceHandler := internal.NewDeviceLinkHandler(symlinkSourcePath, preferredSymLink, r.Client)
+		_, err = deviceHandler.UpdateStatus(ctx, pvName, r.runtimeConfig.Namespace, blockDevice.KName, devicePath)
+		if err != nil {
+			klog.ErrorS(err, "error updating LocalVolumeDeviceLink", "device", blockDevice.Name)
+		}
+	}
 }
 
 func (r *LocalVolumeSetReconciler) syncCaches() error {
@@ -287,9 +329,10 @@ func (r *LocalVolumeSetReconciler) syncCaches() error {
 func (r *LocalVolumeSetReconciler) getValidDevices(
 	lvset *localv1alpha1.LocalVolumeSet,
 	blockDevices []internal.BlockDevice,
-) ([]internal.BlockDevice, []internal.BlockDevice) {
+) ([]internal.BlockDevice, []internal.BlockDevice, []internal.BlockDevice) {
 	validDevices := make([]internal.BlockDevice, 0)
 	delayedDevices := make([]internal.BlockDevice, 0)
+	rejectedDevices := make([]internal.BlockDevice, 0)
 	// get valid devices
 DeviceLoop:
 	for _, blockDevice := range blockDevices {
@@ -307,8 +350,8 @@ DeviceLoop:
 				valid = false
 				continue DeviceLoop
 			} else if !valid {
-				klog.InfoS("filter negative", "device",
-					blockDevice.Name, "filter", name)
+				klog.InfoS("filter negative", "device", blockDevice.Name, "filter", name)
+				rejectedDevices = append(rejectedDevices, blockDevice)
 				continue DeviceLoop
 			}
 		}
@@ -351,7 +394,7 @@ DeviceLoop:
 		validDevices = append(validDevices, blockDevice)
 
 	}
-	return validDevices, delayedDevices
+	return validDevices, delayedDevices, rejectedDevices
 }
 
 // returns:
@@ -414,7 +457,7 @@ func (r *LocalVolumeSetReconciler) provisionPV(
 	}
 
 	// get PV creation lock which checks for existing symlinks to this device
-	pvLock, pvLocked, existingSymlinks, err := internal.GetPVCreationLock(
+	pvLock, pvLocked, existingSymlinks, lockErr := internal.GetPVCreationLock(
 		devLabelPath,
 		filepath.Dir(symLinkDir),
 	)
@@ -459,9 +502,12 @@ func (r *LocalVolumeSetReconciler) provisionPV(
 		err := fmt.Errorf("found existing symlinks for device %s in %s", dev.KName, filepath.Dir(symLinkDir))
 		klog.ErrorS(err, "skipping provisioning of PV")
 		return err
-	} else if err != nil || !pvLocked { // locking failed for some other reasion
-		klog.ErrorS(err, "not provisioning, could not get lock", "disk", devLabelPath)
-		return err
+	} else if !pvLocked { // locking failed for some other reason
+		klog.ErrorS(lockErr, "not provisioning, could not get lock", "disk", devLabelPath)
+		if lockErr != nil {
+			return lockErr
+		}
+		return fmt.Errorf("failed to acquire lock for %s", devLabelPath)
 	}
 
 	klog.InfoS("symlinking", "sourcePath", symlinkSourcePath, "targetPath", symlinkPath)

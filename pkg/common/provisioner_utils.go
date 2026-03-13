@@ -115,21 +115,28 @@ func CreateLocalPV(ctx context.Context, args CreateLocalPVArgs) error {
 		return fmt.Errorf("could not read the device's volume mode from the node: %w", err)
 	}
 
+	accessor, err := meta.Accessor(obj)
+	if err != nil {
+		return fmt.Errorf("could not get object metadata accessor from obj: %+v", obj)
+	}
+	name := accessor.GetName()
+	namespace := accessor.GetNamespace()
+	kind := obj.GetObjectKind().GroupVersionKind().Kind
+	if len(name) == 0 || len(namespace) == 0 || len(kind) == 0 {
+		return fmt.Errorf("name: %q, namespace: %q, or  kind: %q is empty for obj: %+v", name, namespace, kind, obj)
+	}
+
 	deviceHandler := internal.NewDeviceLinkHandler(args.CurrentSymlink, args.PreferredSymLink, client)
 
-	_, err = deviceHandler.Create(context.TODO(), pvName, runtimeConfig.Namespace)
+	_, err = deviceHandler.Create(ctx, pvName, runtimeConfig.Namespace, obj)
 	if err != nil {
 		return fmt.Errorf("error creating localvolumedevicelink object: %w", err)
 	}
 
-	_, err = deviceHandler.UpdateStatusAndPV(ctx, args.KName, args.DevicePath)
-	if err != nil {
-		return fmt.Errorf("error updating localvolumedevicelink object: %w", err)
-	}
-
 	// Do not attempt to create or update existing PV's that have been released
 	existingPV := &corev1.PersistentVolume{ObjectMeta: metav1.ObjectMeta{Name: pvName}}
-	err = client.Get(context.TODO(), types.NamespacedName{Name: pvName}, existingPV)
+	err = client.Get(ctx, types.NamespacedName{Name: pvName}, existingPV)
+
 	if err == nil && existingPV.Status.Phase == corev1.VolumeReleased {
 		klog.InfoS("PV is still being cleaned, not going to recreate it", "pvName", pvName, "disk", deviceName)
 		// Caller should try again soon
@@ -162,19 +169,6 @@ func CreateLocalPV(ctx context.Context, args CreateLocalPVArgs) error {
 		// totalCapacityFSBytes += capacityByte
 	default:
 		return fmt.Errorf("path %q has unexpected volume type %q", symLinkPath, actualVolumeMode)
-	}
-
-	accessor, err := meta.Accessor(obj)
-	if err != nil {
-
-		return fmt.Errorf("could not get object metadata accessor from obj: %+v", obj)
-	}
-
-	name := accessor.GetName()
-	namespace := accessor.GetNamespace()
-	kind := obj.GetObjectKind().GroupVersionKind().Kind
-	if len(name) == 0 || len(namespace) == 0 || len(kind) == 0 {
-		return fmt.Errorf("name: %q, namespace: %q, or  kind: %q is empty for obj: %+v", name, namespace, kind, obj)
 	}
 
 	labels := map[string]string{
@@ -265,8 +259,16 @@ func CreateLocalPV(ctx context.Context, args CreateLocalPVArgs) error {
 	if opRes != controllerutil.OperationResultNone {
 		klog.InfoS("PV changed", "pvName", pvName, "status", opRes)
 	}
+	if err != nil {
+		return fmt.Errorf("error creating pv %s: %w", pvName, err)
+	}
 
-	return err
+	_, err = deviceHandler.UpdateStatus(ctx, pvName, runtimeConfig.Namespace, args.KName, args.DevicePath)
+	if err != nil {
+		return fmt.Errorf("error updating localvolumedevicelink object: %w", err)
+	}
+
+	return nil
 }
 
 // GeneratePVName is used to generate a PV name based on the filename, node, and storageclass

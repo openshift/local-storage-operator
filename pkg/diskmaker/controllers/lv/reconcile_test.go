@@ -6,6 +6,7 @@ import (
 	"embed"
 	"fmt"
 	"os"
+	"os/exec"
 	"path"
 	"path/filepath"
 	"reflect"
@@ -24,6 +25,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -312,6 +314,211 @@ func TestWipeDeviceWhenCreateSymLinkByDeviceName(t *testing.T) {
 
 			// assert that disk was (or wasn't) wiped
 			assert.Truef(t, volHelper.HasExt4(t, fname) != test.forceWipe, "unexpected wiping disk %s", fname)
+		})
+	}
+}
+
+func TestProcessRejectedDevicesForDeviceLinks(t *testing.T) {
+	const (
+		testNodeName   = "node-a"
+		testNamespace  = "default"
+		currentLink    = "current-link"
+		preferredByID  = "/dev/disk/by-id/wwn-preferred"
+		secondaryByID  = "/dev/disk/by-id/scsi-secondary"
+		blockDevKName  = "sdb"
+		blockDevName   = "sdb"
+		filesystemUUID = "uuid-test-1234"
+	)
+
+	tests := []struct {
+		name                 string
+		createCurrentSymlink bool
+		createPV             bool
+		createLVDL           bool
+		useEmptyKName        bool
+		byIDGlobErr          error
+		execCommandErr       bool
+		expectStatusUpdated  bool
+		expectLVDLNotFound   bool
+	}{
+		{
+			name:                 "updates lvdl status for matching ignored device",
+			createCurrentSymlink: true,
+			createPV:             true,
+			createLVDL:           true,
+			expectStatusUpdated:  true,
+		},
+		{
+			name:                 "skips when no existing symlink in storage class dir",
+			createCurrentSymlink: false,
+			createPV:             true,
+			createLVDL:           true,
+			expectStatusUpdated:  false,
+		},
+		{
+			name:                 "skips when preferred by-id lookup fails",
+			createCurrentSymlink: true,
+			createPV:             true,
+			createLVDL:           true,
+			byIDGlobErr:          fmt.Errorf("glob failure"),
+			expectStatusUpdated:  false,
+		},
+		{
+			name:                 "skips when pv does not exist",
+			createCurrentSymlink: true,
+			createPV:             false,
+			createLVDL:           true,
+			expectStatusUpdated:  false,
+		},
+		{
+			name:                 "does not create lvdl while processing rejected devices",
+			createCurrentSymlink: true,
+			createPV:             true,
+			createLVDL:           false,
+			expectLVDLNotFound:   true,
+		},
+		{
+			name:                 "skips when device path resolution fails",
+			createCurrentSymlink: true,
+			createPV:             true,
+			createLVDL:           true,
+			useEmptyKName:        true,
+			expectStatusUpdated:  false,
+		},
+		{
+			name:                 "skips update when blkid command fails",
+			createCurrentSymlink: true,
+			createPV:             true,
+			createLVDL:           true,
+			execCommandErr:       true,
+			expectStatusUpdated:  false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			tmpRoot := createTmpDir(t, "", "rejected-devices")
+			defer os.RemoveAll(tmpRoot)
+
+			symLinkDir := filepath.Join(tmpRoot, storageClassName)
+			err := os.MkdirAll(symLinkDir, 0755)
+			assert.NoError(t, err)
+
+			devicePath := filepath.Join(tmpRoot, blockDevName)
+			err = os.WriteFile(devicePath, []byte("device"), 0644)
+			assert.NoError(t, err)
+
+			currentSymlinkPath := filepath.Join(symLinkDir, currentLink)
+			if tc.createCurrentSymlink {
+				err = os.Symlink(devicePath, currentSymlinkPath)
+				assert.NoError(t, err)
+			}
+
+			pvName := common.GeneratePVName(currentLink, testNodeName, storageClassName)
+			objs := make([]runtime.Object, 0)
+			if tc.createPV {
+				objs = append(objs, &corev1.PersistentVolume{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: pvName,
+					},
+				})
+			}
+			if tc.createLVDL {
+				objs = append(objs, &localv1.LocalVolumeDeviceLink{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      pvName,
+						Namespace: testNamespace,
+					},
+					Spec: localv1.LocalVolumeDeviceLinkSpec{
+						PersistentVolumeName: pvName,
+						Policy:               localv1.DeviceLinkPolicyNone,
+					},
+				})
+			}
+
+			r, tcCtx := getFakeDiskMaker(t, tmpRoot, objs...)
+			r.runtimeConfig.Node = &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: testNodeName}}
+			r.runtimeConfig.Namespace = testNamespace
+
+			origGlob := internal.FilePathGlob
+			origEval := internal.FilePathEvalSymLinks
+			origExec := internal.ExecCommand
+			defer func() {
+				internal.FilePathGlob = origGlob
+				internal.FilePathEvalSymLinks = origEval
+				internal.ExecCommand = origExec
+			}()
+
+			internal.FilePathGlob = func(pattern string) ([]string, error) {
+				if strings.HasPrefix(pattern, internal.DiskByIDDir) {
+					if tc.byIDGlobErr != nil {
+						return nil, tc.byIDGlobErr
+					}
+					return []string{preferredByID, secondaryByID}, nil
+				}
+				return filepath.Glob(pattern)
+			}
+
+			internal.FilePathEvalSymLinks = func(p string) (string, error) {
+				switch p {
+				case preferredByID, secondaryByID:
+					// Simulate by-id links resolving to this block device.
+					return filepath.Join("/dev", blockDevKName), nil
+				default:
+					return filepath.EvalSymlinks(p)
+				}
+			}
+
+			if tc.execCommandErr {
+				internal.ExecCommand = func(name string, args ...string) *exec.Cmd {
+					return exec.Command("bash", "-c", "exit 1")
+				}
+			} else {
+				internal.ExecCommand = func(name string, args ...string) *exec.Cmd {
+					return exec.Command("bash", "-c", "echo "+filesystemUUID)
+				}
+			}
+
+			kname := blockDevKName
+			if tc.useEmptyKName {
+				kname = ""
+			}
+			rejected := map[string][]internal.DiskLocation{
+				storageClassName: {
+					{
+						DiskNamePath:     filepath.Join("/dev", blockDevKName),
+						UserProvidedPath: filepath.Join("/dev", blockDevKName),
+						DiskID:           preferredByID,
+						BlockDevice: internal.BlockDevice{
+							Name:  blockDevName,
+							KName: kname,
+						},
+					},
+				},
+			}
+
+			r.processRejectedDevicesForDeviceLinks(context.TODO(), rejected)
+
+			gotLVDL := &localv1.LocalVolumeDeviceLink{}
+			err = tcCtx.fakeClient.Get(context.TODO(), types.NamespacedName{Name: pvName, Namespace: testNamespace}, gotLVDL)
+			if tc.expectLVDLNotFound {
+				assert.True(t, apierrors.IsNotFound(err))
+				return
+			}
+			assert.NoError(t, err)
+
+			if tc.expectStatusUpdated {
+				assert.Equal(t, preferredByID, gotLVDL.Status.CurrentLinkTarget)
+				assert.Equal(t, preferredByID, gotLVDL.Status.PreferredLinkTarget)
+				assert.Equal(t, filesystemUUID, gotLVDL.Status.FilesystemUUID)
+				assert.ElementsMatch(t, []string{preferredByID, secondaryByID}, gotLVDL.Status.ValidLinkTargets)
+				return
+			}
+
+			assert.Equal(t, "", gotLVDL.Status.CurrentLinkTarget)
+			assert.Equal(t, "", gotLVDL.Status.PreferredLinkTarget)
+			assert.Equal(t, "", gotLVDL.Status.FilesystemUUID)
+			assert.Empty(t, gotLVDL.Status.ValidLinkTargets)
 		})
 	}
 }
