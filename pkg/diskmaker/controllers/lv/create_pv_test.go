@@ -424,6 +424,11 @@ func TestCreateLocalPV_DeviceLinkArgOrder(t *testing.T) {
 	lvdl := &localv1.LocalVolumeDeviceLink{}
 	err = r.Client.Get(context.TODO(), types.NamespacedName{Name: pvName, Namespace: lv.Namespace}, lvdl)
 	assert.NoError(t, err, "LVDL should have been created by CreateLocalPV")
+	if assert.Len(t, lvdl.OwnerReferences, 1, "LVDL should carry owner reference to LocalVolume") {
+		assert.Equal(t, localv1.GroupVersion.String(), lvdl.OwnerReferences[0].APIVersion)
+		assert.Equal(t, localv1.LocalVolumeKind, lvdl.OwnerReferences[0].Kind)
+		assert.Equal(t, lv.Name, lvdl.OwnerReferences[0].Name)
+	}
 
 	// ValidLinkTargets must be populated — proving KName was used for the
 	// by-id glob matching (not DevicePath).
