@@ -4,7 +4,7 @@ package internal
 type DiskLocation struct {
 	// DiskNamePath stores full device name path - "/dev/sda"
 	DiskNamePath string
-	// UserProvidedPath is the path supplied by the user in the LocalVolume CR.
+	// UserProvidedPath is the path supplied by the user in the LocalVolume CR. Empty in LocalVolumeSet
 	UserProvidedPath string
 	DiskID           string
 	BlockDevice      BlockDevice
