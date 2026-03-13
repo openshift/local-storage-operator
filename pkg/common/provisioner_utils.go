@@ -263,7 +263,7 @@ func CreateLocalPV(ctx context.Context, args CreateLocalPVArgs) error {
 		return fmt.Errorf("error creating pv %s: %w", pvName, err)
 	}
 
-	_, err = deviceHandler.UpdateStatus(ctx, pvName, runtimeConfig.Namespace, args.KName, args.DevicePath)
+	_, err = deviceHandler.ApplyStatus(ctx, pvName, runtimeConfig.Namespace, args.KName, args.DevicePath, obj)
 	if err != nil {
 		return fmt.Errorf("error updating localvolumedevicelink object: %w", err)
 	}

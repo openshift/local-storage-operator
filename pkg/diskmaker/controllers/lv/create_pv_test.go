@@ -317,7 +317,7 @@ func TestCreatePV(t *testing.T) {
 // TestCreateLocalPV_DeviceLinkArgOrder verifies that CreateLocalPV passes KName
 // to the by-id symlink matcher and DevicePath to blkid — and not the other way
 // around.  A previous bug had these two arguments swapped in the
-// UpdateStatusAndPV call inside CreateLocalPV.
+// ApplyStatus call inside CreateLocalPV.
 //
 // The test uses deliberately distinct values for KName and DevicePath so that
 // swapping them would produce wrong results:
