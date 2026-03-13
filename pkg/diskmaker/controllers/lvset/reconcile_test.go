@@ -57,7 +57,7 @@ func newFakeLocalVolumeSetReconciler(t *testing.T, objs ...runtime.Object) (*Loc
 	err = storagev1.AddToScheme(scheme)
 	assert.NoErrorf(t, err, "adding storagev1 to scheme")
 
-	fakeClient := crFake.NewClientBuilder().WithScheme(scheme).WithRuntimeObjects(objs...).Build()
+	fakeClient := crFake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(&v1api.LocalVolumeDeviceLink{}).WithRuntimeObjects(objs...).Build()
 
 	fakeRecorder := record.NewFakeRecorder(20)
 	eventChannel := fakeRecorder.Events
