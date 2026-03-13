@@ -385,8 +385,11 @@ func (r *LocalVolumeReconciler) Reconcile(ctx context.Context, request ctrl.Requ
 	}
 
 	validBlockDevices := make([]internal.BlockDevice, 0)
+	ignoredDevices := make([]internal.BlockDevice, 0)
+
 	for _, blockDevice := range blockDevices {
 		if ignoreDevices(blockDevice) {
+			ignoredDevices = append(ignoredDevices, blockDevice)
 			continue
 		}
 		validBlockDevices = append(validBlockDevices, blockDevice)
@@ -403,6 +406,17 @@ func (r *LocalVolumeReconciler) Reconcile(ctx context.Context, request ctrl.Requ
 		r.eventSync.Report(r.localVolume, newDiskEvent(ErrorFindingMatchingDisk, msg, "", corev1.EventTypeWarning))
 		klog.Error(msg)
 		return ctrl.Result{}, nil
+	}
+
+	// get a map of ignored but matching block devices. The devices might be ignored
+	// because kubelet mounted it after PV creation, but the device is still managed by LSO.
+	ignoredButMatchingDeviceMap, err := r.findMatchingDisks(diskConfig, ignoredDevices)
+	if err != nil {
+		klog.ErrorS(err, "error finding matching devices from ignored list")
+	}
+
+	if len(ignoredButMatchingDeviceMap) != 0 {
+		r.processRejectedDevicesForDeviceLinks(ctx, ignoredButMatchingDeviceMap)
 	}
 
 	if len(deviceMap) == 0 {
@@ -489,6 +503,51 @@ func (r *LocalVolumeReconciler) Reconcile(ctx context.Context, request ctrl.Requ
 	return ctrl.Result{Requeue: true, RequeueAfter: requeueTime}, nil
 }
 
+func (r *LocalVolumeReconciler) processRejectedDevicesForDeviceLinks(ctx context.Context, rejectedDevices map[string][]internal.DiskLocation) {
+	for storageClassName, diskLocationArray := range rejectedDevices {
+		symLinkDirPath := path.Join(r.symlinkLocation, storageClassName)
+		for _, diskLocation := range diskLocationArray {
+			existingSymlink, err := common.GetSymlinkedForCurrentSC(symLinkDirPath, diskLocation.BlockDevice)
+			if err != nil {
+				klog.ErrorS(err, "error reading existing symlinks for device",
+					"blockDevice", diskLocation.DiskNamePath)
+				continue
+			}
+
+			if existingSymlink == "" {
+				continue
+			}
+
+			source, _, _, err := getSymlinkSourceAndTarget(diskLocation, symLinkDirPath)
+			if err != nil {
+				klog.ErrorS(err, "failed to get symlink source and target", "deviceNameLocation", diskLocation)
+				break
+			}
+
+			blockDevice := diskLocation.BlockDevice
+
+			preferredSymLink, err := blockDevice.GetPathByID("")
+			if err != nil {
+				klog.ErrorS(err, "", "failed to get preferred device link", "disk", blockDevice.Name)
+				continue
+			}
+
+			devicePath, err := blockDevice.GetDevPath()
+			if err != nil {
+				klog.ErrorS(err, "failed to get /dev path for block device", "disk", blockDevice.Name)
+				continue
+			}
+
+			pvName := common.GeneratePVName(existingSymlink, r.runtimeConfig.Node.Name, storageClassName)
+			deviceHandler := internal.NewDeviceLinkHandler(source, preferredSymLink, r.Client)
+			_, err = deviceHandler.UpdateStatus(ctx, pvName, r.runtimeConfig.Namespace, blockDevice.KName, devicePath)
+			if err != nil {
+				klog.ErrorS(err, "error updating LocalVolumeDeviceLink", "device", blockDevice.Name)
+			}
+		}
+	}
+}
+
 func getSymlinkSourceAndTarget(devLocation internal.DiskLocation, symlinkDir string) (string, string, bool, error) {
 	if devLocation.DiskID != "" {
 		target := path.Join(symlinkDir, filepath.Base(devLocation.DiskID))
@@ -513,6 +572,8 @@ func ignoreDevices(dev internal.BlockDevice) bool {
 	return false
 }
 
+// finds all devices which match LocalVolume spec
+// returns a map of storageclass and device locations
 func (r *LocalVolumeReconciler) findMatchingDisks(diskConfig *DiskConfig, blockDevices []internal.BlockDevice) (map[string][]internal.DiskLocation, error) {
 
 	// blockDeviceMap is a map of storageclass and device locations
