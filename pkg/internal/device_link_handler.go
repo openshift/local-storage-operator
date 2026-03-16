@@ -159,23 +159,14 @@ func (dl *DeviceLinkHandler) UpdateStatus(ctx context.Context, pvName, namespace
 		return nil, err
 	}
 
-	existing := &v1.LocalVolumeDeviceLink{}
-	key := types.NamespacedName{Name: pvName, Namespace: namespace}
-	err := dl.client.Get(ctx, key, existing)
+	existing, err := dl.findExistingLVDL(ctx, pvName, namespace, devicePath, ownerObj)
 	if err != nil {
-		if apierrors.IsNotFound(err) {
-			if isNilOwnerObject(ownerObj) {
-				klog.Warningf("missing lvdl object %s during status update, but owner is nil; skipping creation for device: %s", pvName, devicePath)
-				return nil, nil
-			}
-			klog.Warningf("missing lvdl object %s during status update, creating one now for device: %s", pvName, devicePath)
-			existing, err = dl.createLVDL(ctx, pvName, namespace, ownerObj)
-			if err != nil {
-				return nil, fmt.Errorf("error creating lvdl object %s, for device %s: %w", pvName, devicePath, err)
-			}
-		} else {
-			return nil, err
-		}
+		return nil, err
+	}
+
+	// rare case when ownerObj is nil
+	if existing == nil {
+		return nil, nil
 	}
 
 	validLinks, err := dl.getValidByIDSymlinks(kName)
@@ -204,6 +195,28 @@ func (dl *DeviceLinkHandler) UpdateStatus(ctx context.Context, pvName, namespace
 	err = dl.client.Status().Update(ctx, updatedCopy)
 
 	return updatedCopy, err
+}
+
+func (dl *DeviceLinkHandler) findExistingLVDL(ctx context.Context, pvName, namespace, devicePath string, ownerObj runtime.Object) (*v1.LocalVolumeDeviceLink, error) {
+	existing := &v1.LocalVolumeDeviceLink{}
+	key := types.NamespacedName{Name: pvName, Namespace: namespace}
+	err := dl.client.Get(ctx, key, existing)
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			if isNilOwnerObject(ownerObj) {
+				klog.Warningf("missing lvdl object %s during status update, but owner is nil; skipping creation for device: %s", pvName, devicePath)
+				return nil, nil
+			}
+			klog.Warningf("missing lvdl object %s during status update, creating one now for device: %s", pvName, devicePath)
+			existing, err = dl.createLVDL(ctx, pvName, namespace, ownerObj)
+			if err != nil {
+				return nil, fmt.Errorf("error creating lvdl object %s, for device %s: %w", pvName, devicePath, err)
+			}
+		} else {
+			return nil, err
+		}
+	}
+	return existing, nil
 }
 
 func (dl *DeviceLinkHandler) getValidByIDSymlinks(kname string) ([]string, error) {
