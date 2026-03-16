@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os/exec"
+	"reflect"
 	"strings"
 
 	v1 "github.com/openshift/local-storage-operator/api/v1"
@@ -22,10 +23,7 @@ import (
 
 type DeviceLinkHandler struct {
 	currentSymlink   string
-	lvdlName         string
 	preferredSymlink string
-
-	deviceLink *v1.LocalVolumeDeviceLink
 
 	// devicePoints to current device such as /dev/sda or something similar
 	// so basically this is direct path in /dev filesystem to which
@@ -43,8 +41,48 @@ func NewDeviceLinkHandler(currentSymlink, preferredSymlink string, client client
 }
 
 func (dl *DeviceLinkHandler) Create(ctx context.Context, pvName, namespace string, ownerObj runtime.Object) (*v1.LocalVolumeDeviceLink, error) {
-	dl.lvdlName = pvName
+	existing := &v1.LocalVolumeDeviceLink{}
+	key := types.NamespacedName{Name: pvName, Namespace: namespace}
+	err := dl.client.Get(ctx, key, existing)
 
+	if err != nil && !apierrors.IsNotFound(err) {
+		return nil, fmt.Errorf("error getting localvolumedevicelink object: %w", err)
+	}
+
+	if err != nil && apierrors.IsNotFound(err) {
+		return dl.createLVDL(ctx, pvName, namespace, ownerObj)
+	}
+
+	// Keep user-configured policy and only reconcile the pv name.
+	if existing.Spec.PersistentVolumeName == pvName {
+		return existing, nil
+	}
+
+	klog.Infof("updating lvdl object: %s", pvName)
+
+	existingCopy := existing.DeepCopy()
+	existingCopy.Spec.PersistentVolumeName = pvName
+
+	err = dl.client.Update(ctx, existingCopy)
+	if err != nil {
+		return nil, fmt.Errorf("error updating localvolumedevicelink object: %w", err)
+	}
+	return existingCopy, nil
+}
+
+func (dl *DeviceLinkHandler) createLVDL(ctx context.Context, pvName, namespace string, ownerObj runtime.Object) (*v1.LocalVolumeDeviceLink, error) {
+	requiredLocalDeviceLink, err := dl.generateLVDLObj(pvName, namespace, ownerObj)
+	if err != nil {
+		return nil, err
+	}
+
+	if err = dl.client.Create(ctx, requiredLocalDeviceLink); err != nil {
+		return nil, err
+	}
+	return requiredLocalDeviceLink, nil
+}
+
+func (dl *DeviceLinkHandler) generateLVDLObj(pvName, namespace string, ownerObj runtime.Object) (*v1.LocalVolumeDeviceLink, error) {
 	ownerRefs, err := buildOwnerRefs(ownerObj)
 	if err != nil {
 		return nil, err
@@ -52,52 +90,20 @@ func (dl *DeviceLinkHandler) Create(ctx context.Context, pvName, namespace strin
 
 	requiredLocalDeviceLink := &v1.LocalVolumeDeviceLink{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:            dl.lvdlName,
+			Name:            pvName,
 			Namespace:       namespace,
 			OwnerReferences: ownerRefs,
 		},
 		Spec: v1.LocalVolumeDeviceLinkSpec{
-			PersistentVolumeName: dl.lvdlName,
+			PersistentVolumeName: pvName,
 			Policy:               v1.DeviceLinkPolicyNone,
 		},
 	}
-
-	existing := &v1.LocalVolumeDeviceLink{}
-	key := types.NamespacedName{Name: dl.lvdlName, Namespace: namespace}
-	err = dl.client.Get(ctx, key, existing)
-
-	if err != nil && !apierrors.IsNotFound(err) {
-		return nil, fmt.Errorf("error getting localvolumedevicelink object: %w", err)
-	}
-
-	if err != nil && apierrors.IsNotFound(err) {
-		if err = dl.client.Create(ctx, requiredLocalDeviceLink); err != nil {
-			return nil, err
-		}
-		dl.deviceLink = requiredLocalDeviceLink
-		return requiredLocalDeviceLink, nil
-	}
-
-	// Keep user-configured policy and only reconcile the pv name.
-	if existing.Spec.PersistentVolumeName == requiredLocalDeviceLink.Spec.PersistentVolumeName {
-		return existing, nil
-	}
-
-	klog.Infof("updating lvdl object: %s", dl.lvdlName)
-
-	existingCopy := existing.DeepCopy()
-	existingCopy.Spec.PersistentVolumeName = requiredLocalDeviceLink.Spec.PersistentVolumeName
-
-	err = dl.client.Update(ctx, existingCopy)
-	if err != nil {
-		return nil, fmt.Errorf("error updating localvolumedevicelink object: %w", err)
-	}
-	dl.deviceLink = existingCopy
-	return existingCopy, nil
+	return requiredLocalDeviceLink, nil
 }
 
 func buildOwnerRefs(ownerObj runtime.Object) ([]metav1.OwnerReference, error) {
-	if ownerObj == nil {
+	if isNilOwnerObject(ownerObj) {
 		return nil, fmt.Errorf("owner object is nil")
 	}
 	accessor, err := meta.Accessor(ownerObj)
@@ -131,7 +137,15 @@ func buildOwnerRefs(ownerObj runtime.Object) ([]metav1.OwnerReference, error) {
 	}, nil
 }
 
-func (dl *DeviceLinkHandler) UpdateStatus(ctx context.Context, pvName, namespace, kName, devicePath string) (*v1.LocalVolumeDeviceLink, error) {
+func isNilOwnerObject(ownerObj runtime.Object) bool {
+	if ownerObj == nil {
+		return true
+	}
+	value := reflect.ValueOf(ownerObj)
+	return value.Kind() == reflect.Ptr && value.IsNil()
+}
+
+func (dl *DeviceLinkHandler) UpdateStatus(ctx context.Context, pvName, namespace, kName, devicePath string, ownerObj runtime.Object) (*v1.LocalVolumeDeviceLink, error) {
 	klog.Infof("updating lvdl with currentSymlink: %s, preferredSymlink: %s, devicePath: %s, kname: %s", dl.currentSymlink, dl.preferredSymlink, devicePath, kName)
 
 	// Update is best-effort and independent from Create: if either the PV or
@@ -139,6 +153,7 @@ func (dl *DeviceLinkHandler) UpdateStatus(ctx context.Context, pvName, namespace
 	existingPV := &corev1.PersistentVolume{}
 	if err := dl.client.Get(ctx, types.NamespacedName{Name: pvName}, existingPV); err != nil {
 		if apierrors.IsNotFound(err) {
+			klog.Infof("skipping creaton of lvdl object for device %s, no pv exists", devicePath)
 			return nil, nil
 		}
 		return nil, err
@@ -149,9 +164,18 @@ func (dl *DeviceLinkHandler) UpdateStatus(ctx context.Context, pvName, namespace
 	err := dl.client.Get(ctx, key, existing)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
-			return nil, nil
+			if isNilOwnerObject(ownerObj) {
+				klog.Warningf("missing lvdl object %s during status update, but owner is nil; skipping creation for device: %s", pvName, devicePath)
+				return nil, nil
+			}
+			klog.Warningf("missing lvdl object %s during status update, creating one now for device: %s", pvName, devicePath)
+			existing, err = dl.createLVDL(ctx, pvName, namespace, ownerObj)
+			if err != nil {
+				return nil, fmt.Errorf("error creating lvdl object %s, for device %s: %w", pvName, devicePath, err)
+			}
+		} else {
+			return nil, err
 		}
-		return dl.deviceLink, err
 	}
 
 	validLinks, err := dl.getValidByIDSymlinks(kName)

@@ -254,7 +254,7 @@ func (r *LocalVolumeSetReconciler) Reconcile(ctx context.Context, request ctrl.R
 			"paths", noMatch, "directory", symLinkDir)
 	}
 
-	r.processRejectedDevicesForDeviceLinks(ctx, rejectedDevices, symLinkDir, storageClassName)
+	r.processRejectedDevicesForDeviceLinks(ctx, lvset, rejectedDevices, symLinkDir, storageClassName)
 
 	// shorten the requeueTime if there are delayed devices
 	if len(delayedDevices) > 1 && requeueTime == defaultRequeueTime {
@@ -264,7 +264,7 @@ func (r *LocalVolumeSetReconciler) Reconcile(ctx context.Context, request ctrl.R
 	return ctrl.Result{Requeue: true, RequeueAfter: requeueTime}, nil
 }
 
-func (r *LocalVolumeSetReconciler) processRejectedDevicesForDeviceLinks(ctx context.Context, rejectedDevices []internal.BlockDevice, symLinkDir, storageClassName string) {
+func (r *LocalVolumeSetReconciler) processRejectedDevicesForDeviceLinks(ctx context.Context, lvset *localv1alpha1.LocalVolumeSet, rejectedDevices []internal.BlockDevice, symLinkDir, storageClassName string) {
 	klog.V(2).Infof("processing rejected devices for LocalVolumeDeviceLink")
 	for _, blockDevice := range rejectedDevices {
 		existingSymlink, err := common.GetSymlinkedForCurrentSC(symLinkDir, blockDevice)
@@ -297,7 +297,7 @@ func (r *LocalVolumeSetReconciler) processRejectedDevicesForDeviceLinks(ctx cont
 
 		pvName := common.GeneratePVName(existingSymlink, r.runtimeConfig.Node.Name, storageClassName)
 		deviceHandler := internal.NewDeviceLinkHandler(symlinkSourcePath, preferredSymLink, r.Client)
-		_, err = deviceHandler.UpdateStatus(ctx, pvName, r.runtimeConfig.Namespace, blockDevice.KName, devicePath)
+		_, err = deviceHandler.UpdateStatus(ctx, pvName, r.runtimeConfig.Namespace, blockDevice.KName, devicePath, lvset)
 		if err != nil {
 			klog.ErrorS(err, "error updating LocalVolumeDeviceLink", "device", blockDevice.Name)
 		}

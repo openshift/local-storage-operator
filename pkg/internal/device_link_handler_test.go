@@ -238,12 +238,14 @@ func TestDeviceLinkHandler_UpdateStatusAndPV(t *testing.T) {
 		preferredSymlink string
 		kname            string
 		devPath          string
+		ownerObj         runtime.Object
 		existing         *v1.LocalVolumeDeviceLink
 		existingPV       *corev1.PersistentVolume
 		preCreate        bool
 		globLinks        []string
 		filesystemUUID   string
 		expectedLVDL     *v1.LocalVolumeDeviceLink
+		verifyOwnerRef   bool
 	}{
 		{
 			name:             "populates status with symlink targets and filesystem uuid",
@@ -253,6 +255,17 @@ func TestDeviceLinkHandler_UpdateStatusAndPV(t *testing.T) {
 			preferredSymlink: "/dev/disk/by-id/wwn-preferred",
 			kname:            "sda",
 			devPath:          "/dev/sda",
+			ownerObj: &v1.LocalVolume{
+				TypeMeta: metav1.TypeMeta{
+					Kind:       v1.LocalVolumeKind,
+					APIVersion: v1.GroupVersion.String(),
+				},
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "lv-statustest",
+					Namespace: "default",
+					UID:       types.UID("11111111-aaaa-bbbb-cccc-111111111111"),
+				},
+			},
 			existing: &v1.LocalVolumeDeviceLink{
 				ObjectMeta: metav1.ObjectMeta{Name: "local-pv-statustest", Namespace: "default"},
 				Spec:       v1.LocalVolumeDeviceLinkSpec{PersistentVolumeName: "local-pv-statustest"},
@@ -281,6 +294,17 @@ func TestDeviceLinkHandler_UpdateStatusAndPV(t *testing.T) {
 			preferredSymlink: "",
 			kname:            "sdb",
 			devPath:          "/dev/sdb",
+			ownerObj: &v1.LocalVolume{
+				TypeMeta: metav1.TypeMeta{
+					Kind:       v1.LocalVolumeKind,
+					APIVersion: v1.GroupVersion.String(),
+				},
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "lv-nolinks",
+					Namespace: "default",
+					UID:       types.UID("22222222-aaaa-bbbb-cccc-222222222222"),
+				},
+			},
 			existing: &v1.LocalVolumeDeviceLink{
 				ObjectMeta: metav1.ObjectMeta{Name: "local-pv-nolinks", Namespace: "default"},
 				Spec:       v1.LocalVolumeDeviceLinkSpec{PersistentVolumeName: "local-pv-nolinks"},
@@ -307,7 +331,18 @@ func TestDeviceLinkHandler_UpdateStatusAndPV(t *testing.T) {
 			preferredSymlink: "/dev/disk/by-id/wwn-preferred",
 			kname:            "sdc",
 			devPath:          "/dev/sdc",
-			preCreate:        true,
+			ownerObj: &v1.LocalVolume{
+				TypeMeta: metav1.TypeMeta{
+					Kind:       v1.LocalVolumeKind,
+					APIVersion: v1.GroupVersion.String(),
+				},
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "lv-fullflow",
+					Namespace: "openshift-local-storage",
+					UID:       types.UID("33333333-aaaa-bbbb-cccc-333333333333"),
+				},
+			},
+			preCreate: true,
 			existingPV: &corev1.PersistentVolume{
 				ObjectMeta: metav1.ObjectMeta{Name: "local-pv-fullflow"},
 			},
@@ -330,22 +365,58 @@ func TestDeviceLinkHandler_UpdateStatusAndPV(t *testing.T) {
 			preferredSymlink: "",
 			kname:            "sdd",
 			devPath:          "/dev/sdd",
+			ownerObj: &v1.LocalVolume{
+				TypeMeta: metav1.TypeMeta{
+					Kind:       v1.LocalVolumeKind,
+					APIVersion: v1.GroupVersion.String(),
+				},
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "lv-missing-pv",
+					Namespace: "default",
+					UID:       types.UID("44444444-aaaa-bbbb-cccc-444444444444"),
+				},
+			},
 			existing: &v1.LocalVolumeDeviceLink{
 				ObjectMeta: metav1.ObjectMeta{Name: "local-pv-missing", Namespace: "default"},
 				Spec:       v1.LocalVolumeDeviceLinkSpec{PersistentVolumeName: "local-pv-missing"},
 			},
 		},
 		{
-			name:             "returns without updating when lvdl does not exist",
+			name:             "creates lvdl during status update when pv exists and create was skipped",
 			pvName:           "local-pv-lvdl-missing",
 			namespace:        "default",
 			currentSymlink:   "/dev/sde",
 			preferredSymlink: "",
 			kname:            "sde",
 			devPath:          "/dev/sde",
+			ownerObj: &v1.LocalVolume{
+				TypeMeta: metav1.TypeMeta{
+					Kind:       v1.LocalVolumeKind,
+					APIVersion: v1.GroupVersion.String(),
+				},
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "lv-create-on-update",
+					Namespace: "default",
+					UID:       types.UID("55555555-aaaa-bbbb-cccc-555555555555"),
+				},
+			},
 			existingPV: &corev1.PersistentVolume{
 				ObjectMeta: metav1.ObjectMeta{Name: "local-pv-lvdl-missing"},
 			},
+			expectedLVDL: &v1.LocalVolumeDeviceLink{
+				ObjectMeta: metav1.ObjectMeta{Name: "local-pv-lvdl-missing", Namespace: "default"},
+				Spec: v1.LocalVolumeDeviceLinkSpec{
+					PersistentVolumeName: "local-pv-lvdl-missing",
+					Policy:               v1.DeviceLinkPolicyNone,
+				},
+				Status: v1.LocalVolumeDeviceLinkStatus{
+					CurrentLinkTarget:   "/dev/sde",
+					PreferredLinkTarget: "",
+					FilesystemUUID:      "",
+					ValidLinkTargets:    []string{},
+				},
+			},
+			verifyOwnerRef: true,
 		},
 	}
 
@@ -403,7 +474,7 @@ func TestDeviceLinkHandler_UpdateStatusAndPV(t *testing.T) {
 				ExecCommand = helperCommandBlkid(tc.filesystemUUID)
 			}
 
-			updated, err := handler.UpdateStatus(context.TODO(), tc.pvName, tc.namespace, tc.kname, tc.devPath)
+			updated, err := handler.UpdateStatus(context.TODO(), tc.pvName, tc.namespace, tc.kname, tc.devPath, tc.ownerObj)
 			if err != nil {
 				t.Fatalf("UpdateStatusAndPV returned unexpected error: %v", err)
 			}
@@ -431,6 +502,13 @@ func TestDeviceLinkHandler_UpdateStatusAndPV(t *testing.T) {
 			assert.Equal(t, tc.expectedLVDL.Status.PreferredLinkTarget, fetched.Status.PreferredLinkTarget)
 			assert.Equal(t, tc.expectedLVDL.Status.FilesystemUUID, fetched.Status.FilesystemUUID)
 			assert.ElementsMatch(t, tc.expectedLVDL.Status.ValidLinkTargets, fetched.Status.ValidLinkTargets)
+			if tc.verifyOwnerRef {
+				assert.Len(t, fetched.OwnerReferences, 1)
+				assert.Equal(t, tc.ownerObj.GetObjectKind().GroupVersionKind().Kind, fetched.OwnerReferences[0].Kind)
+				assert.Equal(t, tc.ownerObj.GetObjectKind().GroupVersionKind().GroupVersion().String(), fetched.OwnerReferences[0].APIVersion)
+				assert.Equal(t, tc.ownerObj.(metav1.Object).GetName(), fetched.OwnerReferences[0].Name)
+				assert.Equal(t, tc.ownerObj.(metav1.Object).GetUID(), fetched.OwnerReferences[0].UID)
+			}
 		})
 	}
 }
