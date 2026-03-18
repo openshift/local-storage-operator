@@ -58,7 +58,7 @@ func (dl *DeviceLinkHandler) Create(ctx context.Context, pvName, namespace strin
 		return existing, nil
 	}
 
-	klog.Infof("updating lvdl object: %s", pvName)
+	klog.InfoS("updating lvdl object", "pvName", pvName)
 
 	existingCopy := existing.DeepCopy()
 	existingCopy.Spec.PersistentVolumeName = pvName
@@ -153,7 +153,7 @@ func (dl *DeviceLinkHandler) UpdateStatus(ctx context.Context, pvName, namespace
 	existingPV := &corev1.PersistentVolume{}
 	if err := dl.client.Get(ctx, types.NamespacedName{Name: pvName}, existingPV); err != nil {
 		if apierrors.IsNotFound(err) {
-			klog.Infof("skipping creation of lvdl object for device %s, no pv exists", devicePath)
+			klog.InfoS("skipping creation of lvdl object, no pv exists", "devicePath", devicePath)
 			return nil, nil
 		}
 		return nil, err
@@ -241,7 +241,7 @@ func (dl *DeviceLinkHandler) getValidByIDSymlinks(kname string) ([]string, error
 }
 
 func getFilesystemUUID(devicePath string) (string, error) {
-	klog.Infof("trying to get filesystem information for %s", devicePath)
+	klog.InfoS("trying to get filesystem information", "devicePath", devicePath)
 	cmd := ExecCommand("blkid", "-s", "UUID", "-o", "value", devicePath)
 	output, err := executeCmdWithCombinedOutput(cmd)
 	if err != nil {

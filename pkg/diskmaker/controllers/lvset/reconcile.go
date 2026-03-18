@@ -265,7 +265,7 @@ func (r *LocalVolumeSetReconciler) Reconcile(ctx context.Context, request ctrl.R
 }
 
 func (r *LocalVolumeSetReconciler) processRejectedDevicesForDeviceLinks(ctx context.Context, lvset *localv1alpha1.LocalVolumeSet, rejectedDevices []internal.BlockDevice, symLinkDir, storageClassName string) {
-	klog.V(2).Infof("processing rejected devices for LocalVolumeDeviceLink")
+	klog.V(2).InfoS("processing rejected devices for LocalVolumeDeviceLink")
 	for _, blockDevice := range rejectedDevices {
 		existingSymlink, err := common.GetSymlinkedForCurrentSC(symLinkDir, blockDevice)
 		if err != nil {
