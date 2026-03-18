@@ -31,6 +31,22 @@ const (
 	DiskDMDir = "/dev/mapper/"
 )
 
+var (
+	preferredPatterns = []string{
+		"wwn",
+		"scsi-3",
+		"scsi-2",
+		"scsi-8",
+		"scsi-S",
+		"scsi-1",
+		"scsi-0",
+		"scsi",
+		"nvme-eui",
+		"nvme",
+		"",
+	}
+)
+
 // IDPathNotFoundError indicates that a symlink to the device was not found in /dev/disk/by-id/
 type IDPathNotFoundError struct {
 	DeviceName string
@@ -176,20 +192,44 @@ func (b *BlockDevice) GetPathByID(existingDeviceID string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("error listing files in %s: %v", DiskByIDDir, err)
 	}
-	preferredPatterns := []string{
-		"wwn",
-		"scsi-3",
-		"scsi-2",
-		"scsi-8",
-		"scsi-S",
-		"scsi-1",
-		"scsi-0",
-		"scsi",
-		"nvme-eui",
-		"nvme",
-		"",
+
+	diskPathID, err := b.findDeviceInSortedSymlink(existingDeviceID, allDisks)
+	if err != nil {
+		return "", err
 	}
 
+	if diskPathID != "" {
+		b.PathByID = diskPathID
+		return diskPathID, nil
+	}
+
+	devPath, err := b.GetDevPath()
+	if err != nil {
+		return "", err
+	}
+	// return path by label and error
+	return devPath, IDPathNotFoundError{DeviceName: b.KName}
+}
+
+func (b *BlockDevice) GetUncachedPathID() (string, error) {
+	allDisks, err := FilePathGlob(filepath.Join(DiskByIDDir, "/*"))
+	if err != nil {
+		return "", fmt.Errorf("error listing files in %s: %v", DiskByIDDir, err)
+	}
+	diskPathID, err := b.findDeviceInSortedSymlink("", allDisks)
+	if err != nil {
+		return "", err
+	}
+
+	if diskPathID != "" {
+		b.PathByID = diskPathID
+		return diskPathID, nil
+	}
+	// return path by label and error
+	return "", IDPathNotFoundError{DeviceName: b.KName}
+}
+
+func (b *BlockDevice) findDeviceInSortedSymlink(existingDeviceID string, allDisks []string) (string, error) {
 	// sortedSymlinks sorts symlinks in 4 buckets.
 	// 	- [0] - symlinks that match wwn
 	//	- [1] - symlinks that match scsi - these are further sorted by the "328S10" prefix priority list used by lsscsi:
@@ -208,7 +248,6 @@ func (b *BlockDevice) GetPathByID(existingDeviceID string) (string, error) {
 				return "", err
 			}
 			if isMatch {
-				b.PathByID = path
 				return path, nil
 			}
 		}
@@ -228,18 +267,11 @@ func (b *BlockDevice) GetPathByID(existingDeviceID string) (string, error) {
 				return "", err
 			}
 			if isMatch {
-				b.PathByID = path
 				return path, nil
 			}
 		}
 	}
-
-	devPath, err := b.GetDevPath()
-	if err != nil {
-		return "", err
-	}
-	// return path by label and error
-	return devPath, IDPathNotFoundError{DeviceName: b.KName}
+	return "", nil
 }
 
 // PathEvalsToDiskLabel checks if the path is a symplink to a file devName
