@@ -1,12 +1,19 @@
 package e2e
 
 import (
+	"context"
 	"fmt"
+	"testing"
+	"time"
 
+	"github.com/onsi/gomega"
 	"github.com/openshift/local-storage-operator/pkg/common"
+	framework "github.com/openshift/local-storage-operator/test/framework"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 )
 
 // NodeJobOptions customizes a node Job (env vars, backoff, restart policy).
@@ -21,10 +28,10 @@ type NodeJobOptions struct {
 
 // newNodeJob returns a Job that runs the given command on the specified node.
 // The job uses the diskmaker image, mounts local-disks and /dev, and is pinned to the node via affinity.
-func newNodeJob(node corev1.Node, namespace, jobName, description string, command []string, opts *NodeJobOptions) (batchv1.Job, error) {
+func newNodeJob(node corev1.Node, namespace, jobName, description string, command []string, opts *NodeJobOptions) (*batchv1.Job, error) {
 	nodeName, found := node.Labels[corev1.LabelHostname]
 	if !found {
-		return batchv1.Job{}, fmt.Errorf("could not get %q label for node: %q", corev1.LabelHostname, node.GetName())
+		return nil, fmt.Errorf("could not get %q label for node: %q", corev1.LabelHostname, node.GetName())
 	}
 
 	hostContainerPropagation := corev1.MountPropagationHostToContainer
@@ -126,5 +133,53 @@ func newNodeJob(node corev1.Node, namespace, jobName, description string, comman
 		},
 		Spec: jobSpec,
 	}
-	return job, nil
+	return &job, nil
+}
+
+// createOrReplaceJob creates a job. It deletes an old job with the same name, if it already exists and creates a new one.
+func createOrReplaceJob(t *testing.T, ctx *framework.TestCtx, job *batchv1.Job, message string) {
+	f := framework.Global
+	matcher := gomega.NewWithT(t)
+	started := metav1.NewTime(time.Now())
+	matcher.Eventually(func() error {
+		err := f.Client.Create(context.TODO(), job, &framework.CleanupOptions{TestContext: ctx})
+		j := &batchv1.Job{}
+		if errors.IsAlreadyExists(err) {
+			err = f.Client.Get(
+				context.TODO(),
+				types.NamespacedName{Name: job.GetName(), Namespace: job.GetNamespace()},
+				j,
+			)
+			if err != nil {
+				return err
+			}
+			if j.CreationTimestamp.Before(&started) {
+				j.TypeMeta.Kind = "Job"
+				eventuallyDelete(t, false, j)
+				return fmt.Errorf("deleted stale job %s/%s, retrying creation", j.GetNamespace(), j.GetName())
+			}
+		}
+		return err
+
+	}, time.Minute*1, time.Second*5).ShouldNot(gomega.HaveOccurred(), message)
+}
+
+func waitForJobCompletion(t *testing.T, job *batchv1.Job, message string) {
+	f := framework.Global
+	matcher := gomega.NewWithT(t)
+	matcher.Eventually(func() int32 {
+		j := &batchv1.Job{}
+		matcher.Eventually(func() error {
+			return f.Client.Get(
+				context.TODO(),
+				types.NamespacedName{
+					Name:      job.GetName(),
+					Namespace: job.GetNamespace()},
+				j,
+			)
+		}).ShouldNot(gomega.HaveOccurred())
+		completions := j.Status.Succeeded
+		t.Logf("job completions: %d", completions)
+		return completions
+	}, time.Minute*2, time.Second*5).Should(gomega.BeNumerically(">=", 1), message)
 }
