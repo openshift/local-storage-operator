@@ -255,7 +255,7 @@ func TestCreatePV(t *testing.T) {
 			MountPointMap:         tc.mountPoints,
 			Client:                r.Client,
 			SymLinkPath:           tc.symlinkpath,
-			DevicePath:            tc.deviceName,
+			BlockDevice:           internal.BlockDevice{KName: filepath.Base(tc.deviceName)},
 			IDExists:              true,
 			ExtraLabelsForPV:      map[string]string{},
 		})
@@ -304,7 +304,7 @@ func TestCreatePV(t *testing.T) {
 			MountPointMap:         tc.mountPoints,
 			Client:                r.Client,
 			SymLinkPath:           tc.symlinkpath,
-			DevicePath:            tc.deviceName,
+			BlockDevice:           internal.BlockDevice{KName: filepath.Base(tc.deviceName)},
 			IDExists:              true,
 			ExtraLabelsForPV:      map[string]string{},
 		})
@@ -412,8 +412,7 @@ func TestCreateLocalPV_DeviceLinkArgOrder(t *testing.T) {
 		MountPointMap:         sets.NewString(),
 		Client:                r.Client,
 		SymLinkPath:           symLinkPath,
-		DevicePath:            devPath,
-		KName:                 kName,
+		BlockDevice:           internal.BlockDevice{KName: kName, PathByID: fakeByIDLink},
 		IDExists:              true,
 		ExtraLabelsForPV:      map[string]string{},
 	})

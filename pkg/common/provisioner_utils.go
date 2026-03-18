@@ -50,21 +50,14 @@ type CreateLocalPVArgs struct {
 	StorageClass          storagev1.StorageClass
 	MountPointMap         sets.String
 	Client                client.Client
-	SymLinkPath           string
-	// DevicePath is the full path to the device (e.g. /dev/sda).
-	// filepath.Base is applied internally where only the kernel name is needed.
-	DevicePath       string
+	SymLinkPath      string
 	IDExists         bool
 	ExtraLabelsForPV map[string]string
 
-	// preferredsymlink stores the preferred symlink according to
-	// LSO heuristics
-	PreferredSymLink string
-	// CurrentSymlink points to source to which
-	// SymLinkPath points to.
+	// CurrentSymlink points to source to which SymLinkPath points to.
 	CurrentSymlink string
-	// Kernel name of the device
-	KName string
+	// BlockDevice is the block device backing this PV.
+	BlockDevice internal.BlockDevice
 }
 
 // CreateLocalPV is used to create a local PV against a symlink
@@ -76,7 +69,7 @@ func CreateLocalPV(ctx context.Context, args CreateLocalPVArgs) error {
 	mountPointMap := args.MountPointMap
 	client := args.Client
 	symLinkPath := args.SymLinkPath
-	deviceName := filepath.Base(args.DevicePath)
+	deviceName := args.BlockDevice.KName
 	idExists := args.IDExists
 	extraLabelsForPV := args.ExtraLabelsForPV
 	nodeLabels := runtimeConfig.Node.GetLabels()
@@ -126,7 +119,7 @@ func CreateLocalPV(ctx context.Context, args CreateLocalPVArgs) error {
 		return fmt.Errorf("name: %q, namespace: %q, or  kind: %q is empty for obj: %+v", name, namespace, kind, obj)
 	}
 
-	deviceHandler := internal.NewDeviceLinkHandler(args.CurrentSymlink, args.PreferredSymLink, client)
+	deviceHandler := internal.NewDeviceLinkHandler(args.CurrentSymlink, client)
 
 	_, err = deviceHandler.Create(ctx, pvName, runtimeConfig.Namespace, obj)
 	if err != nil {
@@ -263,7 +256,7 @@ func CreateLocalPV(ctx context.Context, args CreateLocalPVArgs) error {
 		return fmt.Errorf("error creating pv %s: %w", pvName, err)
 	}
 
-	_, err = deviceHandler.ApplyStatus(ctx, pvName, runtimeConfig.Namespace, args.KName, args.DevicePath, obj)
+	_, err = deviceHandler.ApplyStatus(ctx, pvName, runtimeConfig.Namespace, args.BlockDevice, obj)
 	if err != nil {
 		return fmt.Errorf("error updating localvolumedevicelink object: %w", err)
 	}
