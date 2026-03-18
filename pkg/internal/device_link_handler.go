@@ -146,20 +146,20 @@ func isNilOwnerObject(ownerObj runtime.Object) bool {
 }
 
 func (dl *DeviceLinkHandler) UpdateStatus(ctx context.Context, pvName, namespace, kName, devicePath string, ownerObj runtime.Object) (*v1.LocalVolumeDeviceLink, error) {
-	klog.Infof("updating lvdl with currentSymlink: %s, preferredSymlink: %s, devicePath: %s, kname: %s", dl.currentSymlink, dl.preferredSymlink, devicePath, kName)
+	klog.V(2).Infof("updating lvdl with currentSymlink: %s, preferredSymlink: %s, devicePath: %s, kname: %s", dl.currentSymlink, dl.preferredSymlink, devicePath, kName)
 
 	// Update is best-effort and independent from Create: if either the PV or
 	// the LVDL does not exist yet, return without doing anything.
 	existingPV := &corev1.PersistentVolume{}
 	if err := dl.client.Get(ctx, types.NamespacedName{Name: pvName}, existingPV); err != nil {
 		if apierrors.IsNotFound(err) {
-			klog.Infof("skipping creaton of lvdl object for device %s, no pv exists", devicePath)
+			klog.Infof("skipping creation of lvdl object for device %s, no pv exists", devicePath)
 			return nil, nil
 		}
 		return nil, err
 	}
 
-	existing, err := dl.findExistingLVDL(ctx, pvName, namespace, devicePath, ownerObj)
+	existing, err := dl.findOrCreateLVDL(ctx, pvName, namespace, devicePath, ownerObj)
 	if err != nil {
 		return nil, err
 	}
@@ -178,7 +178,7 @@ func (dl *DeviceLinkHandler) UpdateStatus(ctx context.Context, pvName, namespace
 	if err != nil {
 		return nil, err
 	}
-	klog.Infof("updating lvdl %s with, filesystemUUID: %s, validLinks: %+v", pvName, filesystemUUID, validLinks)
+	klog.V(4).Infof("updating lvdl %s with, filesystemUUID: %s, validLinks: %+v", pvName, filesystemUUID, validLinks)
 
 	updatedCopy := existing.DeepCopy()
 
@@ -197,24 +197,24 @@ func (dl *DeviceLinkHandler) UpdateStatus(ctx context.Context, pvName, namespace
 	return updatedCopy, err
 }
 
-func (dl *DeviceLinkHandler) findExistingLVDL(ctx context.Context, pvName, namespace, devicePath string, ownerObj runtime.Object) (*v1.LocalVolumeDeviceLink, error) {
+func (dl *DeviceLinkHandler) findOrCreateLVDL(ctx context.Context, pvName, namespace, devicePath string, ownerObj runtime.Object) (*v1.LocalVolumeDeviceLink, error) {
 	existing := &v1.LocalVolumeDeviceLink{}
 	key := types.NamespacedName{Name: pvName, Namespace: namespace}
 	err := dl.client.Get(ctx, key, existing)
+	if err == nil {
+		return existing, nil
+	}
+	if !apierrors.IsNotFound(err) {
+		return nil, err
+	}
+	if isNilOwnerObject(ownerObj) {
+		klog.Warningf("missing lvdl object %s during status update, but owner is nil; skipping creation for device: %s", pvName, devicePath)
+		return nil, nil
+	}
+	klog.Warningf("missing lvdl object %s during status update, creating one now for device: %s", pvName, devicePath)
+	existing, err = dl.createLVDL(ctx, pvName, namespace, ownerObj)
 	if err != nil {
-		if apierrors.IsNotFound(err) {
-			if isNilOwnerObject(ownerObj) {
-				klog.Warningf("missing lvdl object %s during status update, but owner is nil; skipping creation for device: %s", pvName, devicePath)
-				return nil, nil
-			}
-			klog.Warningf("missing lvdl object %s during status update, creating one now for device: %s", pvName, devicePath)
-			existing, err = dl.createLVDL(ctx, pvName, namespace, ownerObj)
-			if err != nil {
-				return nil, fmt.Errorf("error creating lvdl object %s, for device %s: %w", pvName, devicePath, err)
-			}
-		} else {
-			return nil, err
-		}
+		return nil, fmt.Errorf("error creating lvdl object %s, for device %s: %w", pvName, devicePath, err)
 	}
 	return existing, nil
 }
