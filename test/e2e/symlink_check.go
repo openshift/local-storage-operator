@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/onsi/gomega"
-	"github.com/openshift/local-storage-operator/pkg/common"
 	framework "github.com/openshift/local-storage-operator/test/framework"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -56,7 +55,6 @@ func checkForSymlinks(t *testing.T, ctx *framework.TestCtx, nodeEnv []nodeDisks,
 			return err
 
 		}, time.Minute*1, time.Second*5).ShouldNot(gomega.HaveOccurred(), "creating check-symlink job on node: %q", node.GetName())
-
 	}
 
 	// wait for jobs to have non-nil completetion time
@@ -85,7 +83,6 @@ func checkForSymlinks(t *testing.T, ctx *framework.TestCtx, nodeEnv []nodeDisks,
 }
 
 func newNodeCheckSymlinkJob(node corev1.Node, namespace string, path string) (batchv1.Job, error) {
-
 	// check each node for symlinks, fail the job if it exists
 	const hostCheckSymlinkScript = `
 set -eu
@@ -99,109 +96,17 @@ else
 fi
 set +x
 `
-
-	nodeName, found := node.Labels[corev1.LabelHostname]
-	if !found {
-		return batchv1.Job{}, fmt.Errorf("could not get %q label for node: %q", corev1.LabelHostname, node.GetName())
-
-	}
-	hostContainerPropagation := corev1.MountPropagationHostToContainer
-	directoryHostPath := corev1.HostPathDirectory
+	nodeName, _ := node.Labels[corev1.LabelHostname]
 	backoffLimit := int32(1)
-	volumes := []corev1.Volume{
-		{
-			Name: "local-disks",
-			VolumeSource: corev1.VolumeSource{
-				HostPath: &corev1.HostPathVolumeSource{
-					Path: common.GetLocalDiskLocationPath(),
-				},
-			},
-		},
-		{
-			Name: "device-dir",
-			VolumeSource: corev1.VolumeSource{
-				HostPath: &corev1.HostPathVolumeSource{
-					Path: "/dev",
-					Type: &directoryHostPath,
-				},
-			},
-		},
-	}
-	privileged := true
-	containers := []corev1.Container{
-		{
-			Image: common.GetDiskMakerImage(),
-			Command: []string{
-				"/bin/bash",
-				"-c",
-				hostCheckSymlinkScript,
-			},
-			Name: "local-diskmaker",
-			SecurityContext: &corev1.SecurityContext{
-				Privileged: &privileged,
-			},
-			Env: []corev1.EnvVar{
-				{
-					Name:  "DISKPATH",
-					Value: path,
-				},
-			},
-			VolumeMounts: []corev1.VolumeMount{
-				{
-					Name:             "local-disks",
-					MountPath:        common.GetLocalDiskLocationPath(),
-					MountPropagation: &hostContainerPropagation,
-				},
-				{
-					Name:             "device-dir",
-					MountPath:        "/dev",
-					MountPropagation: &hostContainerPropagation,
-				},
-			},
-		},
-	}
-	affinity := &corev1.Affinity{
-		NodeAffinity: &corev1.NodeAffinity{
-			RequiredDuringSchedulingIgnoredDuringExecution: &corev1.NodeSelector{
-				NodeSelectorTerms: []corev1.NodeSelectorTerm{
-					{
-						MatchExpressions: []corev1.NodeSelectorRequirement{
-							{
-								Key:      corev1.LabelHostname,
-								Operator: corev1.NodeSelectorOpIn,
-								Values:   []string{nodeName},
-							},
-						},
-					},
-				},
-			},
-		},
-	}
-	job := batchv1.Job{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      fmt.Sprintf("symlink-check-%s", nodeName),
-			Namespace: namespace,
-
-			Labels: map[string]string{
-				corev1.LabelHostname: nodeName,
-				"app":                "symlink-check",
-			},
-			Annotations: map[string]string{
-				"description": "checks for leftover symlinks on the node following functional tests",
-			},
-		},
-		Spec: batchv1.JobSpec{
-			BackoffLimit: &backoffLimit,
-			Template: corev1.PodTemplateSpec{
-				Spec: corev1.PodSpec{
-					RestartPolicy:      corev1.RestartPolicyNever,
-					Containers:         containers,
-					Volumes:            volumes,
-					Affinity:           affinity,
-					ServiceAccountName: "local-storage-admin",
-				},
-			},
-		},
-	}
-	return job, nil
+	return newNodeJob(
+		node,
+		namespace,
+		fmt.Sprintf("symlink-check-%s", nodeName),
+		"checks for leftover symlinks on the node following functional tests",
+		[]string{"/bin/bash", "-c", hostCheckSymlinkScript},
+		&NodeJobOptions{
+			Env:                    []corev1.EnvVar{{Name: "DISKPATH", Value: path}},
+			JobBackoffLimit:        &backoffLimit,
+			ContainerRestartPolicy: corev1.RestartPolicyNever,
+		})
 }
