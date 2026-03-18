@@ -521,7 +521,7 @@ func (r *LocalVolumeReconciler) processRejectedDevicesForDeviceLinks(ctx context
 			source, _, _, err := getSymlinkSourceAndTarget(diskLocation, symLinkDirPath)
 			if err != nil {
 				klog.ErrorS(err, "failed to get symlink source and target", "deviceNameLocation", diskLocation)
-				break
+				continue
 			}
 
 			blockDevice := diskLocation.BlockDevice
@@ -540,7 +540,7 @@ func (r *LocalVolumeReconciler) processRejectedDevicesForDeviceLinks(ctx context
 
 			pvName := common.GeneratePVName(existingSymlink, r.runtimeConfig.Node.Name, storageClassName)
 			deviceHandler := internal.NewDeviceLinkHandler(source, preferredSymLink, r.Client)
-			_, err = deviceHandler.UpdateStatus(ctx, pvName, r.runtimeConfig.Namespace, blockDevice.KName, devicePath, r.localVolume)
+			_, err = deviceHandler.ApplyStatus(ctx, pvName, r.runtimeConfig.Namespace, blockDevice.KName, devicePath, r.localVolume)
 			if err != nil {
 				klog.ErrorS(err, "error updating LocalVolumeDeviceLink", "device", blockDevice.Name)
 			}

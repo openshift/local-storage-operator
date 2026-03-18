@@ -297,7 +297,7 @@ func (r *LocalVolumeSetReconciler) processRejectedDevicesForDeviceLinks(ctx cont
 
 		pvName := common.GeneratePVName(existingSymlink, r.runtimeConfig.Node.Name, storageClassName)
 		deviceHandler := internal.NewDeviceLinkHandler(symlinkSourcePath, preferredSymLink, r.Client)
-		_, err = deviceHandler.UpdateStatus(ctx, pvName, r.runtimeConfig.Namespace, blockDevice.KName, devicePath, lvset)
+		_, err = deviceHandler.ApplyStatus(ctx, pvName, r.runtimeConfig.Namespace, blockDevice.KName, devicePath, lvset)
 		if err != nil {
 			klog.ErrorS(err, "error updating LocalVolumeDeviceLink", "device", blockDevice.Name)
 		}

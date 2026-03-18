@@ -17,6 +17,53 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
+func newLocalVolume(name, namespace string, uid types.UID) *v1.LocalVolume {
+	return &v1.LocalVolume{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       v1.LocalVolumeKind,
+			APIVersion: v1.GroupVersion.String(),
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+			UID:       uid,
+		},
+	}
+}
+
+func newLocalVolumeSet(name, namespace string, uid types.UID) *v1alpha1.LocalVolumeSet {
+	return &v1alpha1.LocalVolumeSet{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       v1.LocalVolumeSetKind,
+			APIVersion: v1alpha1.GroupVersion.String(),
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+			UID:       uid,
+		},
+	}
+}
+
+func newLVDL(name, namespace, pvName string) *v1.LocalVolumeDeviceLink {
+	return &v1.LocalVolumeDeviceLink{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+		},
+		Spec: v1.LocalVolumeDeviceLinkSpec{
+			PersistentVolumeName: pvName,
+			Policy:               v1.DeviceLinkPolicyNone,
+		},
+	}
+}
+
+func newPV(name string) *corev1.PersistentVolume {
+	return &corev1.PersistentVolume{
+		ObjectMeta: metav1.ObjectMeta{Name: name},
+	}
+}
+
 // newFakeDeviceLinkClient builds a controller-runtime fake client registered
 // with the v1 scheme (which includes LocalVolumeDeviceLink).
 // WithStatusSubresource is set so that the fake client enforces the status
@@ -88,19 +135,9 @@ func TestDeviceLinkHandler_Create(t *testing.T) {
 			namespace:        "default",
 			currentSymlink:   "/dev/disk/by-id/wwn-current",
 			preferredSymlink: "/dev/disk/by-id/wwn-preferred",
-			ownerObj: &v1.LocalVolume{
-				TypeMeta: metav1.TypeMeta{
-					Kind:       v1.LocalVolumeKind,
-					APIVersion: v1.GroupVersion.String(),
-				},
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "lv-a",
-					Namespace: "default",
-					UID:       types.UID("11111111-2222-3333-4444-555555555555"),
-				},
-			},
-			expectedPolicy:  v1.DeviceLinkPolicyNone,
-			expectedListLen: 1,
+			ownerObj:         newLocalVolume("lv-a", "default", "11111111-2222-3333-4444-555555555555"),
+			expectedPolicy:   v1.DeviceLinkPolicyNone,
+			expectedListLen:  1,
 		},
 		{
 			name:             "creates new lvdl with localvolumeset ownerref",
@@ -108,45 +145,16 @@ func TestDeviceLinkHandler_Create(t *testing.T) {
 			namespace:        "default",
 			currentSymlink:   "/dev/disk/by-id/scsi-current",
 			preferredSymlink: "/dev/disk/by-id/scsi-preferred",
-			ownerObj: &v1alpha1.LocalVolumeSet{
-				TypeMeta: metav1.TypeMeta{
-					Kind:       v1.LocalVolumeSetKind,
-					APIVersion: v1alpha1.GroupVersion.String(),
-				},
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "lvset-a",
-					Namespace: "default",
-					UID:       types.UID("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"),
-				},
-			},
-			expectedPolicy:  v1.DeviceLinkPolicyNone,
-			expectedListLen: 1,
+			ownerObj:         newLocalVolumeSet("lvset-a", "default", "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"),
+			expectedPolicy:   v1.DeviceLinkPolicyNone,
+			expectedListLen:  1,
 		},
 		{
-			name:      "idempotent when object already exists",
-			pvName:    "local-pv-existing",
-			namespace: "default",
-			existing: &v1.LocalVolumeDeviceLink{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "local-pv-existing",
-					Namespace: "default",
-				},
-				Spec: v1.LocalVolumeDeviceLinkSpec{
-					PersistentVolumeName: "local-pv-existing",
-					Policy:               v1.DeviceLinkPolicyNone,
-				},
-			},
-			ownerObj: &v1.LocalVolume{
-				TypeMeta: metav1.TypeMeta{
-					Kind:       v1.LocalVolumeKind,
-					APIVersion: v1.GroupVersion.String(),
-				},
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "lv-existing",
-					Namespace: "default",
-					UID:       types.UID("bbbbbbbb-2222-3333-4444-555555555555"),
-				},
-			},
+			name:            "idempotent when object already exists",
+			pvName:          "local-pv-existing",
+			namespace:       "default",
+			existing:        newLVDL("local-pv-existing", "default", "local-pv-existing"),
+			ownerObj:        newLocalVolume("lv-existing", "default", "bbbbbbbb-2222-3333-4444-555555555555"),
 			expectedPolicy:  v1.DeviceLinkPolicyNone,
 			expectedListLen: 1,
 		},
@@ -154,27 +162,12 @@ func TestDeviceLinkHandler_Create(t *testing.T) {
 			name:      "updates stale persistent volume name and preserves policy",
 			pvName:    "local-pv-new",
 			namespace: "default",
-			existing: &v1.LocalVolumeDeviceLink{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "local-pv-new",
-					Namespace: "default",
-				},
-				Spec: v1.LocalVolumeDeviceLinkSpec{
-					PersistentVolumeName: "local-pv-old",
-					Policy:               v1.DeviceLinkPolicyCurrentLinkTarget,
-				},
-			},
-			ownerObj: &v1.LocalVolume{
-				TypeMeta: metav1.TypeMeta{
-					Kind:       v1.LocalVolumeKind,
-					APIVersion: v1.GroupVersion.String(),
-				},
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "lv-new",
-					Namespace: "default",
-					UID:       types.UID("cccccccc-2222-3333-4444-555555555555"),
-				},
-			},
+			existing: func() *v1.LocalVolumeDeviceLink {
+				lvdl := newLVDL("local-pv-new", "default", "local-pv-old")
+				lvdl.Spec.Policy = v1.DeviceLinkPolicyCurrentLinkTarget
+				return lvdl
+			}(),
+			ownerObj:        newLocalVolume("lv-new", "default", "cccccccc-2222-3333-4444-555555555555"),
 			expectedPolicy:  v1.DeviceLinkPolicyCurrentLinkTarget,
 			expectedListLen: 1,
 		},
@@ -255,26 +248,11 @@ func TestDeviceLinkHandler_UpdateStatusAndPV(t *testing.T) {
 			preferredSymlink: "/dev/disk/by-id/wwn-preferred",
 			kname:            "sda",
 			devPath:          "/dev/sda",
-			ownerObj: &v1.LocalVolume{
-				TypeMeta: metav1.TypeMeta{
-					Kind:       v1.LocalVolumeKind,
-					APIVersion: v1.GroupVersion.String(),
-				},
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "lv-statustest",
-					Namespace: "default",
-					UID:       types.UID("11111111-aaaa-bbbb-cccc-111111111111"),
-				},
-			},
-			existing: &v1.LocalVolumeDeviceLink{
-				ObjectMeta: metav1.ObjectMeta{Name: "local-pv-statustest", Namespace: "default"},
-				Spec:       v1.LocalVolumeDeviceLinkSpec{PersistentVolumeName: "local-pv-statustest"},
-			},
-			existingPV: &corev1.PersistentVolume{
-				ObjectMeta: metav1.ObjectMeta{Name: "local-pv-statustest"},
-			},
-			globLinks:      []string{"/tmp/wwn-0x1234", "/tmp/scsi-abcde"},
-			filesystemUUID: "550e8400-e29b-41d4-a716-446655440000",
+			ownerObj:         newLocalVolume("lv-statustest", "default", "11111111-aaaa-bbbb-cccc-111111111111"),
+			existing:         newLVDL("local-pv-statustest", "default", "local-pv-statustest"),
+			existingPV:       newPV("local-pv-statustest"),
+			globLinks:        []string{"/tmp/wwn-0x1234", "/tmp/scsi-abcde"},
+			filesystemUUID:   "550e8400-e29b-41d4-a716-446655440000",
 			expectedLVDL: &v1.LocalVolumeDeviceLink{
 				ObjectMeta: metav1.ObjectMeta{Name: "local-pv-statustest", Namespace: "default"},
 				Spec:       v1.LocalVolumeDeviceLinkSpec{PersistentVolumeName: "local-pv-statustest"},
@@ -294,24 +272,9 @@ func TestDeviceLinkHandler_UpdateStatusAndPV(t *testing.T) {
 			preferredSymlink: "",
 			kname:            "sdb",
 			devPath:          "/dev/sdb",
-			ownerObj: &v1.LocalVolume{
-				TypeMeta: metav1.TypeMeta{
-					Kind:       v1.LocalVolumeKind,
-					APIVersion: v1.GroupVersion.String(),
-				},
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "lv-nolinks",
-					Namespace: "default",
-					UID:       types.UID("22222222-aaaa-bbbb-cccc-222222222222"),
-				},
-			},
-			existing: &v1.LocalVolumeDeviceLink{
-				ObjectMeta: metav1.ObjectMeta{Name: "local-pv-nolinks", Namespace: "default"},
-				Spec:       v1.LocalVolumeDeviceLinkSpec{PersistentVolumeName: "local-pv-nolinks"},
-			},
-			existingPV: &corev1.PersistentVolume{
-				ObjectMeta: metav1.ObjectMeta{Name: "local-pv-nolinks"},
-			},
+			ownerObj:         newLocalVolume("lv-nolinks", "default", "22222222-aaaa-bbbb-cccc-222222222222"),
+			existing:         newLVDL("local-pv-nolinks", "default", "local-pv-nolinks"),
+			existingPV:       newPV("local-pv-nolinks"),
 			expectedLVDL: &v1.LocalVolumeDeviceLink{
 				ObjectMeta: metav1.ObjectMeta{Name: "local-pv-nolinks", Namespace: "default"},
 				Spec:       v1.LocalVolumeDeviceLinkSpec{PersistentVolumeName: "local-pv-nolinks"},
@@ -331,21 +294,9 @@ func TestDeviceLinkHandler_UpdateStatusAndPV(t *testing.T) {
 			preferredSymlink: "/dev/disk/by-id/wwn-preferred",
 			kname:            "sdc",
 			devPath:          "/dev/sdc",
-			ownerObj: &v1.LocalVolume{
-				TypeMeta: metav1.TypeMeta{
-					Kind:       v1.LocalVolumeKind,
-					APIVersion: v1.GroupVersion.String(),
-				},
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "lv-fullflow",
-					Namespace: "openshift-local-storage",
-					UID:       types.UID("33333333-aaaa-bbbb-cccc-333333333333"),
-				},
-			},
-			preCreate: true,
-			existingPV: &corev1.PersistentVolume{
-				ObjectMeta: metav1.ObjectMeta{Name: "local-pv-fullflow"},
-			},
+			ownerObj:         newLocalVolume("lv-fullflow", "openshift-local-storage", "33333333-aaaa-bbbb-cccc-333333333333"),
+			preCreate:        true,
+			existingPV:       newPV("local-pv-fullflow"),
 			expectedLVDL: &v1.LocalVolumeDeviceLink{
 				ObjectMeta: metav1.ObjectMeta{Name: "local-pv-fullflow", Namespace: "openshift-local-storage"},
 				Spec:       v1.LocalVolumeDeviceLinkSpec{PersistentVolumeName: "local-pv-fullflow"},
@@ -365,21 +316,8 @@ func TestDeviceLinkHandler_UpdateStatusAndPV(t *testing.T) {
 			preferredSymlink: "",
 			kname:            "sdd",
 			devPath:          "/dev/sdd",
-			ownerObj: &v1.LocalVolume{
-				TypeMeta: metav1.TypeMeta{
-					Kind:       v1.LocalVolumeKind,
-					APIVersion: v1.GroupVersion.String(),
-				},
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "lv-missing-pv",
-					Namespace: "default",
-					UID:       types.UID("44444444-aaaa-bbbb-cccc-444444444444"),
-				},
-			},
-			existing: &v1.LocalVolumeDeviceLink{
-				ObjectMeta: metav1.ObjectMeta{Name: "local-pv-missing", Namespace: "default"},
-				Spec:       v1.LocalVolumeDeviceLinkSpec{PersistentVolumeName: "local-pv-missing"},
-			},
+			ownerObj:         newLocalVolume("lv-missing-pv", "default", "44444444-aaaa-bbbb-cccc-444444444444"),
+			existing:         newLVDL("local-pv-missing", "default", "local-pv-missing"),
 		},
 		{
 			name:             "creates lvdl during status update when pv exists and create was skipped",
@@ -389,20 +327,8 @@ func TestDeviceLinkHandler_UpdateStatusAndPV(t *testing.T) {
 			preferredSymlink: "",
 			kname:            "sde",
 			devPath:          "/dev/sde",
-			ownerObj: &v1.LocalVolume{
-				TypeMeta: metav1.TypeMeta{
-					Kind:       v1.LocalVolumeKind,
-					APIVersion: v1.GroupVersion.String(),
-				},
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "lv-create-on-update",
-					Namespace: "default",
-					UID:       types.UID("55555555-aaaa-bbbb-cccc-555555555555"),
-				},
-			},
-			existingPV: &corev1.PersistentVolume{
-				ObjectMeta: metav1.ObjectMeta{Name: "local-pv-lvdl-missing"},
-			},
+			ownerObj:         newLocalVolume("lv-create-on-update", "default", "55555555-aaaa-bbbb-cccc-555555555555"),
+			existingPV:       newPV("local-pv-lvdl-missing"),
 			expectedLVDL: &v1.LocalVolumeDeviceLink{
 				ObjectMeta: metav1.ObjectMeta{Name: "local-pv-lvdl-missing", Namespace: "default"},
 				Spec: v1.LocalVolumeDeviceLinkSpec{
@@ -421,7 +347,6 @@ func TestDeviceLinkHandler_UpdateStatusAndPV(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			var runtimeObjects []runtime.Object
 			if tc.existing != nil {
@@ -435,17 +360,7 @@ func TestDeviceLinkHandler_UpdateStatusAndPV(t *testing.T) {
 			handler := NewDeviceLinkHandler(tc.currentSymlink, tc.preferredSymlink, fakeClient)
 
 			if tc.preCreate {
-				lvdl, err := handler.Create(context.TODO(), tc.pvName, tc.namespace, &v1.LocalVolume{
-					TypeMeta: metav1.TypeMeta{
-						Kind:       v1.LocalVolumeKind,
-						APIVersion: v1.GroupVersion.String(),
-					},
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      "owner-precreate",
-						Namespace: tc.namespace,
-						UID:       types.UID("dddddddd-2222-3333-4444-555555555555"),
-					},
-				})
+				lvdl, err := handler.Create(t.Context(), tc.pvName, tc.namespace, tc.ownerObj)
 				if err != nil {
 					t.Fatalf("Create failed: %v", err)
 				}
@@ -474,7 +389,7 @@ func TestDeviceLinkHandler_UpdateStatusAndPV(t *testing.T) {
 				ExecCommand = helperCommandBlkid(tc.filesystemUUID)
 			}
 
-			updated, err := handler.UpdateStatus(context.TODO(), tc.pvName, tc.namespace, tc.kname, tc.devPath, tc.ownerObj)
+			updated, err := handler.ApplyStatus(context.TODO(), tc.pvName, tc.namespace, tc.kname, tc.devPath, tc.ownerObj)
 			if err != nil {
 				t.Fatalf("UpdateStatusAndPV returned unexpected error: %v", err)
 			}

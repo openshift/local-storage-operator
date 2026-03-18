@@ -145,7 +145,7 @@ func isNilOwnerObject(ownerObj runtime.Object) bool {
 	return value.Kind() == reflect.Ptr && value.IsNil()
 }
 
-func (dl *DeviceLinkHandler) UpdateStatus(ctx context.Context, pvName, namespace, kName, devicePath string, ownerObj runtime.Object) (*v1.LocalVolumeDeviceLink, error) {
+func (dl *DeviceLinkHandler) ApplyStatus(ctx context.Context, pvName, namespace, kName, devicePath string, ownerObj runtime.Object) (*v1.LocalVolumeDeviceLink, error) {
 	klog.V(2).Infof("updating lvdl with currentSymlink: %s, preferredSymlink: %s, devicePath: %s, kname: %s", dl.currentSymlink, dl.preferredSymlink, devicePath, kName)
 
 	// Update is best-effort and independent from Create: if either the PV or
