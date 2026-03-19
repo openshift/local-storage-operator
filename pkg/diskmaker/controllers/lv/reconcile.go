@@ -463,12 +463,10 @@ func (r *LocalVolumeReconciler) Reconcile(ctx context.Context, request ctrl.Requ
 					MountPointMap:         mountPointMap,
 					Client:                r.Client,
 					SymLinkPath:           target,
-					DevicePath:            deviceNameLocation.DiskNamePath,
 					IDExists:              idExists,
 					ExtraLabelsForPV:      lvOwnerLabels,
-					PreferredSymLink:      deviceNameLocation.DiskID,
 					CurrentSymlink:        source,
-					KName:                 deviceNameLocation.BlockDevice.KName,
+					BlockDevice:           deviceNameLocation.BlockDevice,
 				}
 
 				err = common.CreateLocalPV(ctx, createLocalPVArgs)
@@ -526,22 +524,11 @@ func (r *LocalVolumeReconciler) processRejectedDevicesForDeviceLinks(ctx context
 
 			blockDevice := diskLocation.BlockDevice
 
-			preferredSymLink, err := blockDevice.GetPathByID("")
-			if err != nil {
-				klog.ErrorS(err, "", "failed to get preferred device link", "disk", blockDevice.Name)
-				continue
-			}
-
-			devicePath, err := blockDevice.GetDevPath()
-			if err != nil {
-				klog.ErrorS(err, "failed to get /dev path for block device", "disk", blockDevice.Name)
-				continue
-			}
-
 			pvName := common.GeneratePVName(existingSymlink, r.runtimeConfig.Node.Name, storageClassName)
-			deviceHandler := internal.NewDeviceLinkHandler(source, preferredSymLink, r.Client)
-			_, err = deviceHandler.ApplyStatus(ctx, pvName, r.runtimeConfig.Namespace, blockDevice.KName, devicePath, r.localVolume)
+			deviceHandler := internal.NewDeviceLinkHandler(source, r.Client)
+			_, err = deviceHandler.ApplyStatus(ctx, pvName, r.runtimeConfig.Namespace, blockDevice, r.localVolume)
 			if err != nil {
+				r.eventSync.Report(r.localVolume, newDiskEvent(diskmaker.ErrorCreatingLVDL, "failed to create localvolumedevicelink", blockDevice.KName, corev1.EventTypeWarning))
 				klog.ErrorS(err, "error updating LocalVolumeDeviceLink", "device", blockDevice.Name)
 			}
 		}

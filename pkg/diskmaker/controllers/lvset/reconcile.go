@@ -283,22 +283,11 @@ func (r *LocalVolumeSetReconciler) processRejectedDevicesForDeviceLinks(ctx cont
 				"blockDevice", blockDevice.Name)
 			continue
 		}
-		preferredSymLink, err := blockDevice.GetPathByID("")
-		if err != nil {
-			klog.ErrorS(err, "", "failed to get preferred device link", "disk", blockDevice.Name)
-			continue
-		}
-
-		devicePath, err := blockDevice.GetDevPath()
-		if err != nil {
-			klog.ErrorS(err, "failed to get /dev path for block device", "disk", blockDevice.Name)
-			continue
-		}
-
 		pvName := common.GeneratePVName(existingSymlink, r.runtimeConfig.Node.Name, storageClassName)
-		deviceHandler := internal.NewDeviceLinkHandler(symlinkSourcePath, preferredSymLink, r.Client)
-		_, err = deviceHandler.ApplyStatus(ctx, pvName, r.runtimeConfig.Namespace, blockDevice.KName, devicePath, lvset)
+		deviceHandler := internal.NewDeviceLinkHandler(symlinkSourcePath, r.Client)
+		_, err = deviceHandler.ApplyStatus(ctx, pvName, r.runtimeConfig.Namespace, blockDevice, lvset)
 		if err != nil {
+			r.eventReporter.Report(lvset, newDiskEvent(diskmaker.ErrorCreatingLVDL, "failed to create localvolumedevicelink", blockDevice.KName, corev1.EventTypeWarning))
 			klog.ErrorS(err, "error updating LocalVolumeDeviceLink", "device", blockDevice.Name)
 		}
 	}
@@ -468,14 +457,6 @@ func (r *LocalVolumeSetReconciler) provisionPV(
 		}
 	}
 
-	// find what would be preferred symlink for the device
-	// TODO: This may not be a fatal error
-	preferredSymLink, err := dev.GetPathByID("")
-	if err != nil {
-		klog.ErrorS(err, "", "failed to get preferred device link", "disk", devLabelPath)
-		return err
-	}
-
 	createLocalPVArgs := common.CreateLocalPVArgs{
 		LocalVolumeLikeObject: obj,
 		RuntimeConfig:         r.runtimeConfig,
@@ -483,13 +464,10 @@ func (r *LocalVolumeSetReconciler) provisionPV(
 		MountPointMap:         mountPointMap,
 		Client:                r.Client,
 		SymLinkPath:           symlinkPath,
-		DevicePath:            devLabelPath,
 		IDExists:              idExists,
 		ExtraLabelsForPV:      map[string]string{},
-
-		CurrentSymlink:   symlinkSourcePath,
-		KName:            dev.KName,
-		PreferredSymLink: preferredSymLink,
+		CurrentSymlink:        symlinkSourcePath,
+		BlockDevice:           dev,
 	}
 
 	defer unlockFunc()

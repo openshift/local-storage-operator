@@ -2,6 +2,7 @@ package internal
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os/exec"
 	"reflect"
@@ -22,21 +23,14 @@ import (
 )
 
 type DeviceLinkHandler struct {
-	currentSymlink   string
-	preferredSymlink string
-
-	// devicePoints to current device such as /dev/sda or something similar
-	// so basically this is direct path in /dev filesystem to which
-	// currentSymlink or preferredSymlink resolves to
-	devicePath string
-	client     client.Client
+	currentSymlink string
+	client         client.Client
 }
 
-func NewDeviceLinkHandler(currentSymlink, preferredSymlink string, client client.Client) *DeviceLinkHandler {
+func NewDeviceLinkHandler(currentSymlink string, client client.Client) *DeviceLinkHandler {
 	return &DeviceLinkHandler{
-		currentSymlink:   currentSymlink,
-		preferredSymlink: preferredSymlink,
-		client:           client,
+		currentSymlink: currentSymlink,
+		client:         client,
 	}
 }
 
@@ -145,8 +139,24 @@ func isNilOwnerObject(ownerObj runtime.Object) bool {
 	return value.Kind() == reflect.Ptr && value.IsNil()
 }
 
-func (dl *DeviceLinkHandler) ApplyStatus(ctx context.Context, pvName, namespace, kName, devicePath string, ownerObj runtime.Object) (*v1.LocalVolumeDeviceLink, error) {
-	klog.V(2).Infof("updating lvdl with currentSymlink: %s, preferredSymlink: %s, devicePath: %s, kname: %s", dl.currentSymlink, dl.preferredSymlink, devicePath, kName)
+func (dl *DeviceLinkHandler) ApplyStatus(ctx context.Context, pvName, namespace string, blockDevice BlockDevice, ownerObj runtime.Object) (*v1.LocalVolumeDeviceLink, error) {
+	preferredSymlink, err := blockDevice.GetUncachedPathID()
+	if err != nil {
+		// IDPathNotFoundError means no by-id symlink exists for this device;
+		// treat it as "no preferred symlink" rather than a hard error.
+		var idNotFound IDPathNotFoundError
+		if !errors.As(err, &idNotFound) {
+			return nil, fmt.Errorf("failed to get preferred device link for %s: %w", blockDevice.Name, err)
+		}
+		preferredSymlink = ""
+	}
+
+	devicePath, err := blockDevice.GetDevPath()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get /dev path for %s: %w", blockDevice.Name, err)
+	}
+
+	klog.V(2).Infof("updating lvdl with currentSymlink: %s, preferredSymlink: %s, devicePath: %s, kname: %s", dl.currentSymlink, preferredSymlink, devicePath, blockDevice.KName)
 
 	// Update is best-effort and independent from Create: if either the PV or
 	// the LVDL does not exist yet, return without doing anything.
@@ -169,7 +179,7 @@ func (dl *DeviceLinkHandler) ApplyStatus(ctx context.Context, pvName, namespace,
 		return nil, nil
 	}
 
-	validLinks, err := dl.getValidByIDSymlinks(kName)
+	validLinks, err := dl.getValidByIDSymlinks(blockDevice.KName)
 	if err != nil {
 		return nil, err
 	}
@@ -183,7 +193,7 @@ func (dl *DeviceLinkHandler) ApplyStatus(ctx context.Context, pvName, namespace,
 	updatedCopy := existing.DeepCopy()
 
 	updatedCopy.Status.CurrentLinkTarget = dl.currentSymlink
-	updatedCopy.Status.PreferredLinkTarget = dl.preferredSymlink
+	updatedCopy.Status.PreferredLinkTarget = preferredSymlink
 	updatedCopy.Status.ValidLinkTargets = validLinks
 	updatedCopy.Status.FilesystemUUID = filesystemUUID
 

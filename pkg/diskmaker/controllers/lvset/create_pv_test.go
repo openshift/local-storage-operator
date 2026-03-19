@@ -234,7 +234,7 @@ func TestCreatePV(t *testing.T) {
 			MountPointMap:         tc.mountPoints,
 			Client:                r.Client,
 			SymLinkPath:           tc.symlinkpath,
-			DevicePath:            tc.deviceName,
+			BlockDevice:           internal.BlockDevice{KName: filepath.Base(tc.deviceName)},
 			IDExists:              true,
 			ExtraLabelsForPV:      map[string]string{},
 		})
@@ -283,7 +283,7 @@ func TestCreatePV(t *testing.T) {
 			MountPointMap:         tc.mountPoints,
 			Client:                r.Client,
 			SymLinkPath:           tc.symlinkpath,
-			DevicePath:            tc.deviceName,
+			BlockDevice:           internal.BlockDevice{KName: filepath.Base(tc.deviceName)},
 			IDExists:              true,
 			ExtraLabelsForPV:      map[string]string{},
 		})
@@ -361,8 +361,7 @@ func TestCreatePV_SetsLVDLOwnerRefToLocalVolumeSet(t *testing.T) {
 		MountPointMap:         sets.NewString(),
 		Client:                r.Client,
 		SymLinkPath:           symLinkPath,
-		DevicePath:            "/dev/device-ownerref",
-		KName:                 "device-ownerref",
+		BlockDevice:           internal.BlockDevice{KName: "device-ownerref"},
 		IDExists:              true,
 		ExtraLabelsForPV:      map[string]string{},
 	})
