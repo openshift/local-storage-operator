@@ -578,7 +578,6 @@ func getFakeDiskMaker(t *testing.T, symlinkLocation string, objs ...runtime.Obje
 	)
 
 	return lvReconciler, tc
-
 }
 
 func getDeiveIDs() []string {

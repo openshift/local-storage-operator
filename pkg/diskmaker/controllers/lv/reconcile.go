@@ -501,6 +501,14 @@ func (r *LocalVolumeReconciler) Reconcile(ctx context.Context, request ctrl.Requ
 	return ctrl.Result{Requeue: true, RequeueAfter: requeueTime}, nil
 }
 
+// processRejectedDevicesForDeviceLinks reconciles devices which were rejected for PV creation
+// but otherwise matched user specified path in LocalVolume object.
+//
+// This handles LVDL creation for clusters which were upgraded from older versions of OCP
+// and also updates preferredSymlink, fileSystemUUID and validLinks for PVs which are already
+// mounted and in-use by kubelet.
+//
+// This function is called periodically with Reconcile loop every defaultRequeueTime (1 minute)
 func (r *LocalVolumeReconciler) processRejectedDevicesForDeviceLinks(ctx context.Context, rejectedDevices map[string][]internal.DiskLocation) {
 	for storageClassName, diskLocationArray := range rejectedDevices {
 		symLinkDirPath := path.Join(r.symlinkLocation, storageClassName)

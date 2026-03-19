@@ -34,6 +34,9 @@ func NewDeviceLinkHandler(currentSymlink string, client client.Client) *DeviceLi
 	}
 }
 
+// Create creates a LVDL object without fully setting all status fields.
+// This can be used before creation of PV during normal provisioning operation and
+// status can be updated afterwards.
 func (dl *DeviceLinkHandler) Create(ctx context.Context, pvName, namespace string, ownerObj runtime.Object) (*v1.LocalVolumeDeviceLink, error) {
 	existing := &v1.LocalVolumeDeviceLink{}
 	key := types.NamespacedName{Name: pvName, Namespace: namespace}
