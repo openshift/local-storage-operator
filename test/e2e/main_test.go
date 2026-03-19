@@ -19,10 +19,7 @@ import (
 
 var (
 	retryInterval = time.Second * 5
-	// timeout              = time.Second * 120
-	timeout              = time.Hour
-	cleanupRetryInterval = time.Second * 1
-	cleanupTimeout       = time.Second * 5
+	timeout       = time.Hour * 1
 
 	// testmap is a map from test-name to test-wrapper.
 	// test-wrapper returns a func that can be run with t.Run(func(*testing.T), but
