@@ -28,12 +28,7 @@ type NodeJobOptions struct {
 
 // newNodeJob returns a Job that runs the given command on the specified node.
 // The job uses the diskmaker image, mounts local-disks and /dev, and is pinned to the node via affinity.
-func newNodeJob(node corev1.Node, namespace, jobName, description string, command []string, opts *NodeJobOptions) (*batchv1.Job, error) {
-	nodeName, found := node.Labels[corev1.LabelHostname]
-	if !found {
-		return nil, fmt.Errorf("could not get %q label for node: %q", corev1.LabelHostname, node.GetName())
-	}
-
+func newNodeJob(nodeHostname, namespace, jobName, description string, command []string, opts *NodeJobOptions) (*batchv1.Job, error) {
 	hostContainerPropagation := corev1.MountPropagationHostToContainer
 	directoryHostPath := corev1.HostPathDirectory
 	volumes := []corev1.Volume{
@@ -95,7 +90,7 @@ func newNodeJob(node corev1.Node, namespace, jobName, description string, comman
 							{
 								Key:      corev1.LabelHostname,
 								Operator: corev1.NodeSelectorOpIn,
-								Values:   []string{nodeName},
+								Values:   []string{nodeHostname},
 							},
 						},
 					},
@@ -124,7 +119,7 @@ func newNodeJob(node corev1.Node, namespace, jobName, description string, comman
 			Name:      jobName,
 			Namespace: namespace,
 			Labels: map[string]string{
-				corev1.LabelHostname: nodeName,
+				corev1.LabelHostname: nodeHostname,
 				"app":                jobName,
 			},
 			Annotations: map[string]string{

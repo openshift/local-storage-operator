@@ -56,7 +56,7 @@ set +x
 	nodeName, _ := node.Labels[corev1.LabelHostname]
 	backoffLimit := int32(1)
 	return newNodeJob(
-		node,
+		nodeName,
 		namespace,
 		fmt.Sprintf("symlink-check-%s", nodeName),
 		"checks for leftover symlinks on the node following functional tests",

@@ -159,6 +159,22 @@ func LocalVolumeTest(ctx *framework.Context, cleanupFuncs *[]cleanupFn) func(*te
 		t.Logf("looking for %q annotation on pvs", provCommon.AnnProvisionedBy)
 		verifyProvisionerAnnotation(t, pvs, nodeList.Items)
 
+		t.Logf("Checking for recreation of PVs on symlink change")
+		// get first PV and change its symlink to verify if PV comes back when preferredSymlink changes
+		selectedPV := pvs[0]
+		nodeHostName := findNodeHostnameForPV(t, &selectedPV)
+		t.Logf("Using hostname %s", nodeHostName)
+		var currentSymlink string
+		if len(pvs) > 0 {
+			if selectedDisk.id != "" {
+				currentSymlink = filepath.Join("/dev/disk/by-id", selectedDisk.id)
+			} else {
+				currentSymlink = filepath.Join("/dev", "name")
+			}
+		}
+		newPreferredTarget := "/dev/disk/by-id/scsi-1-local-storage-e2e-test"
+		addNewUdevSymlink(t, ctx, nodeHostName, currentSymlink, newPreferredTarget)
+
 		// verify deletion
 		for _, pv := range pvs {
 			eventuallyDelete(t, false, &pv)
@@ -572,4 +588,23 @@ func deleteResource(obj client.Object, namespace, name string, client framework.
 		return false, nil
 	})
 	return waitErr
+}
+
+// findNodeHostnameForLVDL returns the node hostname where the LVDL's PV is scheduled,
+// by inspecting the PV's spec.nodeAffinity (Required, LabelHostname).
+func findNodeHostnameForPV(t *testing.T, pv *v1.PersistentVolume) string {
+	t.Helper()
+	pvName := pv.Name
+	if pv.Spec.NodeAffinity == nil || pv.Spec.NodeAffinity.Required == nil {
+		t.Fatalf("PV %s has no NodeAffinity.Required", pvName)
+	}
+	for _, term := range pv.Spec.NodeAffinity.Required.NodeSelectorTerms {
+		for _, expr := range term.MatchExpressions {
+			if expr.Key == corev1.LabelHostname && len(expr.Values) > 0 {
+				return expr.Values[0]
+			}
+		}
+	}
+	t.Fatalf("PV %s NodeAffinity has no %q expression", pvName, corev1.LabelHostname)
+	return ""
 }
