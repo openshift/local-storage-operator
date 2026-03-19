@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/onsi/gomega"
+	localv1 "github.com/openshift/local-storage-operator/api/v1"
 	framework "github.com/openshift/local-storage-operator/test/framework"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -277,4 +278,17 @@ func consumePV(t *testing.T, ctx *framework.Context, pv corev1.PersistentVolume)
 
 	matchingPod.TypeMeta.Kind = "Pod"
 	return pvc, job, &matchingPod
+}
+
+func waitForLVDLContent(t *testing.T, f *framework.Framework, namespace, lvdlName string, message string, check func(lvdl *localv1.LocalVolumeDeviceLink) error) {
+	matcher := gomega.NewWithT(t)
+	matcher.Eventually(func() error {
+		lvdl := &localv1.LocalVolumeDeviceLink{}
+		if err := f.Client.Get(goctx.TODO(), types.NamespacedName{Name: lvdlName, Namespace: namespace}, lvdl); err != nil {
+			t.Logf("error getting LVDL %q: %v", lvdlName, err)
+			return err
+		}
+		return check(lvdl)
+	}, 30*time.Minute, time.Second*2).ShouldNot(gomega.HaveOccurred(), message)
+	// TODO: lower the timeout above, using 30 minutes to have time for debugging
 }

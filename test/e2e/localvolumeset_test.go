@@ -371,6 +371,33 @@ func LocalVolumeSetTest(ctx *framework.TestCtx, cleanupFuncs *[]cleanupFn) func(
 			matcher.Expect(lvdl.Status.ValidLinkTargets).ToNot(gomega.BeEmpty(), "expected ValidLinkTargets for LVDL %q", lvdl.Name)
 		}
 
+		// Use just the first LVDL for the test. Figure its node by inspecting the corresponding PV spec.nodeAffinity.
+		lvdl := fsLVDLs[0]
+		nodeHostname := findNodeHostnameForLVDL(t, f, lvdl)
+		t.Logf("using node %q for the test of LVDL %s", nodeHostname, lvdl.Name)
+		// On AWS, the preferred link is usually "/dev/disk/by-id/nvme-Amazon_Elastic_Block_Store_*"
+		// scsi-1 has a higher priority in dikutil.go and should become the new preferred target
+		newPreferredTarget := "/dev/disk/by-id/scsi-1-local-storage-e2e-test"
+		oldPreferredTarget := lvdl.Status.PreferredLinkTarget
+		addNewUdevSymlink(t, ctx, nodeHostname, lvdl.Status.PreferredLinkTarget, newPreferredTarget)
+		waitForLVDLContent(t, f, namespace, lvdl.Name, "waiting for LVDL to get new preferredLinkTarget", func(lvdl *localv1.LocalVolumeDeviceLink) error {
+			if lvdl.Status.PreferredLinkTarget != newPreferredTarget {
+				return fmt.Errorf("expected PreferredLinkTarget for LVDL %q to be updated, got %q", lvdl.Name, lvdl.Status.PreferredLinkTarget)
+			}
+			t.Logf("PreferredLinkTarget for LVDL %q is updated, got %q", lvdl.Name, lvdl.Status.PreferredLinkTarget)
+			return nil
+		})
+
+		removeUdevSymlink(t, ctx, nodeHostname, "/dev/disk/by-id/scsi-1-local-storage-e2e-test")
+
+		waitForLVDLContent(t, f, namespace, lvdl.Name, "waiting for LVDL to restore old preferredLinkTarget", func(lvdl *localv1.LocalVolumeDeviceLink) error {
+			if lvdl.Status.PreferredLinkTarget != oldPreferredTarget {
+				return fmt.Errorf("expected PreferredLinkTarget for LVDL %q to be restored, got %q", lvdl.Name, lvdl.Status.PreferredLinkTarget)
+			}
+			t.Logf("PreferredLinkTarget for LVDL %q is restored, got %q", lvdl.Name, lvdl.Status.PreferredLinkTarget)
+			return nil
+		})
+
 		// verify deletion
 		t.Log("verify that filesystem PVs come back after deletion")
 		for _, pv := range fsPVs {
