@@ -359,6 +359,44 @@ func LocalVolumeSetTest(ctx *framework.TestCtx, cleanupFuncs *[]cleanupFn) func(
 		// verify pv annotation
 		t.Logf("looking for %q annotation on pvs", provCommon.AnnProvisionedBy)
 		verifyProvisionerAnnotation(t, fsPVs, nodeList.Items)
+		fsPVNames := make([]string, 0, len(fsPVs))
+		for _, pv := range fsPVs {
+			fsPVNames = append(fsPVNames, pv.Name)
+		}
+		t.Log("verifying LocalVolumeDeviceLink objects were created for filesystem PVs")
+		fsLVDLs := eventuallyFindLVDLsForPVs(t, f, namespace, fsPVNames)
+		for _, lvdl := range fsLVDLs {
+			matcher.Expect(lvdl.Status.CurrentLinkTarget).ToNot(gomega.BeEmpty(), "expected CurrentLinkTarget for LVDL %q", lvdl.Name)
+			matcher.Expect(lvdl.Status.PreferredLinkTarget).ToNot(gomega.BeEmpty(), "expected PreferredLinkTarget for LVDL %q", lvdl.Name)
+			matcher.Expect(lvdl.Status.ValidLinkTargets).ToNot(gomega.BeEmpty(), "expected ValidLinkTargets for LVDL %q", lvdl.Name)
+		}
+
+		// Use just the first LVDL for the test. Figure its node by inspecting the corresponding PV spec.nodeAffinity.
+		lvdl := fsLVDLs[0]
+		nodeHostname := findNodeHostnameForLVDL(t, f, lvdl)
+		t.Logf("using node %q for the test of LVDL %s", nodeHostname, lvdl.Name)
+		// On AWS, the preferred link is usually "/dev/disk/by-id/nvme-Amazon_Elastic_Block_Store_*"
+		// scsi-1 has a higher priority in dikutil.go and should become the new preferred target
+		newPreferredTarget := "/dev/disk/by-id/scsi-1-local-storage-e2e-test"
+		oldPreferredTarget := lvdl.Status.PreferredLinkTarget
+		addNewUdevSymlink(t, ctx, nodeHostname, lvdl.Status.PreferredLinkTarget, newPreferredTarget)
+		waitForLVDLContent(t, f, namespace, lvdl.Name, "waiting for LVDL to get new preferredLinkTarget", func(lvdl *localv1.LocalVolumeDeviceLink) error {
+			if lvdl.Status.PreferredLinkTarget != newPreferredTarget {
+				return fmt.Errorf("expected PreferredLinkTarget for LVDL %q to be updated, got %q", lvdl.Name, lvdl.Status.PreferredLinkTarget)
+			}
+			t.Logf("PreferredLinkTarget for LVDL %q is updated, got %q", lvdl.Name, lvdl.Status.PreferredLinkTarget)
+			return nil
+		})
+
+		removeUdevSymlink(t, ctx, nodeHostname, "/dev/disk/by-id/scsi-1-local-storage-e2e-test")
+
+		waitForLVDLContent(t, f, namespace, lvdl.Name, "waiting for LVDL to restore old preferredLinkTarget", func(lvdl *localv1.LocalVolumeDeviceLink) error {
+			if lvdl.Status.PreferredLinkTarget != oldPreferredTarget {
+				return fmt.Errorf("expected PreferredLinkTarget for LVDL %q to be restored, got %q", lvdl.Name, lvdl.Status.PreferredLinkTarget)
+			}
+			t.Logf("PreferredLinkTarget for LVDL %q is restored, got %q", lvdl.Name, lvdl.Status.PreferredLinkTarget)
+			return nil
+		})
 
 		// verify deletion
 		t.Log("verify that filesystem PVs come back after deletion")
@@ -380,6 +418,12 @@ func LocalVolumeSetTest(ctx *framework.TestCtx, cleanupFuncs *[]cleanupFn) func(
 			pvc, job, pod := consumePV(t, ctx, pv)
 			consumingObjectList = append(consumingObjectList, job, pvc, pod)
 		}
+		consumedFSPVNames := make([]string, 0, len(fsPVs[:1]))
+		for _, pv := range fsPVs[:1] {
+			consumedFSPVNames = append(consumedFSPVNames, pv.Name)
+		}
+		t.Log("verifying filesystemUUID is populated on LVDL for consumed filesystem PVs")
+		verifyLVDLFilesystemUUIDForPVs(t, f, namespace, consumedFSPVNames)
 		// release pvs
 		eventuallyDelete(t, false, consumingObjectList...)
 		// verify that PVs eventually come back
@@ -432,6 +476,11 @@ func LocalVolumeSetTest(ctx *framework.TestCtx, cleanupFuncs *[]cleanupFn) func(
 		// release PV
 		t.Logf("releasing pvs")
 		eventuallyDelete(t, false, consumingObjectList...)
+		twentyToFiftyLVDLNames := make([]string, 0, len(twentyToFiftyBlockPVs))
+		for _, pv := range twentyToFiftyBlockPVs {
+			twentyToFiftyLVDLNames = append(twentyToFiftyLVDLNames, pv.Name)
+		}
+
 		// verify LocalVolumeSet deletion
 		matcher.Eventually(func() bool {
 			t.Log("verifying LocalVolumeSet deletion")
@@ -446,6 +495,8 @@ func LocalVolumeSetTest(ctx *framework.TestCtx, cleanupFuncs *[]cleanupFn) func(
 			t.Logf("LocalVolumeSet found: %q with finalizers: %+v", twentyToFifty.Name, twentyToFifty.ObjectMeta.Finalizers)
 			return false
 		}).Should(gomega.BeTrue(), "verifying LocalVolumeSet has been deleted", twentyToFifty.Name)
+		t.Log("verifying LocalVolumeDeviceLink objects are deleted for removed LocalVolumeSet")
+		verifyLVDLsDeleted(t, f, namespace, twentyToFiftyLVDLNames)
 
 		// check for leftover symlinks before cleanup
 		symLinkPath := path.Join(common.GetLocalDiskLocationPath(), twentyToFifty.Spec.StorageClassName)

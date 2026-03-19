@@ -56,7 +56,7 @@ set +x
 `
 	nodeName, _ := node.Labels[corev1.LabelHostname]
 	return newNodeJob(
-		node,
+		nodeName,
 		namespace,
 		fmt.Sprintf("cleanup-%s", nodeName),
 		"cleans up the hostdir artificats on the node following functional tests",

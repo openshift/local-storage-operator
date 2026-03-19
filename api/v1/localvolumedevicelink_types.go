@@ -79,13 +79,12 @@ type LocalVolumeDeviceLinkStatus struct {
 	// preferredLinkTarget is the /dev/disk/by-id symlink for the device that the local storage
 	// operator evaluated as the most stable and the least error prone. The local storage operator
 	// recommends using this symlink, after a careful review by the cluster admin.
-	// +required
-	// +kubebuilder:validation:MinLength=1
+	// +optional
 	// +kubebuilder:validation:MaxLength=4096
 	PreferredLinkTarget string `json:"preferredLinkTarget,omitempty"`
 	// validLinkTargets is the list of /dev/disk/by-id symlinks for the device that the local
 	// storage operator considers as valid. The list may contain at most 256 entries.
-	// +required
+	// +optional
 	// +listType=set
 	// +kubebuilder:validation:MaxItems=256
 	ValidLinkTargets []string `json:"validLinkTargets,omitempty"`
@@ -111,6 +110,10 @@ type LocalVolumeDeviceLinkList struct {
 	metav1.ListMeta `json:"metadata"`
 
 	Items []LocalVolumeDeviceLink `json:"items"`
+}
+
+func init() {
+	SchemeBuilder.Register(&LocalVolumeDeviceLink{}, &LocalVolumeDeviceLinkList{})
 }
 
 // DeviceLinkPolicy defines how symlinks for given volumes should be treated
