@@ -112,7 +112,7 @@ func LocalVolumeTest(ctx *framework.Context, cleanupFuncs *[]cleanupFn) func(*te
 		selectedDisk := nodeEnv[0].disks[0]
 		matcher.Expect(selectedDisk.path).ShouldNot(gomega.BeZero(), "device path should not be empty")
 
-		localVolume := getFakeLocalVolume(selectedNode, selectedDisk.path, namespace)
+		localVolume := getLocalVolume(selectedNode, selectedDisk.path, namespace)
 
 		matcher.Eventually(func() error {
 			t.Log("creating localvolume")
@@ -623,7 +623,7 @@ func waitForNodeTaintUpdate(t *testing.T, kubeclient kubernetes.Interface, node 
 	return *newNode, nil
 }
 
-func getFakeLocalVolume(selectedNode v1.Node, selectedDisk, namespace string) *localv1.LocalVolume {
+func getLocalVolume(selectedNode v1.Node, selectedDisk, namespace string) *localv1.LocalVolume {
 	localVolume := &localv1.LocalVolume{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "LocalVolume",
