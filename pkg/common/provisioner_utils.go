@@ -50,9 +50,9 @@ type CreateLocalPVArgs struct {
 	StorageClass          storagev1.StorageClass
 	MountPointMap         sets.String
 	Client                client.Client
-	SymLinkPath      string
-	IDExists         bool
-	ExtraLabelsForPV map[string]string
+	SymLinkPath           string
+	IDExists              bool
+	ExtraLabelsForPV      map[string]string
 
 	// CurrentSymlink points to source to which SymLinkPath points to.
 	CurrentSymlink string

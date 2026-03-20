@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -13,13 +12,14 @@ import (
 
 	"github.com/pkg/errors"
 	"golang.org/x/sys/unix"
+	utilexec "k8s.io/utils/exec"
 )
 
 var (
-	ExecCommand          = exec.Command
-	FilePathGlob         = filepath.Glob
-	FilePathEvalSymLinks = filepath.EvalSymlinks
-	mountFile            = "/proc/1/mountinfo"
+	FilePathGlob                            = filepath.Glob
+	FilePathEvalSymLinks                    = filepath.EvalSymlinks
+	mountFile                               = "/proc/1/mountinfo"
+	CmdExecutor          utilexec.Interface = utilexec.New()
 )
 
 const (
@@ -301,7 +301,7 @@ func ListBlockDevices(devices []string) ([]BlockDevice, []string, error) {
 
 	columns := "NAME,ROTA,TYPE,SIZE,MODEL,VENDOR,RO,RM,STATE,KNAME,SERIAL,PARTLABEL"
 	args := []string{"--pairs", "-b", "-o", columns}
-	cmd := ExecCommand("lsblk", args...)
+	cmd := CmdExecutor.Command("lsblk", args...)
 	klog.Infof("Executing command: %#v", cmd)
 	output, err := executeCmdWithCombinedOutput(cmd)
 	if err != nil {
@@ -376,13 +376,13 @@ func ListBlockDevices(devices []string) ([]BlockDevice, []string, error) {
 func GetDeviceFSMap(devices []string) (map[string]string, error) {
 	m := map[string]string{}
 	args := append([]string{"-s", "TYPE"}, devices...)
-	cmd := ExecCommand("blkid", args...)
+	cmd := CmdExecutor.Command("blkid", args...)
 	output, err := executeCmdWithCombinedOutput(cmd)
 	if err != nil {
 		// According to blkid man page, exit status 2 is returned
 		// if no device found.
-		if exiterr, ok := err.(*exec.ExitError); ok {
-			if exiterr.ExitCode() == 2 {
+		if exiterr, ok := err.(utilexec.ExitError); ok {
+			if exiterr.ExitStatus() == 2 {
 				return map[string]string{}, nil
 			}
 		}
@@ -444,7 +444,11 @@ func GetPVCreationLock(device string, symlinkDirs ...string) (ExclusiveFileLock,
 // GetMatchingSymlinksInDirs returns all the files in dir that are the same file as path after evaluating symlinks
 // it works using `find -L dir1 dir2 dirn -samefile path`
 func GetMatchingSymlinksInDirs(path string, dirs ...string) ([]string, error) {
-	cmd := exec.Command("find", "-L", strings.Join(dirs, " "), "-samefile", path)
+	cmdArgs := []string{"-L"}
+	cmdArgs = append(cmdArgs, dirs...)
+	cmdArgs = append(cmdArgs, "-samefile")
+	cmdArgs = append(cmdArgs, path)
+	cmd := CmdExecutor.Command("find", cmdArgs...)
 	output, err := executeCmdWithCombinedOutput(cmd)
 	if err != nil {
 		return []string{}, fmt.Errorf("failed to get symlinks in directories: %q for device path %q. %v", dirs, path, err)
@@ -530,7 +534,7 @@ func (e *ExclusiveFileLock) Unlock() error {
 
 }
 
-func executeCmdWithCombinedOutput(cmd *exec.Cmd) (string, error) {
+func executeCmdWithCombinedOutput(cmd utilexec.Cmd) (string, error) {
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return string(output), err

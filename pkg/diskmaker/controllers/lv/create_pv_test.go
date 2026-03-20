@@ -3,8 +3,6 @@ package lv
 import (
 	"context"
 	"fmt"
-	"os"
-	"os/exec"
 	"path/filepath"
 	"testing"
 
@@ -19,45 +17,31 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
+	utilexec "k8s.io/utils/exec"
+	testingexec "k8s.io/utils/exec/testing"
 	provCommon "sigs.k8s.io/sig-storage-local-static-provisioner/pkg/common"
 	provUtil "sigs.k8s.io/sig-storage-local-static-provisioner/pkg/util"
 )
 
-// TestHelperProcess is the subprocess used by helperCommandLVBlkid to fake blkid
-// output without forking a real binary. It is never called directly by the test
-// runner; the guard at the top of the function prevents that.
-func TestHelperProcess(t *testing.T) {
-	if os.Getenv("GO_WANT_HELPER_PROCESS") != "1" {
-		return
-	}
-	defer os.Exit(0)
-	if os.Getenv("COMMAND") == "blkid" {
-		fmt.Fprintf(os.Stdout, "%s", os.Getenv("BLKIDOUT"))
-	}
-}
-
-// helperCommandLVBlkid returns a fake ExecCommand that makes blkid emit uuid,
-// but only when it is invoked with devicePath as its last argument.  When any
-// other path is passed the output is empty, which is what the real blkid
-// returns when it cannot find a UUID.  This asymmetry is what makes the test
-// sensitive to argument-order bugs in the UpdateStatusAndPV call.
-func helperCommandLVBlkid(devicePath, uuid string) func(string, ...string) *exec.Cmd {
-	return func(command string, args ...string) *exec.Cmd {
-		cs := []string{"-test.run=TestHelperProcess", "--", command}
-		cs = append(cs, args...)
-		cmd := exec.Command(os.Args[0], cs...)
-		// Only emit the UUID when the last argument matches devicePath.
+// fakeBlkidExecutor returns a FakeExec where blkid emits uuid only when the
+// last argument matches devicePath. When any other path is passed the output is
+// empty, which is what the real blkid returns when it cannot find a UUID.
+func fakeBlkidExecutor(devicePath, uuid string) *testingexec.FakeExec {
+	blkidAction := func(cmd string, args ...string) utilexec.Cmd {
 		out := ""
-		if command == "blkid" && len(args) > 0 && args[len(args)-1] == devicePath {
+		if cmd == "blkid" && len(args) > 0 && args[len(args)-1] == devicePath {
 			out = uuid
 		}
-		cmd.Env = []string{
-			"GO_WANT_HELPER_PROCESS=1",
-			fmt.Sprintf("COMMAND=%s", command),
-			fmt.Sprintf("BLKIDOUT=%s", out),
-			fmt.Sprintf("GOCOVERDIR=%s", os.TempDir()),
+		return &testingexec.FakeCmd{
+			CombinedOutputScript: []testingexec.FakeAction{
+				func() ([]byte, []byte, error) {
+					return []byte(out), nil, nil
+				},
+			},
 		}
-		return cmd
+	}
+	return &testingexec.FakeExec{
+		CommandScript: []testingexec.FakeCommandAction{blkidAction},
 	}
 }
 
@@ -377,11 +361,11 @@ func TestCreateLocalPV_DeviceLinkArgOrder(t *testing.T) {
 	// Override package-level globals for the duration of this test.
 	origGlob := internal.FilePathGlob
 	origEval := internal.FilePathEvalSymLinks
-	origExec := internal.ExecCommand
+	origExec := internal.CmdExecutor
 	t.Cleanup(func() {
 		internal.FilePathGlob = origGlob
 		internal.FilePathEvalSymLinks = origEval
-		internal.ExecCommand = origExec
+		internal.CmdExecutor = origExec
 	})
 
 	// FilePathGlob returns our fake by-id link.
@@ -403,7 +387,7 @@ func TestCreateLocalPV_DeviceLinkArgOrder(t *testing.T) {
 
 	// blkid returns fakeUUID only when called with devPath.
 	// If the caller passes kName instead, the UUID will be empty.
-	internal.ExecCommand = helperCommandLVBlkid(devPath, fakeUUID)
+	internal.CmdExecutor = fakeBlkidExecutor(devPath, fakeUUID)
 
 	err := common.CreateLocalPV(t.Context(), common.CreateLocalPVArgs{
 		LocalVolumeLikeObject: &lv,

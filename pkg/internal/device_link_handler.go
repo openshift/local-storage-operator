@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os/exec"
+	utilexec "k8s.io/utils/exec"
 	"reflect"
 	"strings"
 
@@ -255,11 +255,11 @@ func (dl *DeviceLinkHandler) getValidByIDSymlinks(kname string) ([]string, error
 
 func getFilesystemUUID(devicePath string) (string, error) {
 	klog.InfoS("trying to get filesystem information", "devicePath", devicePath)
-	cmd := ExecCommand("blkid", "-s", "UUID", "-o", "value", devicePath)
+	cmd := CmdExecutor.Command("blkid", "-s", "UUID", "-o", "value", devicePath)
 	output, err := executeCmdWithCombinedOutput(cmd)
 	if err != nil {
 		// blkid returns 2 when no UUID is found for the device.
-		if exitErr, ok := err.(*exec.ExitError); ok && exitErr.ExitCode() == 2 {
+		if exitErr, ok := err.(utilexec.ExitError); ok && exitErr.ExitStatus() == 2 {
 			return "", nil
 		}
 		return "", err
