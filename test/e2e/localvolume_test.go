@@ -165,12 +165,10 @@ func LocalVolumeTest(ctx *framework.Context, cleanupFuncs *[]cleanupFn) func(*te
 		nodeHostName := findNodeHostnameForPV(t, &selectedPV)
 		t.Logf("Using hostname %s", nodeHostName)
 		var currentSymlink string
-		if len(pvs) > 0 {
-			if selectedDisk.id != "" {
-				currentSymlink = filepath.Join("/dev/disk/by-id", selectedDisk.id)
-			} else {
-				currentSymlink = filepath.Join("/dev", "name")
-			}
+		if selectedDisk.id != "" {
+			currentSymlink = filepath.Join("/dev/disk/by-id", selectedDisk.id)
+		} else {
+			currentSymlink = filepath.Join("/dev", "name")
 		}
 		newPreferredTarget := "/dev/disk/by-id/scsi-1-local-storage-e2e-test"
 		addNewUdevSymlink(t, ctx, nodeHostName, currentSymlink, newPreferredTarget)

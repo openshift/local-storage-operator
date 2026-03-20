@@ -48,7 +48,7 @@ func GetSymLinkSourceAndTarget(dev internal.BlockDevice, symlinkDir, existingSym
 }
 
 func GetSymlinkedForCurrentSC(symlinkDir string, currentDevice internal.BlockDevice) (string, error) {
-	paths, err := filepath.Glob(filepath.Join(symlinkDir, "/*"))
+	paths, err := filepath.Glob(filepath.Join(symlinkDir, "*"))
 	if err != nil {
 		return "", err
 	}

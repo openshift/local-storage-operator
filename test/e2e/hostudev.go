@@ -37,7 +37,7 @@ func removeUdevSymlink(t *testing.T, ctx *framework.TestCtx, nodeHostname string
 	namespace, err := ctx.GetOperatorNamespace()
 	matcher.Expect(err).NotTo(gomega.HaveOccurred(), "could not determine namespace")
 
-	symlinkJob, err := newRemoveUdevSymlinkJobs(nodeHostname, namespace, linkPattern)
+	symlinkJob, err := newRemoveUdevSymlinksJob(nodeHostname, namespace, linkPattern)
 	matcher.Expect(err).NotTo(gomega.HaveOccurred(), "could not create symlink job")
 	createOrReplaceJob(t, ctx, symlinkJob, fmt.Sprintf("creating symlink job on node: %q", nodeHostname))
 
@@ -77,7 +77,7 @@ ln -sfv "$DEVICE" "$NEW_LINK"
 
 }
 
-func newRemoveUdevSymlinkJobs(nodeHostname, namespace, pattern string) (*batchv1.Job, error) {
+func newRemoveUdevSymlinksJob(nodeHostname, namespace, pattern string) (*batchv1.Job, error) {
 	script := `
 set -eu
 set -x
