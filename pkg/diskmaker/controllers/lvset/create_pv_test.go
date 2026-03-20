@@ -3,7 +3,6 @@ package lvset
 import (
 	"context"
 	"fmt"
-	"os/exec"
 	"path/filepath"
 	"testing"
 
@@ -19,6 +18,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
+	utilexec "k8s.io/utils/exec"
+	testingexec "k8s.io/utils/exec/testing"
 	provCommon "sigs.k8s.io/sig-storage-local-static-provisioner/pkg/common"
 	provUtil "sigs.k8s.io/sig-storage-local-static-provisioner/pkg/util"
 )
@@ -338,11 +339,11 @@ func TestCreatePV_SetsLVDLOwnerRefToLocalVolumeSet(t *testing.T) {
 
 	origGlob := internal.FilePathGlob
 	origEval := internal.FilePathEvalSymLinks
-	origExec := internal.ExecCommand
+	origExec := internal.CmdExecutor
 	t.Cleanup(func() {
 		internal.FilePathGlob = origGlob
 		internal.FilePathEvalSymLinks = origEval
-		internal.ExecCommand = origExec
+		internal.CmdExecutor = origExec
 	})
 	internal.FilePathGlob = func(pattern string) ([]string, error) {
 		return []string{"/dev/disk/by-id/wwn-ownerref"}, nil
@@ -350,8 +351,17 @@ func TestCreatePV_SetsLVDLOwnerRefToLocalVolumeSet(t *testing.T) {
 	internal.FilePathEvalSymLinks = func(path string) (string, error) {
 		return "/dev/device-ownerref", nil
 	}
-	internal.ExecCommand = func(name string, args ...string) *exec.Cmd {
-		return exec.Command("bash", "-c", "echo uuid-ownerref")
+	blkidAction := func(cmd string, args ...string) utilexec.Cmd {
+		return &testingexec.FakeCmd{
+			CombinedOutputScript: []testingexec.FakeAction{
+				func() ([]byte, []byte, error) {
+					return []byte("uuid-ownerref"), nil, nil
+				},
+			},
+		}
+	}
+	internal.CmdExecutor = &testingexec.FakeExec{
+		CommandScript: []testingexec.FakeCommandAction{blkidAction},
 	}
 
 	err := common.CreateLocalPV(t.Context(), common.CreateLocalPVArgs{

@@ -6,7 +6,8 @@ import (
 	"embed"
 	"fmt"
 	"os"
-	"os/exec"
+	utilexec "k8s.io/utils/exec"
+	testingexec "k8s.io/utils/exec/testing"
 	"path"
 	"path/filepath"
 	"reflect"
@@ -442,11 +443,11 @@ func TestProcessRejectedDevicesForDeviceLinks(t *testing.T) {
 
 			origGlob := internal.FilePathGlob
 			origEval := internal.FilePathEvalSymLinks
-			origExec := internal.ExecCommand
+			origExec := internal.CmdExecutor
 			defer func() {
 				internal.FilePathGlob = origGlob
 				internal.FilePathEvalSymLinks = origEval
-				internal.ExecCommand = origExec
+				internal.CmdExecutor = origExec
 			}()
 
 			internal.FilePathGlob = func(pattern string) ([]string, error) {
@@ -470,12 +471,30 @@ func TestProcessRejectedDevicesForDeviceLinks(t *testing.T) {
 			}
 
 			if tc.execCommandErr {
-				internal.ExecCommand = func(name string, args ...string) *exec.Cmd {
-					return exec.Command("bash", "-c", "exit 1")
+				blkidAction := func(cmd string, args ...string) utilexec.Cmd {
+					return &testingexec.FakeCmd{
+						CombinedOutputScript: []testingexec.FakeAction{
+							func() ([]byte, []byte, error) {
+								return nil, nil, fmt.Errorf("exit status 1")
+							},
+						},
+					}
+				}
+				internal.CmdExecutor = &testingexec.FakeExec{
+					CommandScript: []testingexec.FakeCommandAction{blkidAction},
 				}
 			} else {
-				internal.ExecCommand = func(name string, args ...string) *exec.Cmd {
-					return exec.Command("bash", "-c", "echo "+filesystemUUID)
+				blkidAction := func(cmd string, args ...string) utilexec.Cmd {
+					return &testingexec.FakeCmd{
+						CombinedOutputScript: []testingexec.FakeAction{
+							func() ([]byte, []byte, error) {
+								return []byte(filesystemUUID), nil, nil
+							},
+						},
+					}
+				}
+				internal.CmdExecutor = &testingexec.FakeExec{
+					CommandScript: []testingexec.FakeCommandAction{blkidAction},
 				}
 			}
 

@@ -2,9 +2,6 @@ package internal
 
 import (
 	"context"
-	"fmt"
-	"os"
-	"os/exec"
 	"testing"
 
 	v1 "github.com/openshift/local-storage-operator/api/v1"
@@ -14,6 +11,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	utilexec "k8s.io/utils/exec"
+	testingexec "k8s.io/utils/exec/testing"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
@@ -84,37 +83,25 @@ func newFakeDeviceLinkClient(t *testing.T, objs ...runtime.Object) *fake.ClientB
 		WithRuntimeObjects(objs...)
 }
 
-// helperCommandBlkid returns a fake ExecCommand that makes blkid emit uuid.
-func helperCommandBlkid(uuid string) func(string, ...string) *exec.Cmd {
-	return func(command string, args ...string) *exec.Cmd {
-		cs := []string{"-test.run=TestHelperProcess", "--", command}
-		cs = append(cs, args...)
-		cmd := exec.Command(os.Args[0], cs...)
-		cmd.Env = []string{
-			"GO_WANT_HELPER_PROCESS=1",
-			fmt.Sprintf("COMMAND=%s", command),
-			fmt.Sprintf("BLKIDOUT=%s", uuid),
-			fmt.Sprintf("GOCOVERDIR=%s", os.TempDir()),
+// fakeBlkidExecutor returns a FakeExec that makes blkid emit the given uuid.
+func fakeBlkidExecutor(uuid string) *testingexec.FakeExec {
+	blkidAction := func(cmd string, args ...string) utilexec.Cmd {
+		return &testingexec.FakeCmd{
+			CombinedOutputScript: []testingexec.FakeAction{
+				func() ([]byte, []byte, error) {
+					return []byte(uuid), nil, nil
+				},
+			},
 		}
-		return cmd
+	}
+	return &testingexec.FakeExec{
+		CommandScript: []testingexec.FakeCommandAction{blkidAction},
 	}
 }
 
-// helperCommandBlkidEmpty returns a fake ExecCommand where blkid produces no
-// output (device has no filesystem UUID). The TestHelperProcess helper exits 0
-// for any unrecognised COMMAND value, producing empty stdout.
-func helperCommandBlkidEmpty() func(string, ...string) *exec.Cmd {
-	return func(command string, args ...string) *exec.Cmd {
-		cs := []string{"-test.run=TestHelperProcess", "--", command}
-		cs = append(cs, args...)
-		cmd := exec.Command(os.Args[0], cs...)
-		cmd.Env = []string{
-			"GO_WANT_HELPER_PROCESS=1",
-			"COMMAND=blkid_noop", // unrecognised → exits 0 with empty stdout
-			fmt.Sprintf("GOCOVERDIR=%s", os.TempDir()),
-		}
-		return cmd
-	}
+// fakeBlkidEmptyExecutor returns a FakeExec where blkid produces no output.
+func fakeBlkidEmptyExecutor() *testingexec.FakeExec {
+	return fakeBlkidExecutor("")
 }
 
 func TestDeviceLinkHandler_Create(t *testing.T) {
@@ -356,11 +343,11 @@ func TestDeviceLinkHandler_UpdateStatusAndPV(t *testing.T) {
 
 			origGlob := FilePathGlob
 			origEval := FilePathEvalSymLinks
-			origExec := ExecCommand
+			origExec := CmdExecutor
 			t.Cleanup(func() {
 				FilePathGlob = origGlob
 				FilePathEvalSymLinks = origEval
-				ExecCommand = origExec
+				CmdExecutor = origExec
 			})
 
 			FilePathGlob = func(pattern string) ([]string, error) {
@@ -370,9 +357,9 @@ func TestDeviceLinkHandler_UpdateStatusAndPV(t *testing.T) {
 				return "/dev/" + tc.blockDevice.KName, nil
 			}
 			if tc.filesystemUUID == "" {
-				ExecCommand = helperCommandBlkidEmpty()
+				CmdExecutor = fakeBlkidEmptyExecutor()
 			} else {
-				ExecCommand = helperCommandBlkid(tc.filesystemUUID)
+				CmdExecutor = fakeBlkidExecutor(tc.filesystemUUID)
 			}
 
 			updated, err := handler.ApplyStatus(context.TODO(), tc.pvName, tc.namespace, tc.blockDevice, tc.ownerObj)
