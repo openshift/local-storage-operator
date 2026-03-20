@@ -16,10 +16,10 @@ import (
 )
 
 var (
-	FilePathGlob         = filepath.Glob
-	FilePathEvalSymLinks = filepath.EvalSymlinks
-	mountFile            = "/proc/1/mountinfo"
-	CmdExecutor utilexec.Interface = utilexec.New()
+	FilePathGlob                            = filepath.Glob
+	FilePathEvalSymLinks                    = filepath.EvalSymlinks
+	mountFile                               = "/proc/1/mountinfo"
+	CmdExecutor          utilexec.Interface = utilexec.New()
 )
 
 const (
@@ -444,7 +444,11 @@ func GetPVCreationLock(device string, symlinkDirs ...string) (ExclusiveFileLock,
 // GetMatchingSymlinksInDirs returns all the files in dir that are the same file as path after evaluating symlinks
 // it works using `find -L dir1 dir2 dirn -samefile path`
 func GetMatchingSymlinksInDirs(path string, dirs ...string) ([]string, error) {
-	cmd := CmdExecutor.Command("find", "-L", strings.Join(dirs, " "), "-samefile", path)
+	cmdArgs := []string{"-L"}
+	cmdArgs = append(cmdArgs, dirs...)
+	cmdArgs = append(cmdArgs, "-samefile")
+	cmdArgs = append(cmdArgs, path)
+	cmd := CmdExecutor.Command("find", cmdArgs...)
 	output, err := executeCmdWithCombinedOutput(cmd)
 	if err != nil {
 		return []string{}, fmt.Errorf("failed to get symlinks in directories: %q for device path %q. %v", dirs, path, err)

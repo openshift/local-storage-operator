@@ -111,9 +111,9 @@ func TestDeviceLinkHandler_Create(t *testing.T) {
 		namespace       string
 		currentSymlink  string
 		ownerObj        runtime.Object
-		existing         *v1.LocalVolumeDeviceLink
-		expectedPolicy   v1.DeviceLinkPolicy
-		expectedListLen  int
+		existing        *v1.LocalVolumeDeviceLink
+		expectedPolicy  v1.DeviceLinkPolicy
+		expectedListLen int
 	}{
 		{
 			name:            "creates new lvdl",
@@ -214,13 +214,13 @@ func TestDeviceLinkHandler_UpdateStatusAndPV(t *testing.T) {
 		currentSymlink string
 		blockDevice    BlockDevice
 		ownerObj       runtime.Object
-		existing         *v1.LocalVolumeDeviceLink
-		existingPV       *corev1.PersistentVolume
-		preCreate        bool
-		globLinks        []string
-		filesystemUUID   string
-		expectedLVDL     *v1.LocalVolumeDeviceLink
-		verifyOwnerRef   bool
+		existing       *v1.LocalVolumeDeviceLink
+		existingPV     *corev1.PersistentVolume
+		preCreate      bool
+		globLinks      []string
+		filesystemUUID string
+		expectedLVDL   *v1.LocalVolumeDeviceLink
+		verifyOwnerRef bool
 	}{
 		{
 			name:           "populates status with symlink targets and filesystem uuid",
@@ -229,10 +229,10 @@ func TestDeviceLinkHandler_UpdateStatusAndPV(t *testing.T) {
 			currentSymlink: "/dev/disk/by-id/wwn-current",
 			blockDevice:    BlockDevice{KName: "sda", PathByID: "/dev/disk/by-id/wwn-preferred"},
 			ownerObj:       newLocalVolume("lv-statustest", "default", "11111111-aaaa-bbbb-cccc-111111111111"),
-			existing:         newLVDL("local-pv-statustest", "default", "local-pv-statustest"),
-			existingPV:       newPV("local-pv-statustest"),
-			globLinks:        []string{"/dev/disk/by-id/wwn-preferred", "/dev/disk/by-id/scsi-abcde"},
-			filesystemUUID:   "550e8400-e29b-41d4-a716-446655440000",
+			existing:       newLVDL("local-pv-statustest", "default", "local-pv-statustest"),
+			existingPV:     newPV("local-pv-statustest"),
+			globLinks:      []string{"/dev/disk/by-id/wwn-preferred", "/dev/disk/by-id/scsi-abcde"},
+			filesystemUUID: "550e8400-e29b-41d4-a716-446655440000",
 			expectedLVDL: &v1.LocalVolumeDeviceLink{
 				ObjectMeta: metav1.ObjectMeta{Name: "local-pv-statustest", Namespace: "default"},
 				Spec:       v1.LocalVolumeDeviceLinkSpec{PersistentVolumeName: "local-pv-statustest"},
@@ -251,8 +251,8 @@ func TestDeviceLinkHandler_UpdateStatusAndPV(t *testing.T) {
 			currentSymlink: "/dev/sdb",
 			blockDevice:    BlockDevice{KName: "sdb"},
 			ownerObj:       newLocalVolume("lv-nolinks", "default", "22222222-aaaa-bbbb-cccc-222222222222"),
-			existing:         newLVDL("local-pv-nolinks", "default", "local-pv-nolinks"),
-			existingPV:       newPV("local-pv-nolinks"),
+			existing:       newLVDL("local-pv-nolinks", "default", "local-pv-nolinks"),
+			existingPV:     newPV("local-pv-nolinks"),
 			expectedLVDL: &v1.LocalVolumeDeviceLink{
 				ObjectMeta: metav1.ObjectMeta{Name: "local-pv-nolinks", Namespace: "default"},
 				Spec:       v1.LocalVolumeDeviceLinkSpec{PersistentVolumeName: "local-pv-nolinks"},
@@ -271,9 +271,9 @@ func TestDeviceLinkHandler_UpdateStatusAndPV(t *testing.T) {
 			currentSymlink: "/dev/disk/by-id/scsi-current",
 			blockDevice:    BlockDevice{KName: "sdc", PathByID: "/dev/disk/by-id/wwn-preferred"},
 			ownerObj:       newLocalVolume("lv-fullflow", "openshift-local-storage", "33333333-aaaa-bbbb-cccc-333333333333"),
-			preCreate:        true,
-			existingPV:       newPV("local-pv-fullflow"),
-			globLinks:        []string{"/dev/disk/by-id/wwn-preferred"},
+			preCreate:      true,
+			existingPV:     newPV("local-pv-fullflow"),
+			globLinks:      []string{"/dev/disk/by-id/wwn-preferred"},
 			expectedLVDL: &v1.LocalVolumeDeviceLink{
 				ObjectMeta: metav1.ObjectMeta{Name: "local-pv-fullflow", Namespace: "openshift-local-storage"},
 				Spec:       v1.LocalVolumeDeviceLinkSpec{PersistentVolumeName: "local-pv-fullflow"},
@@ -301,7 +301,7 @@ func TestDeviceLinkHandler_UpdateStatusAndPV(t *testing.T) {
 			currentSymlink: "/dev/sde",
 			blockDevice:    BlockDevice{KName: "sde"},
 			ownerObj:       newLocalVolume("lv-create-on-update", "default", "55555555-aaaa-bbbb-cccc-555555555555"),
-			existingPV:       newPV("local-pv-lvdl-missing"),
+			existingPV:     newPV("local-pv-lvdl-missing"),
 			expectedLVDL: &v1.LocalVolumeDeviceLink{
 				ObjectMeta: metav1.ObjectMeta{Name: "local-pv-lvdl-missing", Namespace: "default"},
 				Spec: v1.LocalVolumeDeviceLinkSpec{
