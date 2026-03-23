@@ -12,7 +12,7 @@ import (
 
 // addNewUdevSymlink adds a new udev symlink on the node. The link will point to the same device as the currentLink.
 func addNewUdevSymlink(t *testing.T, ctx *framework.TestCtx, nodeHostname string, currentLink, newLink string) {
-	t.Logf("adding new udev symlink %s -> %s on node %s", newLink, currentLink, nodeHostname)
+	t.Logf("adding new udev symlink %s -> %s on node %s", currentLink, newLink, nodeHostname)
 	matcher := gomega.NewWithT(t)
 
 	namespace, err := ctx.GetOperatorNamespace()
@@ -25,7 +25,7 @@ func addNewUdevSymlink(t *testing.T, ctx *framework.TestCtx, nodeHostname string
 	waitForJobCompletion(t, symlinkJob, fmt.Sprintf("waiting for check-symlink job to complete: %q", symlinkJob.GetName()))
 	symlinkJob.TypeMeta.Kind = "Job"
 	eventuallyDelete(t, false, symlinkJob)
-	t.Logf("added udev symlink %s -> %s on node %s", newLink, currentLink, nodeHostname)
+	t.Logf("added udev symlink %s -> %s on node %s", currentLink, newLink, nodeHostname)
 }
 
 // removeUdevSymlink removes a udev symlink on the node. It literally calls `rm -f $linkPattern` (in the root directory),
@@ -64,7 +64,7 @@ ln -sfv "$DEVICE" "$NEW_LINK"
 	return newNodeJob(
 		nodeHostname,
 		namespace,
-		fmt.Sprintf("add-udev-symlink-job-%s", nodeHostname),
+		fmt.Sprintf("add-symlink-job-%s", nodeHostname),
 		"adds a new udev symlink",
 		[]string{"/bin/bash", "-c", script},
 		&NodeJobOptions{
@@ -88,7 +88,7 @@ rm -fv "$PATTERN"
 	return newNodeJob(
 		nodeHostname,
 		namespace,
-		fmt.Sprintf("remove-udev-symlink-job-%s", nodeHostname),
+		fmt.Sprintf("remove-symlink-%s", nodeHostname),
 		"removes udev symlinks matching the pattern",
 		[]string{"/bin/bash", "-c", script},
 		&NodeJobOptions{

@@ -102,6 +102,7 @@ func startManager(cmd *cobra.Command, args []string) error {
 
 	if err = diskmakerControllerLv.NewLocalVolumeReconciler(
 		mgr.GetClient(),
+		mgr.GetAPIReader(),
 		mgr.GetScheme(),
 		common.GetLocalDiskLocationPath(),
 		&provDeleter.CleanupStatusTracker{ProcTable: provDeleter.NewProcTable()},
@@ -113,6 +114,7 @@ func startManager(cmd *cobra.Command, args []string) error {
 
 	if err = diskmakerControllerLvSet.NewLocalVolumeSetReconciler(
 		mgr.GetClient(),
+		mgr.GetAPIReader(),
 		mgr.GetScheme(),
 		&diskmakerControllerLvSet.WallTime{},
 		&provDeleter.CleanupStatusTracker{ProcTable: provDeleter.NewProcTable()},

@@ -27,7 +27,6 @@ import (
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/types"
 	utilnet "k8s.io/apimachinery/pkg/util/net"
-	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -173,26 +172,24 @@ func LocalVolumeTest(ctx *framework.Context, cleanupFuncs *[]cleanupFn) func(*te
 			matcher.Expect(lvdl.Status.ValidLinkTargets).ToNot(gomega.BeEmpty(), "expected ValidLinkTargets for LVDL %q", lvdl.Name)
 		}
 
-		t.Logf("Checking for recreation of PVs on symlink change")
-		// get first PV and change its symlink to verify if PV comes back when preferredSymlink changes
 		selectedPV := pvs[0]
-		nodeHostName := findNodeHostnameForPV(t, &selectedPV)
-		t.Logf("Using hostname %s", nodeHostName)
-		var currentSymlink string
-		if selectedDisk.id != "" {
-			currentSymlink = filepath.Join("/dev/disk/by-id", selectedDisk.id)
-		} else {
-			currentSymlink = filepath.Join("/dev", "name")
-		}
+		currentSymlink := currentSymlinkForDisk(selectedDisk)
 		newPreferredTarget := "/dev/disk/by-id/scsi-1-local-storage-e2e-test"
-		addNewUdevSymlink(t, ctx, nodeHostName, currentSymlink, newPreferredTarget)
+		selectedPV, cleanupToRun := verifyPreferredLinkReconciliationForPV(t, ctx, f, namespace, selectedPV, currentSymlink, newPreferredTarget)
+		*cleanupFuncs = append(*cleanupFuncs, cleanupToRun)
+		pvs = []corev1.PersistentVolume{selectedPV}
 
-		// verify deletion
-		for _, pv := range pvs {
-			eventuallyDelete(t, false, &pv)
+		// Multi-step preferred link reconciliation: verify that the preferred
+		// symlink can be upgraded through multiple priority levels and that PV
+		// deletion + recreation preserves the correct symlink at each step.
+		t.Log("TEST: multi-step preferred link reconciliation (scsi-2 → scsi-3 → wwn)")
+		selectedPV, multiStepCleanups := verifyMultiStepPreferredLinkReconciliation(
+			t, ctx, f, namespace, lvStorageClassName, selectedPV, newPreferredTarget,
+		)
+		for i := range multiStepCleanups {
+			*cleanupFuncs = append(*cleanupFuncs, multiStepCleanups[i])
 		}
-		// verify that PVs come back after deletion
-		pvs = eventuallyFindPVs(t, f, localVolume.Spec.StorageClassDevices[0].StorageClassName, 1)
+		pvs = []corev1.PersistentVolume{selectedPV}
 
 		// consume pvs
 		consumingObjectList := make([]client.Object, 0)
@@ -270,28 +267,6 @@ func LocalVolumeTest(ctx *framework.Context, cleanupFuncs *[]cleanupFn) func(*te
 		checkForSymlinks(t, ctx, nodeEnv, symLinkPath)
 	}
 
-}
-
-func eventuallyFindLVDLsForPVs(t *testing.T, f *framework.Framework, namespace string, pvNames []string) []localv1.LocalVolumeDeviceLink {
-	matcher := gomega.NewWithT(t)
-	pvNameSet := sets.New(pvNames...)
-	foundLVDLs := make([]localv1.LocalVolumeDeviceLink, 0)
-	matcher.Eventually(func() bool {
-		lvdlList := &localv1.LocalVolumeDeviceLinkList{}
-		err := f.Client.List(goctx.TODO(), lvdlList, client.InNamespace(namespace))
-		if err != nil {
-			t.Logf("error listing LocalVolumeDeviceLink objects: %v", err)
-			return false
-		}
-		foundLVDLs = foundLVDLs[:0]
-		for _, lvdl := range lvdlList.Items {
-			if ok := pvNameSet.Has(lvdl.Spec.PersistentVolumeName); ok {
-				foundLVDLs = append(foundLVDLs, lvdl)
-			}
-		}
-		return len(foundLVDLs) == len(pvNameSet)
-	}, time.Minute*5, time.Second*5).Should(gomega.BeTrue(), "waiting for LVDL objects for all PVs")
-	return foundLVDLs
 }
 
 func verifyLVDLFilesystemUUIDForPVs(t *testing.T, f *framework.Framework, namespace string, pvNames []string) {
@@ -685,23 +660,4 @@ func deleteResource(obj client.Object, namespace, name string, client framework.
 		return false, nil
 	})
 	return waitErr
-}
-
-// findNodeHostnameForLVDL returns the node hostname where the LVDL's PV is scheduled,
-// by inspecting the PV's spec.nodeAffinity (Required, LabelHostname).
-func findNodeHostnameForPV(t *testing.T, pv *v1.PersistentVolume) string {
-	t.Helper()
-	pvName := pv.Name
-	if pv.Spec.NodeAffinity == nil || pv.Spec.NodeAffinity.Required == nil {
-		t.Fatalf("PV %s has no NodeAffinity.Required", pvName)
-	}
-	for _, term := range pv.Spec.NodeAffinity.Required.NodeSelectorTerms {
-		for _, expr := range term.MatchExpressions {
-			if expr.Key == corev1.LabelHostname && len(expr.Values) > 0 {
-				return expr.Values[0]
-			}
-		}
-	}
-	t.Fatalf("PV %s NodeAffinity has no %q expression", pvName, corev1.LabelHostname)
-	return ""
 }

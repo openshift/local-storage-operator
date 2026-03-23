@@ -15,6 +15,7 @@ import (
 const (
 	// ErrorListingExistingSymlinks is an event reason string
 	ErrorListingExistingSymlinks = "ErrorListingExistingSymlinks"
+	ErrorMaxCountReached         = "ErrorMaxCountReached"
 	// DiscoveredNewDevice is an event reason string
 	DiscoveredNewDevice = "DiscoveredNewDevice"
 )

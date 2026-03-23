@@ -9,4 +9,13 @@ type DiskLocation struct {
 	DiskID           string
 	BlockDevice      BlockDevice
 	ForceWipe        bool
+
+	// provisioning related fields set for later
+
+	// SymlinkPath represents path in /mnt/local-storage directory
+	SymlinkPath string
+	//SymlinkSource represents path in /dev filesystem
+	SymlinkSource string
+	//ByIDPathExists is set if a valid path is found in /dev/disk/by-id
+	ByIDPathExists bool
 }
