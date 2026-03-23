@@ -542,6 +542,7 @@ func (r *LocalVolumeReconciler) findMatchingDisks(diskConfig *DiskConfig, blockD
 	for storageClass, disks := range diskConfig.Disks {
 		devicePaths := disks.DevicePaths
 		forceWipe := disks.ForceWipeDevicesAndDestroyAllData
+		symLinkDirPath := path.Join(r.symlinkLocation, storageClass)
 		for _, devicePath := range devicePaths {
 			// handle user provided device_ids first
 			if strings.HasPrefix(devicePath, diskByIDPrefix) {
@@ -575,7 +576,15 @@ func (r *LocalVolumeReconciler) findMatchingDisks(diskConfig *DiskConfig, blockD
 				baseDeviceName := filepath.Base(diskDevPath)
 				blockDevice, matched := hasExactDisk(blockDevices, baseDeviceName)
 				if matched {
-					matchedDeviceID, err := blockDevice.GetPathByID("" /*existing symlinkpath */)
+					existingSymlink, err := common.GetSymlinkedForCurrentSC(symLinkDirPath, blockDevice)
+					if err != nil {
+						klog.ErrorS(err, "error reading existing symlinks for device",
+							"blockDevice", blockDevice.Name)
+						continue
+					}
+
+					// prefer existing symlink
+					matchedDeviceID, err := blockDevice.GetPathByID(existingSymlink)
 					// This means no /dev/disk/by-id entry was created for requested device.
 					if err != nil {
 						klog.ErrorS(err, "unable to find disk ID for local pool",

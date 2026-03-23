@@ -47,6 +47,24 @@ func GetSymLinkSourceAndTarget(dev internal.BlockDevice, symlinkDir, existingSym
 
 }
 
+func GetSymlinkedForCurrentSC(symlinkDir string, currentDevice internal.BlockDevice) (string, error) {
+	paths, err := filepath.Glob(filepath.Join(symlinkDir, "*"))
+	if err != nil {
+		return "", err
+	}
+
+	for _, path := range paths {
+		isMatch, err := internal.PathEvalsToDiskLabel(path, currentDevice.KName)
+		if err != nil {
+			return "", err
+		}
+		if isMatch {
+			return filepath.Base(path), nil
+		}
+	}
+	return "", nil
+}
+
 func hasSymlinkFinalizer(pv *corev1.PersistentVolume) bool {
 	return controllerutil.ContainsFinalizer(pv, LSOSymlinkDeleterFinalizer)
 }
