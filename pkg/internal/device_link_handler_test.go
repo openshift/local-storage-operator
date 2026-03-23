@@ -2,10 +2,14 @@ package internal
 
 import (
 	"context"
+	"fmt"
+	"os"
+	"path/filepath"
 	"testing"
+	"time"
 
+	operatorv1 "github.com/openshift/api/operator/v1"
 	v1 "github.com/openshift/local-storage-operator/api/v1"
-	v1alpha1 "github.com/openshift/local-storage-operator/api/v1alpha1"
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -16,25 +20,38 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
+// createTempFile creates an empty regular file at path (for use as a fake device).
+func createTempFile(t *testing.T, path string) error {
+	t.Helper()
+	f, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	return f.Close()
+}
+
+// createSymlink creates a symlink at linkPath pointing to target.
+func createSymlink(t *testing.T, target, linkPath string) error {
+	t.Helper()
+	return os.Symlink(target, linkPath)
+}
+
+// mkdirAll creates the directory path and all parents.
+func mkdirAll(t *testing.T, path string) error {
+	t.Helper()
+	return os.MkdirAll(path, 0755)
+}
+
+// readlink returns the target of the symlink at path.
+func readlink(path string) (string, error) {
+	return os.Readlink(path)
+}
+
 func newLocalVolume(name, namespace string, uid types.UID) *v1.LocalVolume {
 	return &v1.LocalVolume{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       v1.LocalVolumeKind,
 			APIVersion: v1.GroupVersion.String(),
-		},
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
-			Namespace: namespace,
-			UID:       uid,
-		},
-	}
-}
-
-func newLocalVolumeSet(name, namespace string, uid types.UID) *v1alpha1.LocalVolumeSet {
-	return &v1alpha1.LocalVolumeSet{
-		TypeMeta: metav1.TypeMeta{
-			Kind:       v1.LocalVolumeSetKind,
-			APIVersion: v1alpha1.GroupVersion.String(),
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
@@ -104,108 +121,6 @@ func fakeBlkidEmptyExecutor() *testingexec.FakeExec {
 	return fakeBlkidExecutor("")
 }
 
-func TestDeviceLinkHandler_Create(t *testing.T) {
-	testCases := []struct {
-		name            string
-		pvName          string
-		namespace       string
-		currentSymlink  string
-		ownerObj        runtime.Object
-		existing        *v1.LocalVolumeDeviceLink
-		expectedPolicy  v1.DeviceLinkPolicy
-		expectedListLen int
-	}{
-		{
-			name:            "creates new lvdl",
-			pvName:          "local-pv-abc123",
-			namespace:       "default",
-			currentSymlink:  "/dev/disk/by-id/wwn-current",
-			ownerObj:        newLocalVolume("lv-a", "default", "11111111-2222-3333-4444-555555555555"),
-			expectedPolicy:  v1.DeviceLinkPolicyNone,
-			expectedListLen: 1,
-		},
-		{
-			name:            "creates new lvdl with localvolumeset ownerref",
-			pvName:          "local-pv-lvset-owner",
-			namespace:       "default",
-			currentSymlink:  "/dev/disk/by-id/scsi-current",
-			ownerObj:        newLocalVolumeSet("lvset-a", "default", "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"),
-			expectedPolicy:  v1.DeviceLinkPolicyNone,
-			expectedListLen: 1,
-		},
-		{
-			name:            "idempotent when object already exists",
-			pvName:          "local-pv-existing",
-			namespace:       "default",
-			existing:        newLVDL("local-pv-existing", "default", "local-pv-existing"),
-			ownerObj:        newLocalVolume("lv-existing", "default", "bbbbbbbb-2222-3333-4444-555555555555"),
-			expectedPolicy:  v1.DeviceLinkPolicyNone,
-			expectedListLen: 1,
-		},
-		{
-			name:      "updates stale persistent volume name and preserves policy",
-			pvName:    "local-pv-new",
-			namespace: "default",
-			existing: func() *v1.LocalVolumeDeviceLink {
-				lvdl := newLVDL("local-pv-new", "default", "local-pv-old")
-				lvdl.Spec.Policy = v1.DeviceLinkPolicyCurrentLinkTarget
-				return lvdl
-			}(),
-			ownerObj:        newLocalVolume("lv-new", "default", "cccccccc-2222-3333-4444-555555555555"),
-			expectedPolicy:  v1.DeviceLinkPolicyCurrentLinkTarget,
-			expectedListLen: 1,
-		},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			var runtimeObjects []runtime.Object
-			if tc.existing != nil {
-				runtimeObjects = append(runtimeObjects, tc.existing.DeepCopy())
-			}
-
-			fakeClient := newFakeDeviceLinkClient(t, runtimeObjects...).Build()
-			handler := NewDeviceLinkHandler(tc.currentSymlink, fakeClient)
-
-			lvdl, err := handler.Create(t.Context(), tc.pvName, tc.namespace, tc.ownerObj)
-			if err != nil {
-				t.Fatalf("Create returned unexpected error: %v", err)
-			}
-			if lvdl == nil {
-				t.Fatal("Create returned nil LVDL")
-			}
-
-			assert.Equal(t, tc.pvName, lvdl.Name)
-			assert.Equal(t, tc.namespace, lvdl.Namespace)
-			assert.Equal(t, tc.pvName, lvdl.Spec.PersistentVolumeName)
-			assert.Equal(t, tc.expectedPolicy, lvdl.Spec.Policy)
-			if tc.existing == nil {
-				assert.Len(t, lvdl.OwnerReferences, 1)
-				assert.Equal(t, tc.ownerObj.GetObjectKind().GroupVersionKind().Kind, lvdl.OwnerReferences[0].Kind)
-				assert.Equal(t, tc.ownerObj.GetObjectKind().GroupVersionKind().GroupVersion().String(), lvdl.OwnerReferences[0].APIVersion)
-			}
-
-			fetched := &v1.LocalVolumeDeviceLink{}
-			if err := fakeClient.Get(context.TODO(), types.NamespacedName{Name: tc.pvName, Namespace: tc.namespace}, fetched); err != nil {
-				t.Fatalf("Get after Create failed: %v", err)
-			}
-			assert.Equal(t, tc.pvName, fetched.Spec.PersistentVolumeName)
-			assert.Equal(t, tc.expectedPolicy, fetched.Spec.Policy)
-			if tc.existing == nil {
-				assert.Len(t, fetched.OwnerReferences, 1)
-				assert.Equal(t, tc.ownerObj.GetObjectKind().GroupVersionKind().Kind, fetched.OwnerReferences[0].Kind)
-				assert.Equal(t, tc.ownerObj.GetObjectKind().GroupVersionKind().GroupVersion().String(), fetched.OwnerReferences[0].APIVersion)
-			}
-
-			list := &v1.LocalVolumeDeviceLinkList{}
-			if err := fakeClient.List(context.TODO(), list); err != nil {
-				t.Fatalf("List failed: %v", err)
-			}
-			assert.Len(t, list.Items, tc.expectedListLen)
-		})
-	}
-}
-
 func TestDeviceLinkHandler_UpdateStatusAndPV(t *testing.T) {
 	testCases := []struct {
 		name           string
@@ -216,7 +131,6 @@ func TestDeviceLinkHandler_UpdateStatusAndPV(t *testing.T) {
 		ownerObj       runtime.Object
 		existing       *v1.LocalVolumeDeviceLink
 		existingPV     *corev1.PersistentVolume
-		preCreate      bool
 		globLinks      []string
 		filesystemUUID string
 		expectedLVDL   *v1.LocalVolumeDeviceLink
@@ -271,7 +185,7 @@ func TestDeviceLinkHandler_UpdateStatusAndPV(t *testing.T) {
 			currentSymlink: "/dev/disk/by-id/scsi-current",
 			blockDevice:    BlockDevice{KName: "sdc", PathByID: "/dev/disk/by-id/wwn-preferred"},
 			ownerObj:       newLocalVolume("lv-fullflow", "openshift-local-storage", "33333333-aaaa-bbbb-cccc-333333333333"),
-			preCreate:      true,
+			existing:       newLVDL("local-pv-fullflow", "openshift-local-storage", "local-pv-fullflow"),
 			existingPV:     newPV("local-pv-fullflow"),
 			globLinks:      []string{"/dev/disk/by-id/wwn-preferred"},
 			expectedLVDL: &v1.LocalVolumeDeviceLink{
@@ -330,16 +244,7 @@ func TestDeviceLinkHandler_UpdateStatusAndPV(t *testing.T) {
 			}
 
 			fakeClient := newFakeDeviceLinkClient(t, runtimeObjects...).Build()
-			handler := NewDeviceLinkHandler(tc.currentSymlink, fakeClient)
-
-			if tc.preCreate {
-				lvdl, err := handler.Create(t.Context(), tc.pvName, tc.namespace, tc.ownerObj)
-				if err != nil {
-					t.Fatalf("Create failed: %v", err)
-				}
-				assert.Equal(t, tc.pvName, lvdl.Name)
-				assert.Equal(t, tc.pvName, lvdl.Spec.PersistentVolumeName)
-			}
+			handler := NewDeviceLinkHandler(tc.currentSymlink, fakeClient, fakeClient)
 
 			origGlob := FilePathGlob
 			origEval := FilePathEvalSymLinks
@@ -401,11 +306,403 @@ func TestDeviceLinkHandler_UpdateStatusAndPV(t *testing.T) {
 	}
 }
 
-func TestDeviceLinkHandler_CreateFailsWithNilOwnerObject(t *testing.T) {
-	fakeClient := newFakeDeviceLinkClient(t).Build()
-	handler := NewDeviceLinkHandler("/dev/disk/by-id/current", fakeClient)
+// newLVDLWithPolicy creates an LVDL with the given policy and status fields.
+func newLVDLWithPolicy(name, namespace string, policy v1.DeviceLinkPolicy, currentTarget, preferredTarget string) *v1.LocalVolumeDeviceLink {
+	return &v1.LocalVolumeDeviceLink{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+		},
+		Spec: v1.LocalVolumeDeviceLinkSpec{
+			PersistentVolumeName: name,
+			Policy:               policy,
+		},
+		Status: v1.LocalVolumeDeviceLinkStatus{
+			CurrentLinkTarget:   currentTarget,
+			PreferredLinkTarget: preferredTarget,
+		},
+	}
+}
 
-	lvdl, err := handler.Create(t.Context(), "local-pv-nil-owner", "default", nil)
-	assert.Nil(t, lvdl)
-	assert.Error(t, err)
+// saveAndRestoreGlobals saves the current values of the injectable package-level
+// variables and restores them via t.Cleanup. Call this at the start of any test
+// that overrides FilePathGlob, FilePathEvalSymLinks, or CmdExecutor.
+func saveAndRestoreGlobals(t *testing.T) {
+	t.Helper()
+	origGlob := FilePathGlob
+	origEval := FilePathEvalSymLinks
+	origExec := CmdExecutor
+	origTimeNow := timeNow
+	t.Cleanup(func() {
+		FilePathGlob = origGlob
+		FilePathEvalSymLinks = origEval
+		CmdExecutor = origExec
+		timeNow = origTimeNow
+	})
+}
+
+// filePathGlobSkipByID returns a FilePathGlob function that returns empty results
+// for /dev/disk/by-id/* patterns (no real devices in tests) but delegates to
+// filepath.Glob for other patterns (e.g. test directory listings).
+func filePathGlobSkipByID(pattern string) ([]string, error) {
+	if pattern == DiskByIDDir+"*" || pattern == filepath.Join(DiskByIDDir, "/*") {
+		return nil, nil
+	}
+	return filepath.Glob(pattern)
+}
+
+type recreateSymlinkTestEnv struct {
+	tmpDir         string
+	physicalDevice string
+	// preferred path in /dev/disk/by-id (well in real code anyways)
+	preferredTarget string
+	// current path in /dev/somewhere
+	currentTarget string
+	// current path in /mnt/local-storage/somewhere
+	symLinkPath string
+	// we would prefer to use preferredTarget but somehow
+	// this is claimed by another symlink /mnt/local-storage/otherdevice
+	claimingSymlink string
+}
+
+func newRecreateSymlinkTestEnv(t *testing.T) *recreateSymlinkTestEnv {
+	t.Helper()
+
+	tmpDir := t.TempDir()
+	physicalDevice := filepath.Join(tmpDir, "sdb")
+	if err := createTempFile(t, physicalDevice); err != nil {
+		t.Fatalf("failed to create physical device file: %v", err)
+	}
+
+	scDir := filepath.Join(tmpDir, "sc")
+	if err := mkdirAll(t, scDir); err != nil {
+		t.Fatalf("failed to create sc dir: %v", err)
+	}
+
+	return &recreateSymlinkTestEnv{
+		tmpDir:          tmpDir,
+		physicalDevice:  physicalDevice,
+		preferredTarget: filepath.Join(tmpDir, "by-id-preferred"),
+		currentTarget:   filepath.Join(tmpDir, "by-id-current"),
+		symLinkPath:     filepath.Join(scDir, "device"),
+		claimingSymlink: filepath.Join(scDir, "other-device"),
+	}
+}
+
+func (env *recreateSymlinkTestEnv) createPreferredSymlink(t *testing.T) {
+	t.Helper()
+	if err := createSymlink(t, env.physicalDevice, env.preferredTarget); err != nil {
+		t.Fatalf("failed to create preferred symlink: %v", err)
+	}
+}
+
+func (env *recreateSymlinkTestEnv) createCurrentSymlink(t *testing.T) {
+	t.Helper()
+	if err := createSymlink(t, env.physicalDevice, env.currentTarget); err != nil {
+		t.Fatalf("failed to create current symlink: %v", err)
+	}
+}
+
+func (env *recreateSymlinkTestEnv) createClaimingSymlink(t *testing.T) {
+	t.Helper()
+	if err := createSymlink(t, env.physicalDevice, env.claimingSymlink); err != nil {
+		t.Fatalf("failed to create claiming symlink: %v", err)
+	}
+}
+
+func (env *recreateSymlinkTestEnv) createExistingSymlink(t *testing.T, target string) {
+	t.Helper()
+	if err := createSymlink(t, target, env.symLinkPath); err != nil {
+		t.Fatalf("failed to create existing symlink: %v", err)
+	}
+}
+
+func (env *recreateSymlinkTestEnv) createPreferredRegularFile(t *testing.T) {
+	t.Helper()
+	if err := createTempFile(t, env.preferredTarget); err != nil {
+		t.Fatalf("failed to create regular file: %v", err)
+	}
+}
+
+func assertSingleConditionReason(t *testing.T, lvdl *v1.LocalVolumeDeviceLink, reason string) {
+	t.Helper()
+	assert.Len(t, lvdl.Status.Conditions, 1)
+	assert.Equal(t, DeviceSymlinkErrorType, lvdl.Status.Conditions[0].Type)
+	assert.Equal(t, operatorv1.ConditionTrue, lvdl.Status.Conditions[0].Status)
+	assert.Equal(t, reason, lvdl.Status.Conditions[0].Reason)
+}
+
+// TestHasMismatchingSymlink verifies the HasMismatchingSymlink helper for various policies and states.
+func TestHasMismatchingSymlink(t *testing.T) {
+	testCases := []struct {
+		name     string
+		lvdl     *v1.LocalVolumeDeviceLink
+		expected bool
+	}{
+		{
+			name:     "nil lvdl",
+			lvdl:     nil,
+			expected: false,
+		},
+		{
+			name:     "policy None",
+			lvdl:     newLVDLWithPolicy("pv", "ns", v1.DeviceLinkPolicyNone, "/current", "/preferred"),
+			expected: false,
+		},
+		{
+			name:     "policy CurrentLinkTarget",
+			lvdl:     newLVDLWithPolicy("pv", "ns", v1.DeviceLinkPolicyCurrentLinkTarget, "/current", "/preferred"),
+			expected: false,
+		},
+		{
+			name:     "policy PreferredLinkTarget with empty preferred",
+			lvdl:     newLVDLWithPolicy("pv", "ns", v1.DeviceLinkPolicyPreferredLinkTarget, "/current", ""),
+			expected: false,
+		},
+		{
+			name:     "policy PreferredLinkTarget with matching targets",
+			lvdl:     newLVDLWithPolicy("pv", "ns", v1.DeviceLinkPolicyPreferredLinkTarget, "/same", "/same"),
+			expected: false,
+		},
+		{
+			name:     "policy PreferredLinkTarget with mismatching targets",
+			lvdl:     newLVDLWithPolicy("pv", "ns", v1.DeviceLinkPolicyPreferredLinkTarget, "/current", "/preferred"),
+			expected: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.expected, HasMismatchingSymlink(tc.lvdl))
+		})
+	}
+}
+
+func TestRecreateSymlinkIfNeeded(t *testing.T) {
+	type recreateTestCase struct {
+		name              string
+		pvName            string
+		blockDevice       BlockDevice
+		initialConditions func(env *recreateSymlinkTestEnv) []operatorv1.OperatorCondition
+		setup             func(t *testing.T, env *recreateSymlinkTestEnv)
+		configureEval     func(env *recreateSymlinkTestEnv) func(string) (string, error)
+		configureGlob     func(env *recreateSymlinkTestEnv) func(string) ([]string, error)
+		expectedReason    string
+		// checkIdempotency, when true, verifies that LastTransitionTime was preserved
+		checkIdempotency bool
+	}
+
+	testCases := []recreateTestCase{
+		{
+			name:        "preferred target not found",
+			pvName:      "local-pv-preferred-not-found",
+			blockDevice: BlockDevice{KName: "sda"},
+			setup:       func(t *testing.T, env *recreateSymlinkTestEnv) {},
+			configureGlob: func(env *recreateSymlinkTestEnv) func(string) ([]string, error) {
+				return func(pattern string) ([]string, error) { return nil, nil }
+			},
+			expectedReason: "PreferredTargetNotFound",
+		},
+		{
+			name:        "device mismatch",
+			pvName:      "local-pv-device-mismatch",
+			blockDevice: BlockDevice{KName: "sda"},
+			setup: func(t *testing.T, env *recreateSymlinkTestEnv) {
+				env.createPreferredSymlink(t)
+			},
+			configureEval: func(env *recreateSymlinkTestEnv) func(string) (string, error) {
+				return func(path string) (string, error) {
+					switch path {
+					case env.preferredTarget:
+						return "/dev/sdb", nil
+					case env.currentTarget:
+						return "/dev/sda", nil
+					default:
+						return path, nil
+					}
+				}
+			},
+			configureGlob: func(env *recreateSymlinkTestEnv) func(string) ([]string, error) {
+				return func(pattern string) ([]string, error) { return nil, nil }
+			},
+			expectedReason: "DeviceMismatch",
+		},
+		{
+			name:        "target already claimed",
+			pvName:      "local-pv-already-claimed",
+			blockDevice: BlockDevice{KName: "sdb"},
+			setup: func(t *testing.T, env *recreateSymlinkTestEnv) {
+				env.createPreferredSymlink(t)
+				env.createCurrentSymlink(t)
+				env.createClaimingSymlink(t)
+			},
+			configureEval: func(env *recreateSymlinkTestEnv) func(string) (string, error) {
+				return func(path string) (string, error) {
+					switch path {
+					case env.preferredTarget, env.currentTarget, env.claimingSymlink:
+						return env.physicalDevice, nil
+					default:
+						return path, nil
+					}
+				}
+			},
+			configureGlob: func(env *recreateSymlinkTestEnv) func(string) ([]string, error) {
+				return filePathGlobSkipByID
+			},
+			expectedReason: "TargetAlreadyClaimed",
+		},
+		{
+			name:        "atomic swap success",
+			pvName:      "local-pv-swap-success",
+			blockDevice: BlockDevice{KName: "sdb"},
+			initialConditions: func(env *recreateSymlinkTestEnv) []operatorv1.OperatorCondition {
+				return []operatorv1.OperatorCondition{
+					{
+						Type:    DeviceSymlinkErrorType,
+						Status:  operatorv1.ConditionTrue,
+						Reason:  "PreferredTargetNotFound",
+						Message: "stale error",
+					},
+				}
+			},
+			setup: func(t *testing.T, env *recreateSymlinkTestEnv) {
+				env.createPreferredSymlink(t)
+				env.createCurrentSymlink(t)
+				env.createExistingSymlink(t, env.currentTarget)
+			},
+			configureEval: func(env *recreateSymlinkTestEnv) func(string) (string, error) {
+				return func(path string) (string, error) {
+					switch path {
+					case env.preferredTarget, env.currentTarget:
+						return env.physicalDevice, nil
+					default:
+						return path, nil
+					}
+				}
+			},
+			configureGlob: func(env *recreateSymlinkTestEnv) func(string) ([]string, error) {
+				return filePathGlobSkipByID
+			},
+		},
+		{
+			name:        "preferred target not symlink",
+			pvName:      "local-pv-preferred-not-symlink",
+			blockDevice: BlockDevice{KName: "sda"},
+			setup: func(t *testing.T, env *recreateSymlinkTestEnv) {
+				env.createPreferredRegularFile(t)
+			},
+			configureGlob: func(env *recreateSymlinkTestEnv) func(string) ([]string, error) {
+				return func(pattern string) ([]string, error) { return nil, nil }
+			},
+			expectedReason: "PreferredTargetNotSymlink",
+		},
+		{
+			name:        "idempotent condition preserves LastTransitionTime",
+			pvName:      "local-pv-idempotent",
+			blockDevice: BlockDevice{KName: "sda"},
+			setup: func(t *testing.T, env *recreateSymlinkTestEnv) {
+				// Create a regular file so the "not a symlink" check fires
+				env.createPreferredRegularFile(t)
+			},
+			configureGlob: func(env *recreateSymlinkTestEnv) func(string) ([]string, error) {
+				return func(pattern string) ([]string, error) { return nil, nil }
+			},
+			// Pre-seed the exact condition that RecreateSymlinkIfNeeded would set.
+			// setLVDLCondition should detect same reason/status/message and skip the update,
+			// so the original LastTransitionTime is preserved.
+			initialConditions: func(env *recreateSymlinkTestEnv) []operatorv1.OperatorCondition {
+				return []operatorv1.OperatorCondition{
+					{
+						Type:               DeviceSymlinkErrorType,
+						Status:             operatorv1.ConditionTrue,
+						Reason:             "PreferredTargetNotSymlink",
+						Message:            fmt.Sprintf("preferred target %s is not a symlink", env.preferredTarget),
+						LastTransitionTime: metav1.NewTime(time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)),
+					},
+				}
+			},
+			expectedReason:   "PreferredTargetNotSymlink",
+			checkIdempotency: true,
+		},
+		{
+			name:        "current target gone",
+			pvName:      "local-pv-current-gone",
+			blockDevice: BlockDevice{KName: "sdb"},
+			setup: func(t *testing.T, env *recreateSymlinkTestEnv) {
+				env.currentTarget = filepath.Join(env.tmpDir, "by-id-current-gone")
+				env.createPreferredSymlink(t)
+				env.createExistingSymlink(t, env.currentTarget)
+			},
+			configureEval: func(env *recreateSymlinkTestEnv) func(string) (string, error) {
+				return func(path string) (string, error) {
+					if path == env.preferredTarget {
+						return env.physicalDevice, nil
+					}
+					return "", fmt.Errorf("no such file or directory: %s", path)
+				}
+			},
+			configureGlob: func(env *recreateSymlinkTestEnv) func(string) ([]string, error) {
+				return filePathGlobSkipByID
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			saveAndRestoreGlobals(t)
+
+			env := newRecreateSymlinkTestEnv(t)
+			tc.setup(t, env)
+
+			lvdl := newLVDLWithPolicy(tc.pvName, "default", v1.DeviceLinkPolicyPreferredLinkTarget, env.currentTarget, env.preferredTarget)
+			if tc.initialConditions != nil {
+				lvdl.Status.Conditions = tc.initialConditions(env)
+			}
+
+			fakeClient := newFakeDeviceLinkClient(t, lvdl).Build()
+			handler := NewDeviceLinkHandler(env.currentTarget, fakeClient, fakeClient)
+
+			if tc.configureEval != nil {
+				FilePathEvalSymLinks = tc.configureEval(env)
+			}
+			if tc.configureGlob != nil {
+				FilePathGlob = tc.configureGlob(env)
+			}
+			CmdExecutor = fakeBlkidEmptyExecutor()
+			if tc.checkIdempotency {
+				// Freeze TimeNow so getCondition produces a known timestamp
+				// that differs from the pre-seeded one.
+				frozenTime := metav1.NewTime(time.Date(2099, 1, 1, 0, 0, 0, 0, time.UTC))
+				timeNow = func() metav1.Time { return frozenTime }
+			}
+
+			result, err := handler.RecreateSymlinkIfNeeded(t.Context(), lvdl, env.symLinkPath, tc.blockDevice)
+			assert.NoError(t, err)
+
+			fetched := &v1.LocalVolumeDeviceLink{}
+			assert.NoError(t, fakeClient.Get(t.Context(), types.NamespacedName{Name: tc.pvName, Namespace: "default"}, fetched))
+
+			if tc.expectedReason != "" {
+				assertSingleConditionReason(t, result, tc.expectedReason)
+				assertSingleConditionReason(t, fetched, tc.expectedReason)
+				if tc.checkIdempotency {
+					// setLVDLCondition should have preserved the original LastTransitionTime
+					// (2020-01-01) instead of using the frozen TimeNow (2099-01-01).
+					expected := tc.initialConditions(env)[0].LastTransitionTime.UTC()
+					actual := fetched.Status.Conditions[0].LastTransitionTime.UTC()
+					assert.Equal(t, expected, actual,
+						"LastTransitionTime should be preserved when condition is unchanged")
+				}
+				return
+			}
+
+			assert.Empty(t, result.Status.Conditions)
+			assert.Empty(t, fetched.Status.Conditions)
+
+			target, readlinkErr := readlink(env.symLinkPath)
+			assert.NoError(t, readlinkErr)
+			assert.Equal(t, env.preferredTarget, target)
+			assert.Equal(t, env.preferredTarget, handler.currentSymlink)
+		})
+	}
 }

@@ -238,6 +238,7 @@ func TestCreatePV(t *testing.T) {
 			StorageClass:          tc.sc,
 			MountPointMap:         tc.mountPoints,
 			Client:                r.Client,
+			ClientReader:          r.ClientReader,
 			SymLinkPath:           tc.symlinkpath,
 			BlockDevice:           internal.BlockDevice{KName: filepath.Base(tc.deviceName)},
 			IDExists:              true,
@@ -287,6 +288,7 @@ func TestCreatePV(t *testing.T) {
 			StorageClass:          tc.sc,
 			MountPointMap:         tc.mountPoints,
 			Client:                r.Client,
+			ClientReader:          r.ClientReader,
 			SymLinkPath:           tc.symlinkpath,
 			BlockDevice:           internal.BlockDevice{KName: filepath.Base(tc.deviceName)},
 			IDExists:              true,
@@ -343,6 +345,9 @@ func TestCreateLocalPV_DeviceLinkArgOrder(t *testing.T) {
 		ReclaimPolicy: &reclaimPolicyDelete,
 	}
 
+	symLinkPath := "/mnt/local-storage/" + sc.Name + "/" + kName
+	pvName := common.GeneratePVName(filepath.Base(symLinkPath), node.Name, sc.Name)
+
 	r, testConfig := getFakeDiskMaker(t, "/mnt/local-storage", &lv, &node, &sc)
 	testConfig.runtimeConfig.Node = &node
 	testConfig.runtimeConfig.Name = common.GetProvisionedByValue(node)
@@ -350,8 +355,6 @@ func TestCreateLocalPV_DeviceLinkArgOrder(t *testing.T) {
 	testConfig.runtimeConfig.DiscoveryMap[sc.Name] = provCommon.MountConfig{
 		VolumeMode: string(localv1.PersistentVolumeBlock),
 	}
-
-	symLinkPath := "/mnt/local-storage/" + sc.Name + "/" + kName
 	testConfig.fakeVolUtil.AddNewDirEntries("/mnt/local-storage/", map[string][]*provUtil.FakeDirEntry{
 		sc.Name: {
 			{Name: kName, Capacity: 10 * common.GiB, VolumeType: provUtil.FakeEntryBlock},
@@ -395,6 +398,7 @@ func TestCreateLocalPV_DeviceLinkArgOrder(t *testing.T) {
 		StorageClass:          sc,
 		MountPointMap:         sets.NewString(),
 		Client:                r.Client,
+		ClientReader:          r.ClientReader,
 		SymLinkPath:           symLinkPath,
 		BlockDevice:           internal.BlockDevice{KName: kName, PathByID: fakeByIDLink},
 		IDExists:              true,
@@ -403,7 +407,6 @@ func TestCreateLocalPV_DeviceLinkArgOrder(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Fetch the LocalVolumeDeviceLink that CreateLocalPV must have created.
-	pvName := common.GeneratePVName(filepath.Base(symLinkPath), node.Name, sc.Name)
 	lvdl := &localv1.LocalVolumeDeviceLink{}
 	err = r.Client.Get(context.TODO(), types.NamespacedName{Name: pvName, Namespace: lv.Namespace}, lvdl)
 	assert.NoError(t, err, "LVDL should have been created by CreateLocalPV")

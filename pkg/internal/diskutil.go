@@ -178,7 +178,7 @@ func (b BlockDevice) GetDevPath() (path string, err error) {
 // GetPathByID check on BlockDevice
 // This usually returns preferred Path for the device according to current
 // heuristics of LSO
-func (b *BlockDevice) GetPathByID(existingDeviceID string) (string, error) {
+func (b *BlockDevice) GetPathByID() (string, error) {
 
 	// return if previously populated value is valid
 	if len(b.PathByID) > 0 && strings.HasPrefix(b.PathByID, DiskByIDDir) {
@@ -193,7 +193,7 @@ func (b *BlockDevice) GetPathByID(existingDeviceID string) (string, error) {
 		return "", fmt.Errorf("error listing files in %s: %v", DiskByIDDir, err)
 	}
 
-	diskPathID, err := b.findDeviceInSortedSymlink(existingDeviceID, allDisks)
+	diskPathID, err := b.findDeviceInSortedSymlink(allDisks)
 	if err != nil {
 		return "", err
 	}
@@ -216,7 +216,7 @@ func (b *BlockDevice) GetUncachedPathID() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("error listing files in %s: %v", DiskByIDDir, err)
 	}
-	diskPathID, err := b.findDeviceInSortedSymlink("", allDisks)
+	diskPathID, err := b.findDeviceInSortedSymlink(allDisks)
 	if err != nil {
 		return "", err
 	}
@@ -229,7 +229,7 @@ func (b *BlockDevice) GetUncachedPathID() (string, error) {
 	return "", IDPathNotFoundError{DeviceName: b.KName}
 }
 
-func (b *BlockDevice) findDeviceInSortedSymlink(existingDeviceID string, allDisks []string) (string, error) {
+func (b *BlockDevice) findDeviceInSortedSymlink(allDisks []string) (string, error) {
 	// sortedSymlinks sorts symlinks in 4 buckets.
 	// 	- [0] - symlinks that match wwn
 	//	- [1] - symlinks that match scsi - these are further sorted by the "328S10" prefix priority list used by lsscsi:
@@ -242,16 +242,6 @@ func (b *BlockDevice) findDeviceInSortedSymlink(existingDeviceID string, allDisk
 
 	for _, path := range allDisks {
 		symLinkName := filepath.Base(path)
-		if existingDeviceID != "" && symLinkName == existingDeviceID {
-			isMatch, err := PathEvalsToDiskLabel(path, b.KName)
-			if err != nil {
-				return "", err
-			}
-			if isMatch {
-				return path, nil
-			}
-		}
-
 		for i, pattern := range preferredPatterns {
 			if strings.HasPrefix(symLinkName, pattern) {
 				sortedSymlinks[i] = append(sortedSymlinks[i], path)

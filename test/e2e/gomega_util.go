@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/onsi/gomega"
+	localv1 "github.com/openshift/local-storage-operator/api/v1"
 	framework "github.com/openshift/local-storage-operator/test/framework"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -17,6 +18,7 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/selection"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	dynclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -102,6 +104,32 @@ func eventuallyFindPVs(t *testing.T, f *framework.Framework, storageClassName st
 	}, time.Minute*5, time.Second*8).Should(gomega.HaveLen(expectedPVs), "checking number of PVs for for storageclass: %q", storageClassName)
 	return matchedPVs
 
+}
+
+func eventuallyFindLVDLsForPVs(t *testing.T, f *framework.Framework, namespace string, pvNames []string) []localv1.LocalVolumeDeviceLink {
+	matcher := gomega.NewWithT(t)
+	pvNameSet := sets.New(pvNames...)
+	foundLVDLs := make([]localv1.LocalVolumeDeviceLink, 0)
+	matcher.Eventually(func() bool {
+		lvdlList := &localv1.LocalVolumeDeviceLinkList{}
+		err := f.Client.List(goctx.TODO(), lvdlList, client.InNamespace(namespace))
+		if err != nil {
+			t.Logf("error listing LocalVolumeDeviceLink objects: %v", err)
+			return false
+		}
+		foundLVDLs = foundLVDLs[:0]
+		for _, lvdl := range lvdlList.Items {
+			if ok := pvNameSet.Has(lvdl.Spec.PersistentVolumeName); ok {
+				// Wait until status fields are populated by the status update
+				if lvdl.Status.CurrentLinkTarget == "" || lvdl.Status.PreferredLinkTarget == "" {
+					return false
+				}
+				foundLVDLs = append(foundLVDLs, lvdl)
+			}
+		}
+		return len(foundLVDLs) == len(pvNameSet)
+	}, time.Minute*5, time.Second*5).Should(gomega.BeTrue(), "waiting for LVDL objects with populated status for all PVs")
+	return foundLVDLs
 }
 
 // waits for PVs of the same name to become available

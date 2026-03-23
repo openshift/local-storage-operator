@@ -234,6 +234,7 @@ func TestCreatePV(t *testing.T) {
 			StorageClass:          tc.sc,
 			MountPointMap:         tc.mountPoints,
 			Client:                r.Client,
+			ClientReader:          r.ClientReader,
 			SymLinkPath:           tc.symlinkpath,
 			BlockDevice:           internal.BlockDevice{KName: filepath.Base(tc.deviceName)},
 			IDExists:              true,
@@ -283,6 +284,7 @@ func TestCreatePV(t *testing.T) {
 			StorageClass:          tc.sc,
 			MountPointMap:         tc.mountPoints,
 			Client:                r.Client,
+			ClientReader:          r.ClientReader,
 			SymLinkPath:           tc.symlinkpath,
 			BlockDevice:           internal.BlockDevice{KName: filepath.Base(tc.deviceName)},
 			IDExists:              true,
@@ -321,6 +323,9 @@ func TestCreatePV_SetsLVDLOwnerRefToLocalVolumeSet(t *testing.T) {
 		ReclaimPolicy: &reclaimPolicyDelete,
 	}
 
+	symLinkPath := "/mnt/local-storage/" + sc.Name + "/device-ownerref"
+	pvName := common.GeneratePVName(filepath.Base(symLinkPath), node.Name, sc.Name)
+
 	r, testConfig := newFakeLocalVolumeSetReconciler(t, &lvset, &node, &sc)
 	r.nodeName = node.Name
 	testConfig.runtimeConfig.Node = &node
@@ -329,8 +334,6 @@ func TestCreatePV_SetsLVDLOwnerRefToLocalVolumeSet(t *testing.T) {
 	testConfig.runtimeConfig.DiscoveryMap[sc.Name] = provCommon.MountConfig{
 		VolumeMode: string(localv1.PersistentVolumeBlock),
 	}
-
-	symLinkPath := "/mnt/local-storage/" + sc.Name + "/device-ownerref"
 	testConfig.fakeVolUtil.AddNewDirEntries("/mnt/local-storage/", map[string][]*provUtil.FakeDirEntry{
 		sc.Name: {
 			{Name: "device-ownerref", Capacity: 10 * common.GiB, VolumeType: provUtil.FakeEntryBlock},
@@ -370,6 +373,7 @@ func TestCreatePV_SetsLVDLOwnerRefToLocalVolumeSet(t *testing.T) {
 		StorageClass:          sc,
 		MountPointMap:         sets.NewString(),
 		Client:                r.Client,
+		ClientReader:          r.ClientReader,
 		SymLinkPath:           symLinkPath,
 		BlockDevice:           internal.BlockDevice{KName: "device-ownerref"},
 		IDExists:              true,
@@ -377,7 +381,6 @@ func TestCreatePV_SetsLVDLOwnerRefToLocalVolumeSet(t *testing.T) {
 	})
 	assert.NoError(t, err)
 
-	pvName := common.GeneratePVName(filepath.Base(symLinkPath), node.Name, sc.Name)
 	lvdl := &localv1.LocalVolumeDeviceLink{}
 	err = r.Client.Get(context.TODO(), types.NamespacedName{Name: pvName, Namespace: lvset.Namespace}, lvdl)
 	assert.NoError(t, err)

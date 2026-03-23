@@ -22,7 +22,7 @@ const (
 	FoundMatchingDisk   = "FoundMatchingDisk"
 	DeviceSymlinkExists = "DeviceSymlinkExists"
 
-	ErrorCreatingLVDL = "ErrorCreatingLocalVolumeDeviceLink"
+	FailedLVDLProcessing = "FailedLVDLProcessing"
 
 	// LocalVolumeDiscovery events
 	ErrorCreatingDiscoveryResultObject = "ErrorCreatingDiscoveryResultObject"

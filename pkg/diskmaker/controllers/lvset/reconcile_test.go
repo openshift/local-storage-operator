@@ -91,6 +91,7 @@ func newFakeLocalVolumeSetReconciler(t *testing.T, objs ...runtime.Object) (*Loc
 
 	lvsReconciler := NewLocalVolumeSetReconciler(
 		fakeClient,
+		fakeClient,
 		scheme,
 		fakeClock,
 		&provDeleter.CleanupStatusTracker{ProcTable: provDeleter.NewProcTable()},

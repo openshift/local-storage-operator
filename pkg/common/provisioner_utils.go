@@ -11,6 +11,7 @@ import (
 	"github.com/openshift/local-storage-operator/pkg/internal"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -50,11 +51,18 @@ type CreateLocalPVArgs struct {
 	StorageClass          storagev1.StorageClass
 	MountPointMap         sets.String
 	Client                client.Client
-	SymLinkPath           string
-	IDExists              bool
-	ExtraLabelsForPV      map[string]string
+	// symlinkPath points to path on /mnt/local-storage
+	SymLinkPath      string
+	IDExists         bool
+	ExtraLabelsForPV map[string]string
+
+	// ClientReader is used to read objects from the apiserver
+	// skipping cache
+	ClientReader client.Reader
 
 	// CurrentSymlink points to source to which SymLinkPath points to.
+	// it could be a path in /dev/disk/by-id or could be simply
+	// /dev/sda etc if nothing exists
 	CurrentSymlink string
 	// BlockDevice is the block device backing this PV.
 	BlockDevice internal.BlockDevice
@@ -68,6 +76,8 @@ func CreateLocalPV(ctx context.Context, args CreateLocalPVArgs) error {
 	storageClass := args.StorageClass
 	mountPointMap := args.MountPointMap
 	client := args.Client
+
+	// symlinkPath points to path on /mnt/local-storage
 	symLinkPath := args.SymLinkPath
 	deviceName := args.BlockDevice.KName
 	idExists := args.IDExists
@@ -119,11 +129,20 @@ func CreateLocalPV(ctx context.Context, args CreateLocalPVArgs) error {
 		return fmt.Errorf("name: %q, namespace: %q, or  kind: %q is empty for obj: %+v", name, namespace, kind, obj)
 	}
 
-	deviceHandler := internal.NewDeviceLinkHandler(args.CurrentSymlink, client)
+	deviceHandler := internal.NewDeviceLinkHandler(args.CurrentSymlink, client, args.ClientReader)
+	lvdl, err := deviceHandler.FindLVDL(ctx, pvName, namespace)
+	if err != nil && !apierrors.IsNotFound(err) {
+		return fmt.Errorf("error finding localvolumedevicelink object %s: %w", pvName, err)
+	}
 
-	_, err = deviceHandler.Create(ctx, pvName, runtimeConfig.Namespace, obj)
-	if err != nil {
-		return fmt.Errorf("error creating localvolumedevicelink object: %w", err)
+	// Symlink recreation must happen before PV creation because it fixes the
+	// symlink that the PV will reference. RecreateSymlinkIfNeeded already
+	// updates the LVDL status, so we skip ApplyStatus later.
+	requiresSymlinkRecreation := internal.HasMismatchingSymlink(lvdl)
+	if requiresSymlinkRecreation {
+		if _, err := deviceHandler.RecreateSymlinkIfNeeded(ctx, lvdl, symLinkPath, args.BlockDevice); err != nil {
+			return fmt.Errorf("error recreating symlink: %w", err)
+		}
 	}
 
 	// Do not attempt to create or update existing PV's that have been released
@@ -253,12 +272,15 @@ func CreateLocalPV(ctx context.Context, args CreateLocalPVArgs) error {
 		klog.InfoS("PV changed", "pvName", pvName, "status", opRes)
 	}
 	if err != nil {
-		return fmt.Errorf("error creating pv %s: %w", pvName, err)
+		return err
 	}
 
-	_, err = deviceHandler.ApplyStatus(ctx, pvName, runtimeConfig.Namespace, args.BlockDevice, obj)
-	if err != nil {
-		return fmt.Errorf("error updating localvolumedevicelink object: %w", err)
+	// ApplyStatus creates/updates the LVDL after the PV exists. Skip it when
+	// requiresSymlinkRecreation already updated the LVDL status above.
+	if !requiresSymlinkRecreation {
+		if _, err := deviceHandler.ApplyStatus(ctx, pvName, namespace, args.BlockDevice, obj); err != nil {
+			return fmt.Errorf("error applying device link status: %w", err)
+		}
 	}
 
 	return nil
