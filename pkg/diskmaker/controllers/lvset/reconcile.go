@@ -346,6 +346,20 @@ DeviceLoop:
 				continue DeviceLoop
 			}
 		}
+
+		for name, excluder := range exclusionMap {
+			valid, err := excluder(blockDevice, lvset.Spec.DeviceExclusionSpec)
+			if err != nil {
+				klog.ErrorS(err, "exclusion error", "device",
+					blockDevice.Name, "filter", name)
+				valid = false
+				continue DeviceLoop
+			} else if !valid {
+				klog.InfoS("exclusion match", "device",
+					blockDevice.Name, "filter", name)
+				continue DeviceLoop
+			}
+		}
 		klog.InfoS("matched disk", "device", blockDevice.Name)
 		// handle valid disk
 		validDevices = append(validDevices, blockDevice)
