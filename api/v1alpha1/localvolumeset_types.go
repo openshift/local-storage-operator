@@ -77,6 +77,17 @@ type DeviceInclusionSpec struct {
 	Vendors []string `json:"vendors,omitempty"`
 }
 
+// DeviceExclusionSpec holds the exclusion filter spec
+type DeviceExclusionSpec struct {
+	// DeviceNameFilter is a list of glob patterns. Devices whose kernel name (KName) matches
+	// any of these patterns are excluded from automatic provisioning.
+	// Glob patterns follow filepath.Match syntax: '?' matches any single non-separator character,
+	// '*' matches any sequence of non-separator characters.
+	// Example: ["rbd*"] excludes all rbd0, rbd1, etc.
+	// +optional
+	DeviceNameFilter []string `json:"deviceNameFilter,omitempty"`
+}
+
 // LocalVolumeSetSpec defines the desired state of LocalVolumeSet
 type LocalVolumeSetSpec struct {
 	// Nodes on which the automatic detection policies must run.
@@ -101,6 +112,9 @@ type LocalVolumeSetSpec struct {
 	// DeviceInclusionSpec is the filtration rule for including a device in the device discovery
 	// +optional
 	DeviceInclusionSpec *DeviceInclusionSpec `json:"deviceInclusionSpec,omitempty"`
+	// DeviceExclusionSpec is the filtration rule for excluding a device in the device discovery
+	// +optional
+	DeviceExclusionSpec *DeviceExclusionSpec `json:"deviceExclusionSpec,omitempty"`
 }
 
 // LocalVolumeSetStatus defines the observed state of LocalVolumeSet
