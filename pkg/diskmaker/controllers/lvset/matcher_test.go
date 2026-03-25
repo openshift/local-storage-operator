@@ -611,6 +611,127 @@ func TestInModelList(t *testing.T) {
 	assertAll(t, results)
 }
 
+func TestNotInDeviceNameFilter(t *testing.T) {
+	em := exclusionMap
+	matcher := notInDeviceNameFilter
+	results := []knownExclusionMatcherResult{
+		// nil spec: always pass
+		{
+			matcherMap: em, matcher: matcher,
+			dev:         internal.BlockDevice{KName: "sda"},
+			spec:        nil,
+			expectMatch: true, expectErr: false,
+		},
+		// empty filter list: always pass
+		{
+			matcherMap: em, matcher: matcher,
+			dev:         internal.BlockDevice{KName: "sda"},
+			spec:        &localv1alpha1.DeviceExclusionSpec{},
+			expectMatch: true, expectErr: false,
+		},
+		// glob matches: device excluded
+		{
+			matcherMap: em, matcher: matcher,
+			dev:         internal.BlockDevice{KName: "sda"},
+			spec:        &localv1alpha1.DeviceExclusionSpec{DeviceNameFilter: []string{"sd*"}},
+			expectMatch: false, expectErr: false,
+		},
+		{
+			matcherMap: em, matcher: matcher,
+			dev:         internal.BlockDevice{KName: "sdb"},
+			spec:        &localv1alpha1.DeviceExclusionSpec{DeviceNameFilter: []string{"sd*"}},
+			expectMatch: false, expectErr: false,
+		},
+		{
+			matcherMap: em, matcher: matcher,
+			dev:         internal.BlockDevice{KName: "rbd0"},
+			spec:        &localv1alpha1.DeviceExclusionSpec{DeviceNameFilter: []string{"rbd*"}},
+			expectMatch: false, expectErr: false,
+		},
+		// exact match in filter list: device excluded
+		{
+			matcherMap: em, matcher: matcher,
+			dev:         internal.BlockDevice{KName: "nvme0n1"},
+			spec:        &localv1alpha1.DeviceExclusionSpec{DeviceNameFilter: []string{"nvme0n1"}},
+			expectMatch: false, expectErr: false,
+		},
+		// matches one of multiple patterns: device excluded
+		{
+			matcherMap: em, matcher: matcher,
+			dev:         internal.BlockDevice{KName: "sda"},
+			spec:        &localv1alpha1.DeviceExclusionSpec{DeviceNameFilter: []string{"rbd*", "sd*"}},
+			expectMatch: false, expectErr: false,
+		},
+		// no pattern matches: device included
+		{
+			matcherMap: em, matcher: matcher,
+			dev:         internal.BlockDevice{KName: "nvme0n1"},
+			spec:        &localv1alpha1.DeviceExclusionSpec{DeviceNameFilter: []string{"sd*"}},
+			expectMatch: true, expectErr: false,
+		},
+		{
+			matcherMap: em, matcher: matcher,
+			dev:         internal.BlockDevice{KName: "nvme0n1"},
+			spec:        &localv1alpha1.DeviceExclusionSpec{DeviceNameFilter: []string{"rbd*", "sd*"}},
+			expectMatch: true, expectErr: false,
+		},
+		// single-character wildcard
+		{
+			matcherMap: em, matcher: matcher,
+			dev:         internal.BlockDevice{KName: "sda"},
+			spec:        &localv1alpha1.DeviceExclusionSpec{DeviceNameFilter: []string{"sd?"}},
+			expectMatch: false, expectErr: false,
+		},
+		{
+			matcherMap: em, matcher: matcher,
+			dev:         internal.BlockDevice{KName: "sdab"},
+			spec:        &localv1alpha1.DeviceExclusionSpec{DeviceNameFilter: []string{"sd?"}},
+			expectMatch: true, expectErr: false,
+		},
+		// invalid glob pattern: error
+		{
+			matcherMap: em, matcher: matcher,
+			dev:         internal.BlockDevice{KName: "sda"},
+			spec:        &localv1alpha1.DeviceExclusionSpec{DeviceNameFilter: []string{"[invalid"}},
+			expectMatch: false, expectErr: true,
+		},
+	}
+	assertAllExclusion(t, results)
+}
+
+// a known result for a particular exclusion matcher that can be asserted
+type knownExclusionMatcherResult struct {
+	matcherMap  map[string]func(internal.BlockDevice, *localv1alpha1.DeviceExclusionSpec) (bool, error)
+	matcher     string
+	dev         internal.BlockDevice
+	spec        *localv1alpha1.DeviceExclusionSpec
+	expectMatch bool
+	expectErr   bool
+}
+
+func assertAllExclusion(t *testing.T, results []knownExclusionMatcherResult) {
+	for _, result := range results {
+		result.assert(t)
+	}
+}
+
+func (r *knownExclusionMatcherResult) assert(t *testing.T) {
+	t.Logf("matcher name: %s, dev: %+v, deviceExclusionSpec: %+v", r.matcher, r.dev, r.spec)
+	matcher, ok := r.matcherMap[r.matcher]
+	assert.True(t, ok, "expected to find matcher in map", r.matcher)
+	match, err := matcher(r.dev, r.spec)
+	if r.expectErr {
+		assert.Error(t, err)
+	} else {
+		assert.NoError(t, err)
+	}
+	if r.expectMatch {
+		assert.True(t, match)
+	} else {
+		assert.False(t, match)
+	}
+}
+
 // a known result for a particular filter that can be asserted
 type knownMatcherResult struct {
 	// should pass one of filterMap or matcherMap
