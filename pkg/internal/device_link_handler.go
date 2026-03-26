@@ -128,8 +128,8 @@ func (dl *DeviceLinkHandler) ApplyStatus(ctx context.Context, pvName, namespace 
 		return nil, fmt.Errorf("failed to get /dev path for %s: %w", blockDevice.Name, err)
 	}
 
-	// Update is best-effort and independent from Create: if either the PV or
-	// the LVDL does not exist yet, return without doing anything.
+	// Update is best-effort and independent from Create: if the PV
+	// does not exist yet, return without doing anything.
 	existingPV := &corev1.PersistentVolume{}
 	if err := dl.clientReader.Get(ctx, types.NamespacedName{Name: pvName}, existingPV); err != nil {
 		if apierrors.IsNotFound(err) {

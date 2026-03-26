@@ -231,7 +231,7 @@ func CreateLocalPV(ctx context.Context, args CreateLocalPVArgs) error {
 	controllerutil.AddFinalizer(newPV, LSOSymlinkDeleterFinalizer)
 
 	klog.InfoS("creating PV", "pvName", pvName)
-	opRes, err := controllerutil.CreateOrUpdate(context.TODO(), client, existingPV, func() error {
+	opRes, err := controllerutil.CreateOrUpdate(ctx, client, existingPV, func() error {
 		if existingPV.CreationTimestamp.IsZero() {
 			// operations for create
 			newPV.DeepCopyInto(existingPV)

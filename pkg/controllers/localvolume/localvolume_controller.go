@@ -142,13 +142,15 @@ func (r *LocalVolumeReconciler) syncLocalVolumeProvider(ctx context.Context, ins
 		return r.addFailureCondition(instance, o, err)
 	}
 
-	children = append(children, operatorv1.GenerationStatus{
-		Group:          appsv1.GroupName,
-		Resource:       "DaemonSet",
-		Namespace:      diskMakerDS.Namespace,
-		Name:           diskMakerDS.Name,
-		LastGeneration: diskMakerDS.Generation,
-	})
+	if diskMakerDS != nil {
+		children = append(children, operatorv1.GenerationStatus{
+			Group:          appsv1.GroupName,
+			Resource:       "DaemonSet",
+			Namespace:      diskMakerDS.Namespace,
+			Name:           diskMakerDS.Name,
+			LastGeneration: diskMakerDS.Generation,
+		})
+	}
 
 	o.Status.Generations = children
 	o.Status.State = operatorv1.Managed
