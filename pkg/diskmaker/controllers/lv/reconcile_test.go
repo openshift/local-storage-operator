@@ -11,6 +11,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	utilexec "k8s.io/utils/exec"
 	testingexec "k8s.io/utils/exec/testing"
@@ -275,6 +276,283 @@ func TestProcessExistingSymlink_UsesFullSymlinkPath(t *testing.T) {
 	assert.NoError(t, tc.fakeClient.Get(context.TODO(), types.NamespacedName{Name: pvName}, pv))
 	assert.NotNil(t, pv.Spec.Local)
 	assert.Equal(t, symlinkPath, pv.Spec.Local.Path)
+}
+
+func TestGetSymlinkSourceAndTarget(t *testing.T) {
+	testCases := []struct {
+		name           string
+		deviceLocation *internal.DiskLocation
+		expectSource   string
+		expectTarget   string
+		expectIDExists bool
+	}{
+		{
+			name: "uses disk id when available",
+			deviceLocation: &internal.DiskLocation{
+				DiskID: "/dev/disk/by-id/wwn-null",
+			},
+			expectSource:   "/dev/disk/by-id/wwn-null",
+			expectTarget:   filepath.Join("/tmp", "wwn-null"),
+			expectIDExists: true,
+		},
+		{
+			name: "falls back to user provided path when no disk id exists",
+			deviceLocation: &internal.DiskLocation{
+				UserProvidedPath: "/dev/null",
+			},
+			expectSource:   "/dev/null",
+			expectTarget:   filepath.Join("/tmp", "null"),
+			expectIDExists: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			source, target, idExists, err := getSymlinkSourceAndTarget(tc.deviceLocation, "/tmp")
+			assert.NoError(t, err)
+			assert.Equal(t, tc.expectSource, source)
+			assert.Equal(t, tc.expectTarget, target)
+			assert.Equal(t, tc.expectIDExists, idExists)
+		})
+	}
+}
+
+func TestProvisionValidDevice(t *testing.T) {
+	reclaimPolicyDelete := corev1.PersistentVolumeReclaimDelete
+	fakeByIDLink := "/dev/disk/by-id/wwn-null"
+
+	testCases := []struct {
+		name                string
+		createExistingLink  bool
+		includeStorageClass bool
+		expectProvisioned   bool
+		expectSymlinkName   string
+		expectRequeue       time.Duration
+	}{
+		{
+			name:                "uses existing symlink when device is already claimed in storage class",
+			createExistingLink:  true,
+			includeStorageClass: true,
+			expectProvisioned:   true,
+			expectSymlinkName:   "claimed",
+		},
+		{
+			name:                "creates a new symlink and pv for unclaimed device",
+			includeStorageClass: true,
+			expectProvisioned:   true,
+			expectSymlinkName:   filepath.Base(fakeByIDLink),
+		},
+		{
+			name:               "reports provisioning errors and fast requeues",
+			createExistingLink: true,
+			expectRequeue:      fastRequeueTime,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			tmpRoot := createTmpDir(t, "", "provision-valid-device")
+			defer os.RemoveAll(tmpRoot)
+
+			lv := &localv1.LocalVolume{
+				TypeMeta: metav1.TypeMeta{
+					Kind:       localv1.LocalVolumeKind,
+					APIVersion: localv1.GroupVersion.String(),
+				},
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "lv-provision",
+					Namespace: "default",
+				},
+			}
+			node := &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:   "node-provision",
+					Labels: map[string]string{corev1.LabelHostname: "node-hostname-provision"},
+				},
+			}
+			sc := &storagev1.StorageClass{
+				ObjectMeta:    metav1.ObjectMeta{Name: storageClassName},
+				ReclaimPolicy: &reclaimPolicyDelete,
+			}
+
+			objs := []runtime.Object{lv, node}
+			if tc.includeStorageClass {
+				objs = append(objs, sc)
+			}
+
+			d, tcCtx := getFakeDiskMaker(t, tmpRoot, objs...)
+			d.localVolume = lv
+			d.fsInterface = stubFileSystemInterface{evalFunc: func(path string) (string, error) {
+				if path == fakeByIDLink {
+					return "/dev/null", nil
+				}
+				return path, nil
+			}}
+			d.runtimeConfig.Node = node
+			d.runtimeConfig.Name = common.GetProvisionedByValue(*node)
+			d.runtimeConfig.Namespace = lv.Namespace
+			d.runtimeConfig.DiscoveryMap[storageClassName] = provCommon.MountConfig{
+				VolumeMode: string(corev1.PersistentVolumeBlock),
+			}
+
+			symLinkDir := filepath.Join(tmpRoot, storageClassName)
+			assert.NoError(t, os.MkdirAll(symLinkDir, 0755))
+			if tc.expectSymlinkName != "" {
+				tcCtx.fakeVolUtil.AddNewDirEntries(tmpRoot, map[string][]*provUtil.FakeDirEntry{
+					storageClassName: {
+						{Name: tc.expectSymlinkName, Capacity: 10 * common.GiB, VolumeType: provUtil.FakeEntryBlock},
+					},
+				})
+			}
+
+			if tc.createExistingLink {
+				assert.NoError(t, os.Symlink("/dev/null", filepath.Join(symLinkDir, "claimed")))
+			}
+
+			origGlob := internal.FilePathGlob
+			origEval := internal.FilePathEvalSymLinks
+			origExec := internal.CmdExecutor
+			t.Cleanup(func() {
+				internal.FilePathGlob = origGlob
+				internal.FilePathEvalSymLinks = origEval
+				internal.CmdExecutor = origExec
+			})
+
+			internal.FilePathGlob = func(pattern string) ([]string, error) {
+				if pattern == filepath.Join(internal.DiskByIDDir, "*") {
+					return []string{fakeByIDLink}, nil
+				}
+				return filepath.Glob(pattern)
+			}
+			internal.FilePathEvalSymLinks = func(path string) (string, error) {
+				if path == fakeByIDLink {
+					return "/dev/null", nil
+				}
+				return filepath.EvalSymlinks(path)
+			}
+			internal.CmdExecutor = fakeBlkidExecutor("/dev/null", "")
+
+			diskLocation := &internal.DiskLocation{
+				UserProvidedPath: "/dev/null",
+				BlockDevice: internal.BlockDevice{
+					Name:     "null",
+					KName:    "null",
+					PathByID: fakeByIDLink,
+				},
+			}
+
+			provisioned := d.provisionValidDevice(t.Context(), storageClassName, symLinkDir, "/dev/null", diskLocation, sets.NewString())
+			assert.Equal(t, tc.expectProvisioned, provisioned)
+			assert.Equal(t, tc.expectRequeue, d.effectiveRequeueTime)
+
+			if tc.expectProvisioned {
+				pvName := common.GeneratePVName(tc.expectSymlinkName, node.Name, storageClassName)
+				pv := &corev1.PersistentVolume{}
+				assert.NoError(t, d.Client.Get(t.Context(), types.NamespacedName{Name: pvName}, pv))
+			}
+		})
+	}
+}
+
+func TestProcessValidDevices(t *testing.T) {
+	reclaimPolicyDelete := corev1.PersistentVolumeReclaimDelete
+	fakeByIDLink := "/dev/disk/by-id/wwn-null"
+
+	tmpRoot := createTmpDir(t, "", "process-valid-devices")
+	defer os.RemoveAll(tmpRoot)
+
+	lv := &localv1.LocalVolume{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       localv1.LocalVolumeKind,
+			APIVersion: localv1.GroupVersion.String(),
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "lv-process",
+			Namespace: "default",
+		},
+	}
+	node := &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:   "node-process",
+			Labels: map[string]string{corev1.LabelHostname: "node-hostname-process"},
+		},
+	}
+	sc := &storagev1.StorageClass{
+		ObjectMeta:    metav1.ObjectMeta{Name: storageClassName},
+		ReclaimPolicy: &reclaimPolicyDelete,
+	}
+
+	d, tcCtx := getFakeDiskMaker(t, tmpRoot, lv, node, sc)
+	d.localVolume = lv
+	d.runtimeConfig.Node = node
+	d.runtimeConfig.Name = common.GetProvisionedByValue(*node)
+	d.runtimeConfig.Namespace = lv.Namespace
+	d.runtimeConfig.DiscoveryMap[storageClassName] = provCommon.MountConfig{
+		VolumeMode: string(corev1.PersistentVolumeBlock),
+	}
+	d.fsInterface = stubFileSystemInterface{evalFunc: func(path string) (string, error) {
+		if path == fakeByIDLink {
+			return "/dev/null", nil
+		}
+		return path, nil
+	}}
+
+	tcCtx.fakeVolUtil.AddNewDirEntries(tmpRoot, map[string][]*provUtil.FakeDirEntry{
+		storageClassName: {
+			{Name: filepath.Base(fakeByIDLink), Capacity: 10 * common.GiB, VolumeType: provUtil.FakeEntryBlock},
+		},
+	})
+
+	origGlob := internal.FilePathGlob
+	origEval := internal.FilePathEvalSymLinks
+	origExec := internal.CmdExecutor
+	t.Cleanup(func() {
+		internal.FilePathGlob = origGlob
+		internal.FilePathEvalSymLinks = origEval
+		internal.CmdExecutor = origExec
+	})
+
+	internal.FilePathGlob = func(pattern string) ([]string, error) {
+		if pattern == filepath.Join(internal.DiskByIDDir, "*") {
+			return []string{fakeByIDLink}, nil
+		}
+		return filepath.Glob(pattern)
+	}
+	internal.FilePathEvalSymLinks = func(path string) (string, error) {
+		if path == fakeByIDLink {
+			return "/dev/null", nil
+		}
+		return filepath.EvalSymlinks(path)
+	}
+	internal.CmdExecutor = fakeBlkidExecutor("/dev/null", "")
+
+	diskConfig := &DiskConfig{
+		Disks: map[string]*Disks{
+			storageClassName: {
+				DevicePaths: []string{"/dev/null", "/dev/zero"},
+			},
+		},
+	}
+
+	expectedSymlinkPath := filepath.Join(tmpRoot, storageClassName, "wwn-null")
+
+	d.processValidDevices(
+		t.Context(),
+		[]internal.BlockDevice{{Name: "null", KName: "null", PathByID: fakeByIDLink}},
+		diskConfig,
+		sets.NewString(),
+	)
+
+	pvName := common.GeneratePVName(filepath.Base(fakeByIDLink), node.Name, storageClassName)
+	pv := &corev1.PersistentVolume{}
+	assert.NoError(t, d.Client.Get(t.Context(), types.NamespacedName{Name: pvName}, pv))
+	assert.Equal(t, pv.Spec.Local.Path, expectedSymlinkPath)
+
+	lvdl := &localv1.LocalVolumeDeviceLink{}
+	assert.NoError(t, d.Client.Get(t.Context(), types.NamespacedName{Name: pvName, Namespace: lv.Namespace}, lvdl))
+	assert.Equal(t, lvdl.Status.CurrentLinkTarget, fakeByIDLink)
+	assert.Equal(t, lvdl.Status.PreferredLinkTarget, fakeByIDLink)
+	assert.Equal(t, lvdl.Status.ValidLinkTargets, []string{fakeByIDLink})
 }
 
 func TestCreateSymLinkByDeviceID(t *testing.T) {
