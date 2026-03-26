@@ -3,6 +3,7 @@ package lv
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -15,6 +16,7 @@ import (
 	storagev1 "k8s.io/api/storage/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	utilexec "k8s.io/utils/exec"
@@ -40,8 +42,12 @@ func fakeBlkidExecutor(devicePath, uuid string) *testingexec.FakeExec {
 			},
 		}
 	}
+	commandScript := make([]testingexec.FakeCommandAction, 0, 16)
+	for i := 0; i < 16; i++ {
+		commandScript = append(commandScript, blkidAction)
+	}
 	return &testingexec.FakeExec{
-		CommandScript: []testingexec.FakeCommandAction{blkidAction},
+		CommandScript: commandScript,
 	}
 }
 
@@ -432,4 +438,184 @@ func TestCreateLocalPV_DeviceLinkArgOrder(t *testing.T) {
 	// confirming the glob result was actually used.
 	assert.Equal(t, fakeByIDLink, resolvedTarget,
 		"FilePathEvalSymLinks should have been called with the by-id link")
+}
+
+func TestCreateLocalPV_DeviceLinkLifecycle(t *testing.T) {
+	reclaimPolicyDelete := corev1.PersistentVolumeReclaimDelete
+	fakeByIDLink := "/dev/disk/by-id/wwn-null"
+
+	testCases := []struct {
+		name                string
+		existingLVDLFactory func(pvName, namespace, currentTarget, preferredTarget string) *localv1.LocalVolumeDeviceLink
+		triggerRelink       bool
+	}{
+		{
+			name: "creates lvdl after creating pv when one does not exist",
+		},
+		{
+			name: "updates existing lvdl status when symlink already matches policy",
+			existingLVDLFactory: func(pvName, namespace, currentTarget, preferredTarget string) *localv1.LocalVolumeDeviceLink {
+				return &localv1.LocalVolumeDeviceLink{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      pvName,
+						Namespace: namespace,
+					},
+					Spec: localv1.LocalVolumeDeviceLinkSpec{
+						PersistentVolumeName: pvName,
+						Policy:               localv1.DeviceLinkPolicyNone,
+					},
+				}
+			},
+		},
+		{
+			name: "recreates mismatching symlink before pv creation",
+			existingLVDLFactory: func(pvName, namespace, currentTarget, preferredTarget string) *localv1.LocalVolumeDeviceLink {
+				return &localv1.LocalVolumeDeviceLink{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      pvName,
+						Namespace: namespace,
+					},
+					Spec: localv1.LocalVolumeDeviceLinkSpec{
+						PersistentVolumeName: pvName,
+						Policy:               localv1.DeviceLinkPolicyPreferredLinkTarget,
+					},
+					Status: localv1.LocalVolumeDeviceLinkStatus{
+						CurrentLinkTarget:   currentTarget,
+						PreferredLinkTarget: preferredTarget,
+					},
+				}
+			},
+			triggerRelink: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			tmpDir, err := os.MkdirTemp("", "create-local-pv-lifecycle-")
+			assert.NoError(t, err)
+			defer os.RemoveAll(tmpDir)
+
+			lv := localv1.LocalVolume{
+				TypeMeta: metav1.TypeMeta{
+					Kind:       localv1.LocalVolumeKind,
+					APIVersion: localv1.GroupVersion.String(),
+				},
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "lv-lifecycle",
+					Namespace: "openshift-local-storage",
+					UID:       "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+				},
+			}
+			node := corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:   "node-lifecycle",
+					Labels: map[string]string{corev1.LabelHostname: "node-hostname-lifecycle"},
+				},
+			}
+			sc := storagev1.StorageClass{
+				ObjectMeta:    metav1.ObjectMeta{Name: "sc-lifecycle"},
+				ReclaimPolicy: &reclaimPolicyDelete,
+			}
+
+			symLinkPath := filepath.Join(tmpDir, sc.Name, "claimed")
+			pvName := common.GeneratePVName(filepath.Base(symLinkPath), node.Name, sc.Name)
+
+			currentTarget := filepath.Join(tmpDir, "current-target")
+			preferredTarget := filepath.Join(tmpDir, "preferred-target")
+
+			assert.NoError(t, os.MkdirAll(filepath.Dir(symLinkPath), 0755))
+			assert.NoError(t, os.Symlink("/dev/null", currentTarget))
+			assert.NoError(t, os.Symlink("/dev/null", preferredTarget))
+
+			objs := []runtime.Object{&lv, &node, &sc}
+			if tc.existingLVDLFactory != nil {
+				objs = append(objs, tc.existingLVDLFactory(pvName, lv.Namespace, currentTarget, preferredTarget))
+			}
+
+			r, testConfig := getFakeDiskMaker(t, tmpDir, objs...)
+			testConfig.runtimeConfig.Node = &node
+			testConfig.runtimeConfig.Name = common.GetProvisionedByValue(node)
+			testConfig.runtimeConfig.Namespace = lv.Namespace
+			testConfig.runtimeConfig.DiscoveryMap[sc.Name] = provCommon.MountConfig{
+				VolumeMode: string(localv1.PersistentVolumeBlock),
+			}
+			testConfig.fakeVolUtil.AddNewDirEntries(tmpDir, map[string][]*provUtil.FakeDirEntry{
+				sc.Name: {
+					{Name: filepath.Base(symLinkPath), Capacity: 10 * common.GiB, VolumeType: provUtil.FakeEntryBlock},
+				},
+			})
+
+			var expectedPreferredSymlink string
+			var expectedCurrentSymlink string
+
+			// triggerRelink case triggers change of symlink to new preferredLinkTarget
+			if tc.triggerRelink {
+				assert.NoError(t, os.Symlink(currentTarget, symLinkPath))
+				expectedCurrentSymlink = preferredTarget
+				expectedPreferredSymlink = preferredTarget
+			} else {
+				expectedCurrentSymlink = currentTarget
+			}
+
+			origGlob := internal.FilePathGlob
+			origEval := internal.FilePathEvalSymLinks
+			origExec := internal.CmdExecutor
+			t.Cleanup(func() {
+				internal.FilePathGlob = origGlob
+				internal.FilePathEvalSymLinks = origEval
+				internal.CmdExecutor = origExec
+			})
+
+			internal.FilePathGlob = func(pattern string) ([]string, error) {
+				if pattern == filepath.Join(internal.DiskByIDDir, "*") {
+					return []string{fakeByIDLink}, nil
+				}
+				return filepath.Glob(pattern)
+			}
+			internal.FilePathEvalSymLinks = func(path string) (string, error) {
+				if path == fakeByIDLink {
+					return "/dev/null", nil
+				}
+				return filepath.EvalSymlinks(path)
+			}
+			internal.CmdExecutor = fakeBlkidExecutor("/dev/null", "uuid-lifecycle")
+
+			err = common.CreateLocalPV(t.Context(), common.CreateLocalPVArgs{
+				LocalVolumeLikeObject: &lv,
+				RuntimeConfig:         r.runtimeConfig,
+				StorageClass:          sc,
+				MountPointMap:         sets.NewString(),
+				Client:                r.Client,
+				ClientReader:          r.ClientReader,
+				SymLinkPath:           symLinkPath,
+				BlockDevice: internal.BlockDevice{
+					Name:     "null",
+					KName:    "null",
+					PathByID: fakeByIDLink,
+				},
+				IDExists:         true,
+				ExtraLabelsForPV: map[string]string{},
+				CurrentSymlink:   currentTarget,
+			})
+			assert.NoError(t, err)
+
+			pv := &corev1.PersistentVolume{}
+			assert.NoError(t, r.Client.Get(context.TODO(), types.NamespacedName{Name: pvName}, pv))
+
+			lvdl := &localv1.LocalVolumeDeviceLink{}
+			assert.NoError(t, r.Client.Get(context.TODO(), types.NamespacedName{Name: pvName, Namespace: lv.Namespace}, lvdl))
+			assert.Equal(t, expectedCurrentSymlink, lvdl.Status.CurrentLinkTarget)
+			assert.Equal(t, "uuid-lifecycle", lvdl.Status.FilesystemUUID)
+			assert.Equal(t, fakeByIDLink, lvdl.Status.PreferredLinkTarget)
+			if tc.existingLVDLFactory == nil && assert.Len(t, lvdl.OwnerReferences, 1) {
+				assert.Equal(t, lv.Name, lvdl.OwnerReferences[0].Name)
+			}
+
+			if tc.triggerRelink {
+				target, readErr := os.Readlink(symLinkPath)
+				assert.NoError(t, readErr)
+				assert.Equal(t, expectedPreferredSymlink, target)
+			}
+		})
+	}
 }
