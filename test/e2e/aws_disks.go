@@ -92,6 +92,7 @@ func populateDeviceInfo(t *testing.T, ctx *framework.TestCtx, nodeEnv []nodeDisk
 					nodeFound = true
 					for diskIndex, diskEntry := range nodeEnvEntry.disks {
 						deviceFound := false // try to match result with expected disk
+						t.Logf("looking for disk with size %d on node %s", diskEntry.size, nodeEnvEntry.node.Name)
 						for _, foundDevice := range result.Status.DiscoveredDevices {
 							matchesSize := foundDevice.Size == int64(diskEntry.size)*common.GiB
 							matchedPreviously := matchedPaths.Has(foundDevice.Path)
@@ -109,10 +110,9 @@ func populateDeviceInfo(t *testing.T, ctx *framework.TestCtx, nodeEnv []nodeDisk
 								// device already found
 								break
 							}
-
 						}
 						if !deviceFound {
-							t.Logf("no available device found on node %q with size %q", nodeEnvEntry.node.Name, diskEntry.size)
+							t.Logf("no available device found on node %q with size %d", nodeEnvEntry.node.Name, diskEntry.size)
 							// retry after interval
 							return false
 						}

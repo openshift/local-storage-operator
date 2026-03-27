@@ -6,6 +6,27 @@
 
 2. Create images as documented below
 
+## Overriding diskmaker image or operator image directly after deployment
+
+> ⚠️ This is for temporary development/testing only. Deleting the Subscription disables OLM-driven upgrades/reconciliation.
+> Recreate the Subscription after validation to return to managed state.
+
+1. Record current Subscription/CSV:
+   ```bash
+   oc get subscription -n openshift-local-storage
+   oc get csv -n openshift-local-storage | grep local-storage-operator
+   ```
+2. Delete the Subscription (temporary):
+   ```bash
+   oc delete subscription <subscription-name> -n openshift-local-storage
+   ```
+3. Edit the installed CSV and override image(s) in `spec.install.spec.deployments[].spec.template.spec.containers[]`
+   (e.g., `DISKMAKER_IMAGE` and/or operator container image):
+   ```bash
+   oc edit csv <csv-name> -n openshift-local-storage
+   ```
+4. After testing, recreate/apply the Subscription manifest to re-enable OLM management.
+
 ## Running the operator locally
 
 1. Install LSO via OLM/OperatorHub in GUI

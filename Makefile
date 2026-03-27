@@ -10,6 +10,8 @@ ifeq ($(VERSION),)
 	VERSION = latest
 endif
 
+.DEFAULT_GOAL := build
+
 # Use podman or docker to build containers. Can bet set explicitly.
 # make bundle REGISTRY=quay.io/username TOOL_BIN=`which docker`
 ifeq ($(TOOL_BIN),)

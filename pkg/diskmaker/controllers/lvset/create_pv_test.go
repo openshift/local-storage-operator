@@ -11,12 +11,15 @@ import (
 	localv1 "github.com/openshift/local-storage-operator/api/v1"
 	localv1alpha1 "github.com/openshift/local-storage-operator/api/v1alpha1"
 	"github.com/openshift/local-storage-operator/pkg/common"
+	"github.com/openshift/local-storage-operator/pkg/internal"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
+	utilexec "k8s.io/utils/exec"
+	testingexec "k8s.io/utils/exec/testing"
 	provCommon "sigs.k8s.io/sig-storage-local-static-provisioner/pkg/common"
 	provUtil "sigs.k8s.io/sig-storage-local-static-provisioner/pkg/util"
 )
@@ -225,17 +228,18 @@ func TestCreatePV(t *testing.T) {
 		}
 		testConfig.fakeVolUtil.AddNewDirEntries("/mnt/local-storage/", dirFiles)
 
-		err := common.CreateLocalPV(
-			&tc.lvset,
-			r.runtimeConfig,
-			tc.sc,
-			tc.mountPoints,
-			r.Client,
-			tc.symlinkpath,
-			tc.deviceName,
-			true,
-			map[string]string{},
-		)
+		err := common.CreateLocalPV(t.Context(), common.CreateLocalPVArgs{
+			LocalVolumeLikeObject: &tc.lvset,
+			RuntimeConfig:         r.runtimeConfig,
+			StorageClass:          tc.sc,
+			MountPointMap:         tc.mountPoints,
+			Client:                r.Client,
+			ClientReader:          r.ClientReader,
+			SymLinkPath:           tc.symlinkpath,
+			BlockDevice:           internal.BlockDevice{KName: filepath.Base(tc.deviceName)},
+			IDExists:              true,
+			ExtraLabelsForPV:      map[string]string{},
+		})
 		if tc.shouldErr {
 			assert.NotNil(t, err)
 		} else {
@@ -274,19 +278,116 @@ func TestCreatePV(t *testing.T) {
 		assert.Equal(t, *tc.sc.ReclaimPolicy, pv.Spec.PersistentVolumeReclaimPolicy)
 
 		// test idempotency by running again
-		err = common.CreateLocalPV(
-			&tc.lvset,
-			r.runtimeConfig,
-			tc.sc,
-			tc.mountPoints,
-			r.Client,
-			tc.symlinkpath,
-			tc.deviceName,
-			true,
-			map[string]string{},
-		)
+		err = common.CreateLocalPV(t.Context(), common.CreateLocalPVArgs{
+			LocalVolumeLikeObject: &tc.lvset,
+			RuntimeConfig:         r.runtimeConfig,
+			StorageClass:          tc.sc,
+			MountPointMap:         tc.mountPoints,
+			Client:                r.Client,
+			ClientReader:          r.ClientReader,
+			SymLinkPath:           tc.symlinkpath,
+			BlockDevice:           internal.BlockDevice{KName: filepath.Base(tc.deviceName)},
+			IDExists:              true,
+			ExtraLabelsForPV:      map[string]string{},
+		})
 		assert.Nil(t, err)
 
 	}
 
+}
+
+func TestCreatePV_SetsLVDLOwnerRefToLocalVolumeSet(t *testing.T) {
+	reclaimPolicyDelete := corev1.PersistentVolumeReclaimDelete
+	lvset := localv1alpha1.LocalVolumeSet{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       localv1alpha1.LocalVolumeSetKind,
+			APIVersion: localv1alpha1.GroupVersion.String(),
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "lvset-ownerref",
+			Namespace: "default",
+			UID:       "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+		},
+		Spec: localv1alpha1.LocalVolumeSetSpec{
+			StorageClassName: "storageclass-ownerref",
+		},
+	}
+	node := corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:   "nodename-ownerref",
+			Labels: map[string]string{corev1.LabelHostname: "node-hostname-ownerref"},
+		},
+	}
+	sc := storagev1.StorageClass{
+		ObjectMeta:    metav1.ObjectMeta{Name: "storageclass-ownerref"},
+		ReclaimPolicy: &reclaimPolicyDelete,
+	}
+
+	symLinkPath := "/mnt/local-storage/" + sc.Name + "/device-ownerref"
+	pvName := common.GeneratePVName(filepath.Base(symLinkPath), node.Name, sc.Name)
+
+	r, testConfig := newFakeLocalVolumeSetReconciler(t, &lvset, &node, &sc)
+	r.nodeName = node.Name
+	testConfig.runtimeConfig.Node = &node
+	testConfig.runtimeConfig.Name = common.GetProvisionedByValue(node)
+	testConfig.runtimeConfig.Namespace = lvset.Namespace
+	testConfig.runtimeConfig.DiscoveryMap[sc.Name] = provCommon.MountConfig{
+		VolumeMode: string(localv1.PersistentVolumeBlock),
+	}
+	testConfig.fakeVolUtil.AddNewDirEntries("/mnt/local-storage/", map[string][]*provUtil.FakeDirEntry{
+		sc.Name: {
+			{Name: "device-ownerref", Capacity: 10 * common.GiB, VolumeType: provUtil.FakeEntryBlock},
+		},
+	})
+
+	origGlob := internal.FilePathGlob
+	origEval := internal.FilePathEvalSymLinks
+	origExec := internal.CmdExecutor
+	t.Cleanup(func() {
+		internal.FilePathGlob = origGlob
+		internal.FilePathEvalSymLinks = origEval
+		internal.CmdExecutor = origExec
+	})
+	internal.FilePathGlob = func(pattern string) ([]string, error) {
+		return []string{"/dev/disk/by-id/wwn-ownerref"}, nil
+	}
+	internal.FilePathEvalSymLinks = func(path string) (string, error) {
+		return "/dev/device-ownerref", nil
+	}
+	blkidAction := func(cmd string, args ...string) utilexec.Cmd {
+		return &testingexec.FakeCmd{
+			CombinedOutputScript: []testingexec.FakeAction{
+				func() ([]byte, []byte, error) {
+					return []byte("uuid-ownerref"), nil, nil
+				},
+			},
+		}
+	}
+	internal.CmdExecutor = &testingexec.FakeExec{
+		CommandScript: []testingexec.FakeCommandAction{blkidAction},
+	}
+
+	err := common.CreateLocalPV(t.Context(), common.CreateLocalPVArgs{
+		LocalVolumeLikeObject: &lvset,
+		RuntimeConfig:         r.runtimeConfig,
+		StorageClass:          sc,
+		MountPointMap:         sets.NewString(),
+		Client:                r.Client,
+		ClientReader:          r.ClientReader,
+		SymLinkPath:           symLinkPath,
+		BlockDevice:           internal.BlockDevice{KName: "device-ownerref"},
+		IDExists:              true,
+		ExtraLabelsForPV:      map[string]string{},
+	})
+	assert.NoError(t, err)
+
+	lvdl := &localv1.LocalVolumeDeviceLink{}
+	err = r.Client.Get(context.TODO(), types.NamespacedName{Name: pvName, Namespace: lvset.Namespace}, lvdl)
+	assert.NoError(t, err)
+	if assert.Len(t, lvdl.OwnerReferences, 1, "LVDL should carry owner reference to LocalVolumeSet") {
+		assert.Equal(t, localv1alpha1.GroupVersion.String(), lvdl.OwnerReferences[0].APIVersion)
+		assert.Equal(t, localv1alpha1.LocalVolumeSetKind, lvdl.OwnerReferences[0].Kind)
+		assert.Equal(t, lvset.Name, lvdl.OwnerReferences[0].Name)
+		assert.Equal(t, lvset.UID, lvdl.OwnerReferences[0].UID)
+	}
 }
