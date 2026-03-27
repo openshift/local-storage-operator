@@ -6,6 +6,11 @@
 
 2. Create images as documented below
 
+## Overriding diskmaker image or operator image directly after deployment
+
+1. Delete the subscription object so as OLM is no longer managing the operator.
+2. Edit the CSV object to override diskmaker image.
+
 ## Running the operator locally
 
 1. Install LSO via OLM/OperatorHub in GUI

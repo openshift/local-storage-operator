@@ -37,3 +37,36 @@ spec:
         annotations:
           summary: "LocalVolumeSet has had a deletion timestamp older than 72 hours"
           description: "LocalVolumeSet {{ $labels.lvSetName }} has been marked for deletion for more than 72 hours."
+    - name: lso_no_stable_volume_path
+      rules:
+      - alert: LSONoStableLocalVolumePath
+        expr: min_over_time(lso_device_link_without_stable_path{policy="None"}[5m]) == 1
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: |
+            Local Storage operator has observed that pv {{ $labels.persistent_volume }} does not
+            have a stable device-path in /dev/disk/by-id/ that it can use and hence it may be using
+            device paths which may change on reboot. Such device paths should be used carefully.
+          message: "LSO has detected pv {{ $labels.persistent_volume }} without any valid stable path"
+          description: |
+            Local Storage operator has observed that pv {{ $labels.persistent_volume }} does not
+            have a stable device-path in /dev/disk/by-id/ that it can use and hence it may be using
+            device paths which may change on reboot. Such device paths should be used carefully.
+    - name: lso_device_link_mismatch
+      rules:
+      - alert: LSODeviceLinkMismatch
+        expr: min_over_time(lso_device_link_mismatch{policy="None"}[5m]) == 1
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: |
+            Local Storage operator has observed that pv {{ $labels.persistent_volume }} does not
+            have matching symlink it should be using vs symlink LSO prefers it to use for stability between reboots and OS upgrade.
+          message: "LSO has detected pv {{ $labels.persistent_volume }} with symlink mismatch"
+          description: |
+            Local Storage operator has observed that pv {{ $labels.persistent_volume }} is using a symlink
+            that is not optimum for stability between reboots and OS upgrades. Consider updating
+            LocalVolumeDeviceLink policy to preferredSymlink to allow LSO to manage the symlink.
