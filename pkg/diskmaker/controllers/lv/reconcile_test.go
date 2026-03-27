@@ -5,6 +5,8 @@ import (
 	"context"
 	"embed"
 	"fmt"
+	utilexec "k8s.io/utils/exec"
+	testingexec "k8s.io/utils/exec/testing"
 	"os"
 	"path"
 	"path/filepath"
@@ -24,6 +26,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -55,7 +58,7 @@ func TestFindMatchingDisk(t *testing.T) {
 		fakeGlobFunc          func(string) ([]string, error)
 		fakeEvalSymlink       func(string) (string, error)
 		userSpecifiedDisk     []string
-		matchingDevices       []DiskLocation
+		matchingDevices       []internal.DiskLocation
 	}{
 		{
 			name: "when devices match by their device names",
@@ -87,16 +90,16 @@ func TestFindMatchingDisk(t *testing.T) {
 				},
 			},
 			userSpecifiedDisk: []string{"/dev/sdc1", "/dev/sdc2"},
-			matchingDevices: []DiskLocation{
+			matchingDevices: []internal.DiskLocation{
 				{
-					diskNamePath:     "/dev/sdc1",
-					userProvidedPath: "/dev/sdc1",
-					diskID:           "/dev/disk/by-id/wwn-abcde",
+					DiskNamePath:     "/dev/sdc1",
+					UserProvidedPath: "/dev/sdc1",
+					DiskID:           "/dev/disk/by-id/wwn-abcde",
 				},
 				{
-					diskNamePath:     "/dev/sdc2",
-					userProvidedPath: "/dev/sdc2",
-					diskID:           "/dev/disk/by-id/wwn-xyz",
+					DiskNamePath:     "/dev/sdc2",
+					UserProvidedPath: "/dev/sdc2",
+					DiskID:           "/dev/disk/by-id/wwn-xyz",
 				},
 			},
 		},
@@ -134,9 +137,9 @@ func TestFindMatchingDisk(t *testing.T) {
 				for _, expectedDiskLocation := range test.matchingDevices {
 					matchFound := false
 					for _, foundLocation := range foundDevices {
-						if foundLocation.diskNamePath == expectedDiskLocation.diskNamePath &&
-							foundLocation.diskID == expectedDiskLocation.diskID &&
-							foundLocation.userProvidedPath == expectedDiskLocation.userProvidedPath {
+						if foundLocation.DiskNamePath == expectedDiskLocation.DiskNamePath &&
+							foundLocation.DiskID == expectedDiskLocation.DiskID &&
+							foundLocation.UserProvidedPath == expectedDiskLocation.UserProvidedPath {
 							matchFound = true
 						}
 					}
@@ -225,7 +228,13 @@ func TestCreateSymLinkByDeviceID(t *testing.T) {
 	}
 	d, _ := getFakeDiskMaker(t, tmpSymLinkTargetDir, lv, sc)
 	d.fsInterface = FakeFileSystemInterface{}
-	diskLocation := DiskLocation{fakeDisk.Name(), fakeDiskByID.Name(), fakeDisk.Name(), internal.BlockDevice{}, false}
+	diskLocation := internal.DiskLocation{
+		DiskNamePath:     fakeDisk.Name(),
+		UserProvidedPath: fakeDiskByID.Name(),
+		DiskID:           fakeDisk.Name(),
+		BlockDevice:      internal.BlockDevice{},
+		ForceWipe:        false,
+	}
 
 	d.runtimeConfig = &provCommon.RuntimeConfig{
 		UserConfig: &provCommon.UserConfig{
@@ -292,7 +301,13 @@ func TestWipeDeviceWhenCreateSymLinkByDeviceName(t *testing.T) {
 
 			d, _ := getFakeDiskMaker(t, tmpSymLinkTargetDir, lv, sc)
 			d.fsInterface = FakeFileSystemInterface{}
-			diskLocation := DiskLocation{fname, "", fname, internal.BlockDevice{}, test.forceWipe}
+			diskLocation := internal.DiskLocation{
+				DiskNamePath:     fname,
+				UserProvidedPath: "",
+				DiskID:           fname,
+				BlockDevice:      internal.BlockDevice{},
+				ForceWipe:        test.forceWipe,
+			}
 			d.createSymlink(diskLocation, fname, path.Join(tmpSymLinkTargetDir, "diskName"), false)
 
 			// assert that target symlink is created for disk name when no disk ID is available
@@ -300,6 +315,229 @@ func TestWipeDeviceWhenCreateSymLinkByDeviceName(t *testing.T) {
 
 			// assert that disk was (or wasn't) wiped
 			assert.Truef(t, volHelper.HasExt4(t, fname) != test.forceWipe, "unexpected wiping disk %s", fname)
+		})
+	}
+}
+
+func TestProcessRejectedDevicesForDeviceLinks(t *testing.T) {
+	const (
+		testNodeName   = "node-a"
+		testNamespace  = "default"
+		currentLink    = "current-link"
+		preferredByID  = "/dev/disk/by-id/wwn-preferred"
+		secondaryByID  = "/dev/disk/by-id/scsi-secondary"
+		blockDevKName  = "sdb"
+		blockDevName   = "sdb"
+		filesystemUUID = "uuid-test-1234"
+	)
+
+	tests := []struct {
+		name                 string
+		createCurrentSymlink bool
+		createPV             bool
+		createLVDL           bool
+		useEmptyKName        bool
+		byIDGlobErr          error
+		execCommandErr       bool
+		expectStatusUpdated  bool
+		expectLVDLNotFound   bool
+	}{
+		{
+			name:                 "updates lvdl status for matching ignored device",
+			createCurrentSymlink: true,
+			createPV:             true,
+			createLVDL:           true,
+			expectStatusUpdated:  true,
+		},
+		{
+			name:                 "skips when no existing symlink in storage class dir",
+			createCurrentSymlink: false,
+			createPV:             true,
+			createLVDL:           true,
+			expectStatusUpdated:  false,
+		},
+		{
+			name:                 "skips when preferred by-id lookup fails",
+			createCurrentSymlink: true,
+			createPV:             true,
+			createLVDL:           true,
+			byIDGlobErr:          fmt.Errorf("glob failure"),
+			expectStatusUpdated:  false,
+		},
+		{
+			name:                 "skips when pv does not exist",
+			createCurrentSymlink: true,
+			createPV:             false,
+			createLVDL:           true,
+			expectStatusUpdated:  false,
+		},
+		{
+			name:                 "does not create lvdl while processing rejected devices",
+			createCurrentSymlink: true,
+			createPV:             true,
+			createLVDL:           false,
+			expectLVDLNotFound:   true,
+		},
+		{
+			name:                 "skips when device path resolution fails",
+			createCurrentSymlink: true,
+			createPV:             true,
+			createLVDL:           true,
+			useEmptyKName:        true,
+			expectStatusUpdated:  false,
+		},
+		{
+			name:                 "skips update when blkid command fails",
+			createCurrentSymlink: true,
+			createPV:             true,
+			createLVDL:           true,
+			execCommandErr:       true,
+			expectStatusUpdated:  false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			tmpRoot := createTmpDir(t, "", "rejected-devices")
+			defer os.RemoveAll(tmpRoot)
+
+			symLinkDir := filepath.Join(tmpRoot, storageClassName)
+			err := os.MkdirAll(symLinkDir, 0755)
+			assert.NoError(t, err)
+
+			devicePath := filepath.Join(tmpRoot, blockDevName)
+			err = os.WriteFile(devicePath, []byte("device"), 0644)
+			assert.NoError(t, err)
+
+			currentSymlinkPath := filepath.Join(symLinkDir, currentLink)
+			if tc.createCurrentSymlink {
+				err = os.Symlink(devicePath, currentSymlinkPath)
+				assert.NoError(t, err)
+			}
+
+			pvName := common.GeneratePVName(currentLink, testNodeName, storageClassName)
+			objs := make([]runtime.Object, 0)
+			if tc.createPV {
+				objs = append(objs, &corev1.PersistentVolume{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: pvName,
+					},
+				})
+			}
+			if tc.createLVDL {
+				objs = append(objs, &localv1.LocalVolumeDeviceLink{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      pvName,
+						Namespace: testNamespace,
+					},
+					Spec: localv1.LocalVolumeDeviceLinkSpec{
+						PersistentVolumeName: pvName,
+						Policy:               localv1.DeviceLinkPolicyNone,
+					},
+				})
+			}
+
+			r, tcCtx := getFakeDiskMaker(t, tmpRoot, objs...)
+			r.runtimeConfig.Node = &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: testNodeName}}
+			r.runtimeConfig.Namespace = testNamespace
+
+			origGlob := internal.FilePathGlob
+			origEval := internal.FilePathEvalSymLinks
+			origExec := internal.CmdExecutor
+			defer func() {
+				internal.FilePathGlob = origGlob
+				internal.FilePathEvalSymLinks = origEval
+				internal.CmdExecutor = origExec
+			}()
+
+			internal.FilePathGlob = func(pattern string) ([]string, error) {
+				if strings.HasPrefix(pattern, internal.DiskByIDDir) {
+					if tc.byIDGlobErr != nil {
+						return nil, tc.byIDGlobErr
+					}
+					return []string{preferredByID, secondaryByID}, nil
+				}
+				return filepath.Glob(pattern)
+			}
+
+			internal.FilePathEvalSymLinks = func(p string) (string, error) {
+				switch p {
+				case preferredByID, secondaryByID:
+					// Simulate by-id links resolving to this block device.
+					return filepath.Join("/dev", blockDevKName), nil
+				default:
+					return filepath.EvalSymlinks(p)
+				}
+			}
+
+			if tc.execCommandErr {
+				blkidAction := func(cmd string, args ...string) utilexec.Cmd {
+					return &testingexec.FakeCmd{
+						CombinedOutputScript: []testingexec.FakeAction{
+							func() ([]byte, []byte, error) {
+								return nil, nil, fmt.Errorf("exit status 1")
+							},
+						},
+					}
+				}
+				internal.CmdExecutor = &testingexec.FakeExec{
+					CommandScript: []testingexec.FakeCommandAction{blkidAction},
+				}
+			} else {
+				blkidAction := func(cmd string, args ...string) utilexec.Cmd {
+					return &testingexec.FakeCmd{
+						CombinedOutputScript: []testingexec.FakeAction{
+							func() ([]byte, []byte, error) {
+								return []byte(filesystemUUID), nil, nil
+							},
+						},
+					}
+				}
+				internal.CmdExecutor = &testingexec.FakeExec{
+					CommandScript: []testingexec.FakeCommandAction{blkidAction},
+				}
+			}
+
+			kname := blockDevKName
+			if tc.useEmptyKName {
+				kname = ""
+			}
+			rejected := map[string][]internal.DiskLocation{
+				storageClassName: {
+					{
+						DiskNamePath:     filepath.Join("/dev", blockDevKName),
+						UserProvidedPath: filepath.Join("/dev", blockDevKName),
+						DiskID:           preferredByID,
+						BlockDevice: internal.BlockDevice{
+							Name:  blockDevName,
+							KName: kname,
+						},
+					},
+				},
+			}
+
+			r.processRejectedDevicesForDeviceLinks(context.TODO(), rejected)
+
+			gotLVDL := &localv1.LocalVolumeDeviceLink{}
+			err = tcCtx.fakeClient.Get(context.TODO(), types.NamespacedName{Name: pvName, Namespace: testNamespace}, gotLVDL)
+			if tc.expectLVDLNotFound {
+				assert.True(t, apierrors.IsNotFound(err))
+				return
+			}
+			assert.NoError(t, err)
+
+			if tc.expectStatusUpdated {
+				assert.Equal(t, preferredByID, gotLVDL.Status.CurrentLinkTarget)
+				assert.Equal(t, preferredByID, gotLVDL.Status.PreferredLinkTarget)
+				assert.Equal(t, filesystemUUID, gotLVDL.Status.FilesystemUUID)
+				assert.ElementsMatch(t, []string{preferredByID, secondaryByID}, gotLVDL.Status.ValidLinkTargets)
+				return
+			}
+
+			assert.Equal(t, "", gotLVDL.Status.CurrentLinkTarget)
+			assert.Equal(t, "", gotLVDL.Status.PreferredLinkTarget)
+			assert.Equal(t, "", gotLVDL.Status.FilesystemUUID)
+			assert.Empty(t, gotLVDL.Status.ValidLinkTargets)
 		})
 	}
 }
@@ -321,7 +559,7 @@ func getFakeDiskMaker(t *testing.T, symlinkLocation string, objs ...runtime.Obje
 	assert.NoErrorf(t, err, "adding storagev1 to scheme")
 	err = appsv1.AddToScheme(scheme)
 	assert.NoErrorf(t, err, "adding appsv1 to scheme")
-	fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithRuntimeObjects(objs...).Build()
+	fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(&localv1.LocalVolumeDeviceLink{}).WithRuntimeObjects(objs...).Build()
 
 	fakeRecorder := record.NewFakeRecorder(20)
 
@@ -359,7 +597,6 @@ func getFakeDiskMaker(t *testing.T, symlinkLocation string, objs ...runtime.Obje
 	)
 
 	return lvReconciler, tc
-
 }
 
 func getDeiveIDs() []string {
