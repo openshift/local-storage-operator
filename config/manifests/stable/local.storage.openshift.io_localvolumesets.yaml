@@ -39,6 +39,21 @@ spec:
           spec:
             description: LocalVolumeSetSpec defines the desired state of LocalVolumeSet
             properties:
+              deviceExclusionSpec:
+                description: DeviceExclusionSpec is the filtration rule for excluding
+                  a device in the device discovery
+                properties:
+                  deviceNameFilter:
+                    description: |-
+                      DeviceNameFilter is a list of glob patterns. Devices whose kernel name (KName) matches
+                      any of these patterns are excluded from automatic provisioning.
+                      Glob patterns follow filepath.Match syntax: '?' matches any single non-separator character,
+                      '*' matches any sequence of non-separator characters.
+                      Example: ["rbd*"] excludes all rbd0, rbd1, etc.
+                    items:
+                      type: string
+                    type: array
+                type: object
               deviceInclusionSpec:
                 description: DeviceInclusionSpec is the filtration rule for including
                   a device in the device discovery
