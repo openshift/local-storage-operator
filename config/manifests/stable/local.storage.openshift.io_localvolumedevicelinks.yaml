@@ -131,7 +131,6 @@ spec:
                   operator evaluated as the most stable and the least error prone. The local storage operator
                   recommends using this symlink, after a careful review by the cluster admin.
                 maxLength: 4096
-                minLength: 1
                 type: string
               validLinkTargets:
                 description: |-
@@ -144,8 +143,6 @@ spec:
                 x-kubernetes-list-type: set
             required:
             - currentLinkTarget
-            - preferredLinkTarget
-            - validLinkTargets
             type: object
         required:
         - spec

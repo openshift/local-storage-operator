@@ -3,7 +3,6 @@ package discovery
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"testing"
 
@@ -11,33 +10,28 @@ import (
 	"github.com/openshift/local-storage-operator/pkg/diskmaker"
 	"github.com/openshift/local-storage-operator/pkg/internal"
 	"github.com/stretchr/testify/assert"
+	utilexec "k8s.io/utils/exec"
+	testingexec "k8s.io/utils/exec/testing"
 )
 
-var lsblkOut string
-var blkidOut string
-
-// helperCommand returns a fake exec.Cmd for unit tests
-func helperCommand(command string, args ...string) *exec.Cmd {
-	cs := []string{"-test.run=TestHelperProcess", "--", command}
-	cs = append(cs, args...)
-	cmd := exec.Command(os.Args[0], cs...)
-	cmd.Env = []string{"GO_WANT_HELPER_PROCESS=1", fmt.Sprintf("COMMAND=%s", command),
-		fmt.Sprintf("LSBLKOUT=%s", lsblkOut), fmt.Sprintf("BLKIDOUT=%s", blkidOut)}
-	return cmd
-}
-
-func TestHelperProcess(t *testing.T) {
-	if os.Getenv("GO_WANT_HELPER_PROCESS") != "1" {
-		return
+// newFakeExecutor creates a FakeExec that returns the given outputs in order.
+func newFakeExecutor(outputs ...string) *testingexec.FakeExec {
+	fe := &testingexec.FakeExec{}
+	for _, output := range outputs {
+		out := output
+		fakeCmd := &testingexec.FakeCmd{
+			CombinedOutputScript: []testingexec.FakeAction{
+				func() ([]byte, []byte, error) {
+					return []byte(out), nil, nil
+				},
+			},
+		}
+		cmdAction := func(cmd string, args ...string) utilexec.Cmd {
+			return fakeCmd
+		}
+		fe.CommandScript = append(fe.CommandScript, cmdAction)
 	}
-
-	defer os.Exit(0)
-	switch os.Getenv("COMMAND") {
-	case "lsblk":
-		fmt.Fprintf(os.Stdout, "%s", os.Getenv("LSBLKOUT"))
-	case "blkid":
-		fmt.Fprintf(os.Stdout, "%s", os.Getenv("BLKIDOUT"))
-	}
+	return fe
 }
 
 func TestDiscoverDevices(t *testing.T) {
@@ -61,13 +55,13 @@ func TestDiscoverDevices(t *testing.T) {
 	}
 
 	for _, tc := range testcases {
-		lsblkOut = tc.fakelsblkCmdOutput
-		blkidOut = tc.fakeblkidCmdOutput
-		internal.ExecCommand = helperCommand
+		origExec := internal.CmdExecutor
+		// blkid is called first (by GetDeviceFSMap), then lsblk
+		internal.CmdExecutor = newFakeExecutor(tc.fakeblkidCmdOutput, tc.fakelsblkCmdOutput)
 		internal.FilePathGlob = tc.fakeGlobfunc
 		defer func() {
 			internal.FilePathGlob = filepath.Glob
-			internal.ExecCommand = exec.Command
+			internal.CmdExecutor = origExec
 		}()
 		err := tc.deviceDiscovery.discoverDevices()
 		assert.NoError(t, err)
@@ -99,12 +93,13 @@ func TestDiscoverDevicesFail(t *testing.T) {
 	}
 
 	for _, tc := range testcases {
-		lsblkOut = tc.fakeLsblkCmdOutput
-		internal.ExecCommand = helperCommand
+		origExec := internal.CmdExecutor
+		// blkid is called first (by GetDeviceFSMap), then lsblk
+		internal.CmdExecutor = newFakeExecutor("", tc.fakeLsblkCmdOutput)
 		internal.FilePathGlob = tc.fakeGlobfunc
 		defer func() {
 			internal.FilePathGlob = filepath.Glob
-			internal.ExecCommand = exec.Command
+			internal.CmdExecutor = origExec
 		}()
 		tc.deviceDiscovery.apiClient = tc.mockClient
 		err := tc.deviceDiscovery.discoverDevices()
@@ -280,13 +275,13 @@ func TestValidBlockDevices(t *testing.T) {
 	}
 
 	for _, tc := range testcases {
-		lsblkOut = tc.fakeLsblkCmdOutput
-		blkidOut = tc.fakeblkidCmdOutput
-		internal.ExecCommand = helperCommand
+		origExec := internal.CmdExecutor
+		// blkid is called first (by GetDeviceFSMap), then lsblk
+		internal.CmdExecutor = newFakeExecutor(tc.fakeblkidCmdOutput, tc.fakeLsblkCmdOutput)
 		internal.FilePathGlob = tc.fakeGlobfunc
 		defer func() {
 			internal.FilePathGlob = filepath.Glob
-			internal.ExecCommand = exec.Command
+			internal.CmdExecutor = origExec
 		}()
 		actual, err := getValidBlockDevices()
 		assert.NoError(t, err)
