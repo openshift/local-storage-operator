@@ -10,6 +10,7 @@ import (
 	localv1 "github.com/openshift/local-storage-operator/api/v1"
 	localv1alpha1 "github.com/openshift/local-storage-operator/api/v1alpha1"
 	"github.com/openshift/local-storage-operator/pkg/common"
+	diskmakerCache "github.com/openshift/local-storage-operator/pkg/diskmaker/cache"
 	diskmakerControllerLv "github.com/openshift/local-storage-operator/pkg/diskmaker/controllers/lv"
 	diskmakerControllerLvSet "github.com/openshift/local-storage-operator/pkg/diskmaker/controllers/lvset"
 	"github.com/openshift/local-storage-operator/pkg/localmetrics"
@@ -100,6 +101,15 @@ func startManager(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	// Create the shared LVDL cache and register it as a manager.Runnable.
+	// The manager will call Start(ctx) after its own caches are started,
+	// and the cache waits for LVDL informer sync before processing events.
+	pvLinkCache := diskmakerCache.NewLocalVolumeDeviceLinkCache(mgr.GetClient(), mgr)
+	if err := mgr.Add(pvLinkCache); err != nil {
+		klog.ErrorS(err, "failed to add pvLinkCache runnable")
+		return err
+	}
+
 	if err = diskmakerControllerLv.NewLocalVolumeReconciler(
 		mgr.GetClient(),
 		mgr.GetAPIReader(),
@@ -107,6 +117,7 @@ func startManager(cmd *cobra.Command, args []string) error {
 		common.GetLocalDiskLocationPath(),
 		&provDeleter.CleanupStatusTracker{ProcTable: provDeleter.NewProcTable()},
 		getRuntimeConfig(diskmakerControllerLv.ComponentName, mgr),
+		pvLinkCache,
 	).WithManager(mgr); err != nil {
 		klog.ErrorS(err, "unable to create LocalVolume diskmaker controller")
 		return err
@@ -119,6 +130,7 @@ func startManager(cmd *cobra.Command, args []string) error {
 		&diskmakerControllerLvSet.WallTime{},
 		&provDeleter.CleanupStatusTracker{ProcTable: provDeleter.NewProcTable()},
 		getRuntimeConfig(diskmakerControllerLvSet.ComponentName, mgr),
+		pvLinkCache,
 	).WithManager(mgr); err != nil {
 		klog.ErrorS(err, "unable to create LocalVolumeSet diskmaker controller")
 		return err

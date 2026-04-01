@@ -20,6 +20,7 @@ import (
 	localv1 "github.com/openshift/local-storage-operator/api/v1"
 	localv1alpha1 "github.com/openshift/local-storage-operator/api/v1alpha1"
 	"github.com/openshift/local-storage-operator/pkg/common"
+	diskmakerCache "github.com/openshift/local-storage-operator/pkg/diskmaker/cache"
 	"github.com/openshift/local-storage-operator/pkg/internal"
 	test "github.com/openshift/local-storage-operator/test/framework"
 	"github.com/openshift/local-storage-operator/test/framework/util"
@@ -266,7 +267,7 @@ func TestProcessExistingSymlink_UsesFullSymlinkPath(t *testing.T) {
 		},
 	}
 
-	err := d.processExistingSymlink(context.TODO(), sc.Name, deviceName, diskLocation, sets.NewString())
+	err := d.processExistingSymlink(context.TODO(), sc.Name, symlinkPath, diskLocation, sets.NewString())
 	assert.NoError(t, err)
 	assert.Equal(t, symlinkPath, diskLocation.SymlinkPath)
 	assert.Equal(t, deviceTarget, diskLocation.SymlinkSource)
@@ -1053,6 +1054,9 @@ func getFakeDiskMaker(t *testing.T, symlinkLocation string, objs ...runtime.Obje
 		fakeVolUtil:   fakeVolUtil,
 	}
 
+	pvLinkCache := diskmakerCache.NewLocalVolumeDeviceLinkCache(fakeClient, nil)
+	pvLinkCache.MarkSyncedForTests()
+
 	lvReconciler := NewLocalVolumeReconciler(
 		fakeClient,
 		fakeClient,
@@ -1060,6 +1064,7 @@ func getFakeDiskMaker(t *testing.T, symlinkLocation string, objs ...runtime.Obje
 		symlinkLocation,
 		&provDeleter.CleanupStatusTracker{ProcTable: provDeleter.NewProcTable()},
 		runtimeConfig,
+		pvLinkCache,
 	)
 
 	return lvReconciler, tc

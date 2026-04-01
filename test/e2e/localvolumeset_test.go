@@ -385,7 +385,7 @@ func LocalVolumeSetTest(ctx *framework.TestCtx, cleanupFuncs *[]cleanupFn) func(
 		// deletion + recreation preserves the correct symlink at each step.
 		t.Logf("TEST: multi-step preferred link reconciliation for lvset (scsi-2 → scsi-3 → wwn) for %s", selectedFSPV.Name)
 		selectedFSPV, multiStepCleanups := verifyMultiStepPreferredLinkReconciliation(
-			t, ctx, f, namespace, twentyToFiftyFilesystem.Spec.StorageClassName, selectedFSPV, newPreferredTarget,
+			t, ctx, f, namespace, selectedFSPV, newPreferredTarget,
 		)
 		fsPVs[0] = selectedFSPV
 		for i := range multiStepCleanups {

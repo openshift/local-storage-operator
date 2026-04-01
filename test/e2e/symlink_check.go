@@ -240,7 +240,6 @@ func verifyMultiStepPreferredLinkReconciliation(
 	ctx *framework.TestCtx,
 	f *framework.Framework,
 	namespace string,
-	storageClassName string,
 	pv corev1.PersistentVolume,
 	currentSymlink string,
 ) (corev1.PersistentVolume, []cleanupFn) {

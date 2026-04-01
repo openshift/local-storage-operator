@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"hash/fnv"
 	"path/filepath"
+	"strings"
 
 	localv1 "github.com/openshift/local-storage-operator/api/v1"
 	"github.com/openshift/local-storage-operator/pkg/internal"
@@ -53,7 +54,6 @@ type CreateLocalPVArgs struct {
 	Client                client.Client
 	// symlinkPath points to path on /mnt/local-storage
 	SymLinkPath      string
-	IDExists         bool
 	ExtraLabelsForPV map[string]string
 
 	// ClientReader is used to read objects from the apiserver
@@ -80,7 +80,6 @@ func CreateLocalPV(ctx context.Context, args CreateLocalPVArgs) error {
 	// symlinkPath points to path on /mnt/local-storage
 	symLinkPath := args.SymLinkPath
 	deviceName := args.BlockDevice.KName
-	idExists := args.IDExists
 	extraLabelsForPV := args.ExtraLabelsForPV
 	nodeLabels := runtimeConfig.Node.GetLabels()
 	hostname, found := nodeLabels[corev1.LabelHostname]
@@ -106,18 +105,6 @@ func CreateLocalPV(ctx context.Context, args CreateLocalPVArgs) error {
 		},
 	}
 
-	mountConfig, found := runtimeConfig.DiscoveryMap[storageClass.GetName()]
-	if !found {
-		return fmt.Errorf("could not find config for storageClass: %q", storageClass.GetName())
-	}
-
-	desiredVolumeMode := corev1.PersistentVolumeMode(mountConfig.VolumeMode)
-
-	actualVolumeMode, err := provCommon.GetVolumeMode(runtimeConfig.VolUtil, symLinkPath)
-	if err != nil {
-		return fmt.Errorf("could not read the device's volume mode from the node: %w", err)
-	}
-
 	accessor, err := meta.Accessor(obj)
 	if err != nil {
 		return fmt.Errorf("could not get object metadata accessor from obj: %+v", obj)
@@ -129,20 +116,43 @@ func CreateLocalPV(ctx context.Context, args CreateLocalPVArgs) error {
 		return fmt.Errorf("name: %q, namespace: %q, or  kind: %q is empty for obj: %+v", name, namespace, kind, obj)
 	}
 
-	deviceHandler := internal.NewDeviceLinkHandler(args.CurrentSymlink, client, args.ClientReader)
+	deviceHandler := internal.NewDeviceLinkHandler(client, args.ClientReader, args.RuntimeConfig.Recorder)
+	klog.V(4).Infof("finding lvdl %s %s", pvName, namespace)
 	lvdl, err := deviceHandler.FindLVDL(ctx, pvName, namespace)
 	if err != nil && !apierrors.IsNotFound(err) {
+		klog.Infof("error finding lvdl %s: %v", pvName, err)
 		return fmt.Errorf("error finding localvolumedevicelink object %s: %w", pvName, err)
 	}
 
 	// Symlink recreation must happen before PV creation because it fixes the
 	// symlink that the PV will reference. RecreateSymlinkIfNeeded already
 	// updates the LVDL status, so we skip ApplyStatus later.
-	requiresSymlinkRecreation := internal.HasMismatchingSymlink(lvdl)
+	requiresSymlinkRecreation := internal.HasMismatchingSymlink(lvdl, args.BlockDevice)
 	if requiresSymlinkRecreation {
 		if _, err := deviceHandler.RecreateSymlinkIfNeeded(ctx, lvdl, symLinkPath, args.BlockDevice); err != nil {
 			return fmt.Errorf("error recreating symlink: %w", err)
 		}
+	}
+
+	effectiveCurrentSource, err := internal.Readlink(symLinkPath)
+	if err != nil {
+		currentPreferredLink, _ := args.BlockDevice.GetPathByID()
+		klog.ErrorS(err, "could not read symlink", "symlink", symLinkPath, "currentSymlink", args.CurrentSymlink, "preferredCurrent", currentPreferredLink)
+		return fmt.Errorf("unable to resolve symlink %s: %v", symLinkPath, err)
+	}
+
+	idExists := strings.HasPrefix(effectiveCurrentSource, internal.DiskByIDDir)
+
+	mountConfig, found := runtimeConfig.DiscoveryMap[storageClass.GetName()]
+	if !found {
+		return fmt.Errorf("could not find config for storageClass: %q", storageClass.GetName())
+	}
+
+	desiredVolumeMode := corev1.PersistentVolumeMode(mountConfig.VolumeMode)
+
+	actualVolumeMode, err := provCommon.GetVolumeMode(runtimeConfig.VolUtil, symLinkPath)
+	if err != nil {
+		return fmt.Errorf("could not read the device's volume mode from the node: %w", err)
 	}
 
 	// Do not attempt to create or update existing PV's that have been released
@@ -276,9 +286,9 @@ func CreateLocalPV(ctx context.Context, args CreateLocalPVArgs) error {
 	}
 
 	// ApplyStatus creates/updates the LVDL after the PV exists. Skip it when
-	// requiresSymlinkRecreation already updated the LVDL status above.
+	// RecreateSymlinkIfNeeded already updated the LVDL status above.
 	if !requiresSymlinkRecreation {
-		if _, err := deviceHandler.ApplyStatus(ctx, pvName, namespace, args.BlockDevice, obj); err != nil {
+		if _, err := deviceHandler.ApplyStatus(ctx, pvName, namespace, args.BlockDevice, obj, args.CurrentSymlink); err != nil {
 			return fmt.Errorf("error applying device link status: %w", err)
 		}
 	}

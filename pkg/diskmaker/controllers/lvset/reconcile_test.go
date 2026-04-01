@@ -1,7 +1,6 @@
 package lvset
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -12,6 +11,7 @@ import (
 	v1api "github.com/openshift/local-storage-operator/api/v1"
 	v1alphav1api "github.com/openshift/local-storage-operator/api/v1alpha1"
 	"github.com/openshift/local-storage-operator/pkg/common"
+	"github.com/openshift/local-storage-operator/pkg/diskmaker/cache"
 	"github.com/openshift/local-storage-operator/pkg/internal"
 	test "github.com/openshift/local-storage-operator/test/framework"
 	"github.com/stretchr/testify/assert"
@@ -108,6 +108,7 @@ func newFakeLocalVolumeSetReconciler(t *testing.T, objs ...runtime.Object) (*Loc
 		fakeClock,
 		&provDeleter.CleanupStatusTracker{ProcTable: provDeleter.NewProcTable()},
 		runtimeConfig,
+		nil,
 	)
 
 	return lvsReconciler, tc
@@ -272,6 +273,7 @@ func TestProcessNewSymlink(t *testing.T) {
 			}
 
 			r, ctx := newFakeLocalVolumeSetReconciler(t, objs...)
+			r.pvLinkCache = cache.NewLocalVolumeDeviceLinkCache(r.Client, nil)
 			r.nodeName = node.Name
 			r.runtimeConfig.Node = node
 			r.runtimeConfig.Name = common.GetProvisionedByValue(*node)
@@ -366,21 +368,27 @@ func TestProvisionFromExistingPV(t *testing.T) {
 		symlinkTarget   string
 		expectDeviceID  bool
 		removeSymlink   bool
+		mockReadlink    bool
+		expectCurrLink  string
 		expectErrSubstr string
 	}{
 		{
 			name:           "preserves by-id annotation when symlink points to by-id path",
 			symlinkTarget:  "/dev/disk/by-id/wwn-null",
 			expectDeviceID: true,
+			expectCurrLink: "/dev/disk/by-id/wwn-null",
 		},
 		{
-			name:          "does not set device-id annotation for plain device path",
-			symlinkTarget: "/dev/null",
+			name:           "does not set device-id annotation for plain device path",
+			symlinkTarget:  "/dev/null",
+			expectCurrLink: "/dev/null",
 		},
 		{
-			name:            "returns readlink error when symlink is missing",
-			removeSymlink:   true,
-			expectErrSubstr: "no such file or directory",
+			name:           "proceeds without error when symlink is missing",
+			symlinkTarget:  "/dev/null",
+			removeSymlink:  true,
+			mockReadlink:   true,
+			expectCurrLink: "/dev/null",
 		},
 	}
 
@@ -434,10 +442,20 @@ func TestProvisionFromExistingPV(t *testing.T) {
 			})
 
 			origExec := internal.CmdExecutor
+			origReadlink := internal.Readlink
 			t.Cleanup(func() {
 				internal.CmdExecutor = origExec
+				internal.Readlink = origReadlink
 			})
 			internal.CmdExecutor = fakeCommandExecutor("", "", nil)
+			if tc.mockReadlink {
+				internal.Readlink = func(path string) (string, error) {
+					if path == symlinkPath {
+						return tc.symlinkTarget, nil
+					}
+					return origReadlink(path)
+				}
+			}
 
 			err := r.provisionFromExistingPV(
 				t.Context(),
@@ -467,7 +485,7 @@ func TestProvisionFromExistingPV(t *testing.T) {
 			assert.NoError(t, r.Client.Get(t.Context(), types.NamespacedName{Name: pvName, Namespace: lvset.Namespace}, lvdl))
 			assert.Equal(t, pvName, lvdl.Spec.PersistentVolumeName)
 			assert.Equal(t, v1api.DeviceLinkPolicyNone, lvdl.Spec.Policy)
-			assert.Equal(t, tc.symlinkTarget, lvdl.Status.CurrentLinkTarget)
+			assert.Equal(t, tc.expectCurrLink, lvdl.Status.CurrentLinkTarget)
 			assert.Equal(t, "", lvdl.Status.FilesystemUUID)
 		})
 	}
@@ -475,31 +493,64 @@ func TestProvisionFromExistingPV(t *testing.T) {
 
 func TestProcessRejectedDevicesForDeviceLinks(t *testing.T) {
 	testCases := []struct {
-		name              string
-		createSymlink     bool
-		makeSymlinkAFile  bool
-		mismatchingPolicy bool
-		expectCurrentLink string
-		expectCondition   string
+		name               string
+		createSymlink      bool
+		createClaimingLink bool
+		danglingSymlink    bool
+		seedCacheFromLVDL  bool
+		initialPolicy      v1api.DeviceLinkPolicy
+		initialCurrentLink string
+		initialPreferLink  string
+		expectCurrentLink  string
+		expectPreferLink   string
+		expectCondition    string
+		expectSymlinkPath  string
 	}{
 		{
-			name:              "updates lvdl status when existing symlink matches",
+			name:              "updates LVDL current link when existing symlink resolves",
 			createSymlink:     true,
+			initialPolicy:     v1api.DeviceLinkPolicyNone,
 			expectCurrentLink: "/dev/null",
+			expectPreferLink:  "/dev/disk/by-id/wwn-null",
 		},
 		{
-			name: "skips devices without existing symlink",
+			name:             "skips devices without existing symlink",
+			initialPolicy:    v1api.DeviceLinkPolicyNone,
+			expectPreferLink: "",
 		},
 		{
-			name:             "skips symlink entries that cannot be read",
-			createSymlink:    true,
-			makeSymlinkAFile: true,
+			name:               "records TargetAlreadyClaimed when another symlink owns preferred target",
+			createSymlink:      true,
+			createClaimingLink: true,
+			initialPolicy:      v1api.DeviceLinkPolicyPreferredLinkTarget,
+			initialCurrentLink: "/dev/null",
+			// stale preferred target should be replaced by resolved block-device target
+			initialPreferLink: "/dev/disk/by-id/stale-preferred-target",
+			expectCurrentLink: "/dev/null",
+			expectPreferLink:  "/dev/disk/by-id/wwn-null",
+			expectCondition:   "TargetAlreadyClaimed",
 		},
 		{
-			name:              "records condition when mismatching symlink must be recreated",
-			createSymlink:     true,
-			mismatchingPolicy: true,
-			expectCondition:   "PreferredTargetNotSymlink",
+			name:               "relinks existing symlink to computed preferred target",
+			createSymlink:      true,
+			initialPolicy:      v1api.DeviceLinkPolicyPreferredLinkTarget,
+			initialCurrentLink: "/dev/disk/by-id/legacy-null",
+			initialPreferLink:  "/dev/disk/by-id/stale-preferred-target",
+			expectCurrentLink:  "/dev/disk/by-id/wwn-null",
+			expectPreferLink:   "/dev/disk/by-id/wwn-null",
+			expectSymlinkPath:  "/dev/disk/by-id/wwn-null",
+		},
+		{
+			name:               "recomputes symlink path for dangling link and relinks to updated pathByID",
+			createSymlink:      true,
+			danglingSymlink:    true,
+			seedCacheFromLVDL:  true,
+			initialPolicy:      v1api.DeviceLinkPolicyPreferredLinkTarget,
+			initialCurrentLink: "claimed",
+			initialPreferLink:  "/dev/disk/by-id/stale-preferred-target",
+			expectCurrentLink:  "/dev/disk/by-id/wwn-null",
+			expectPreferLink:   "/dev/disk/by-id/wwn-null",
+			expectSymlinkPath:  "/dev/disk/by-id/wwn-null",
 		},
 	}
 
@@ -533,15 +584,15 @@ func TestProcessRejectedDevicesForDeviceLinks(t *testing.T) {
 				},
 				Spec: v1api.LocalVolumeDeviceLinkSpec{
 					PersistentVolumeName: pvName,
-					Policy:               v1api.DeviceLinkPolicyNone,
+					Policy:               tc.initialPolicy,
+				},
+				Status: v1api.LocalVolumeDeviceLinkStatus{
+					CurrentLinkTarget:   tc.initialCurrentLink,
+					PreferredLinkTarget: tc.initialPreferLink,
 				},
 			}
-			if tc.mismatchingPolicy {
-				preferredFile := filepath.Join(tmpDir, "preferred-file")
-				assert.NoError(t, os.WriteFile(preferredFile, []byte("not-a-symlink"), 0644))
-				lvdl.Spec.Policy = v1api.DeviceLinkPolicyPreferredLinkTarget
-				lvdl.Status.CurrentLinkTarget = "/dev/null"
-				lvdl.Status.PreferredLinkTarget = preferredFile
+			if tc.initialCurrentLink == "claimed" {
+				lvdl.Status.CurrentLinkTarget = filepath.Join(tmpDir, lvset.Spec.StorageClassName, "claimed")
 			}
 
 			r, _ := newFakeLocalVolumeSetReconciler(t,
@@ -550,6 +601,7 @@ func TestProcessRejectedDevicesForDeviceLinks(t *testing.T) {
 				&corev1.PersistentVolume{ObjectMeta: metav1.ObjectMeta{Name: pvName}},
 				lvdl,
 			)
+			r.pvLinkCache = cache.NewLocalVolumeDeviceLinkCache(r.Client, nil)
 			r.nodeName = node.Name
 			r.runtimeConfig.Node = node
 			r.runtimeConfig.Namespace = testNamespace
@@ -558,11 +610,18 @@ func TestProcessRejectedDevicesForDeviceLinks(t *testing.T) {
 			assert.NoError(t, os.MkdirAll(symLinkDir, 0755))
 			symlinkPath := filepath.Join(symLinkDir, "claimed")
 			if tc.createSymlink {
-				if tc.makeSymlinkAFile {
-					assert.NoError(t, os.WriteFile(symlinkPath, []byte("plain-file"), 0644))
-				} else {
-					assert.NoError(t, os.Symlink("/dev/null", symlinkPath))
+				target := "/dev/null"
+				if tc.danglingSymlink {
+					target = "/dev/disk/by-id/wwn-gone"
 				}
+				assert.NoError(t, os.Symlink(target, symlinkPath))
+			}
+			if tc.createClaimingLink {
+				assert.NoError(t, os.Symlink("/dev/null", filepath.Join(symLinkDir, "zzz-already-claimed")))
+			}
+			if tc.seedCacheFromLVDL {
+				lvdl.Status.ValidLinkTargets = []string{"/dev/disk/by-id/wwn-null"}
+				r.pvLinkCache.SeedForTests(lvdl)
 			}
 
 			origGlob := internal.FilePathGlob
@@ -584,6 +643,9 @@ func TestProcessRejectedDevicesForDeviceLinks(t *testing.T) {
 				if path == "/dev/disk/by-id/wwn-null" {
 					return "/dev/null", nil
 				}
+				if tc.danglingSymlink && path == symlinkPath {
+					return "", os.ErrNotExist
+				}
 				return filepath.EvalSymlinks(path)
 			}
 			internal.CmdExecutor = fakeCommandExecutor("", "uuid-null", nil)
@@ -597,11 +659,16 @@ func TestProcessRejectedDevicesForDeviceLinks(t *testing.T) {
 			)
 
 			fetched := &v1api.LocalVolumeDeviceLink{}
-			assert.NoError(t, r.Client.Get(context.TODO(), types.NamespacedName{Name: pvName, Namespace: testNamespace}, fetched))
-			if tc.expectCurrentLink != "" {
-				assert.Equal(t, tc.expectCurrentLink, fetched.Status.CurrentLinkTarget)
-				return
+			assert.NoError(t, r.Client.Get(t.Context(), types.NamespacedName{Name: pvName, Namespace: testNamespace}, fetched))
+
+			assert.Equal(t, tc.expectCurrentLink, fetched.Status.CurrentLinkTarget)
+			assert.Equal(t, tc.expectPreferLink, fetched.Status.PreferredLinkTarget)
+			if tc.expectSymlinkPath != "" {
+				currentTarget, err := os.Readlink(symlinkPath)
+				assert.NoError(t, err)
+				assert.Equal(t, tc.expectSymlinkPath, currentTarget)
 			}
+
 			if tc.expectCondition != "" {
 				if assert.Len(t, fetched.Status.Conditions, 1) {
 					assert.Equal(t, operatorv1.ConditionTrue, fetched.Status.Conditions[0].Status)
@@ -609,7 +676,7 @@ func TestProcessRejectedDevicesForDeviceLinks(t *testing.T) {
 				}
 				return
 			}
-			assert.Empty(t, fetched.Status.CurrentLinkTarget)
+			assert.Empty(t, fetched.Status.Conditions)
 		})
 	}
 }

@@ -16,6 +16,4 @@ type DiskLocation struct {
 	SymlinkPath string
 	//SymlinkSource represents path in /dev filesystem
 	SymlinkSource string
-	//ByIDPathExists is set if a valid path is found in /dev/disk/by-id
-	ByIDPathExists bool
 }

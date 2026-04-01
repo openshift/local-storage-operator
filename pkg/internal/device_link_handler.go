@@ -20,6 +20,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/client-go/tools/record"
 	"k8s.io/klog/v2"
 	utilexec "k8s.io/utils/exec"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -34,16 +35,19 @@ const (
 )
 
 type DeviceLinkHandler struct {
-	currentSymlink string
-	client         client.Client
-	clientReader   client.Reader
+	client       client.Client
+	clientReader client.Reader
+	recorder     record.EventRecorder
 }
 
-func NewDeviceLinkHandler(currentSymlink string, client client.Client, clientReader client.Reader) *DeviceLinkHandler {
+func NewDeviceLinkHandler(client client.Client, clientReader client.Reader, recorder record.EventRecorder) *DeviceLinkHandler {
+	if recorder == nil {
+		panic("device link handler requires a non-nil event recorder")
+	}
 	return &DeviceLinkHandler{
-		currentSymlink: currentSymlink,
-		client:         client,
-		clientReader:   clientReader,
+		client:       client,
+		clientReader: clientReader,
+		recorder:     recorder,
 	}
 }
 
@@ -122,7 +126,7 @@ func isNilOwnerObject(ownerObj runtime.Object) bool {
 	return value.Kind() == reflect.Ptr && value.IsNil()
 }
 
-func (dl *DeviceLinkHandler) ApplyStatus(ctx context.Context, pvName, namespace string, blockDevice BlockDevice, ownerObj runtime.Object) (*v1.LocalVolumeDeviceLink, error) {
+func (dl *DeviceLinkHandler) ApplyStatus(ctx context.Context, pvName, namespace string, blockDevice BlockDevice, ownerObj runtime.Object, currentSymlink string) (*v1.LocalVolumeDeviceLink, error) {
 	devicePath, err := blockDevice.GetDevPath()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get /dev path for %s: %w", blockDevice.Name, err)
@@ -149,7 +153,7 @@ func (dl *DeviceLinkHandler) ApplyStatus(ctx context.Context, pvName, namespace 
 		return nil, nil
 	}
 	copyToUpdate := existing.DeepCopy()
-	copyToUpdate, err = dl.setStatusSymlinks(copyToUpdate, blockDevice)
+	copyToUpdate, err = dl.setStatusSymlinks(copyToUpdate, blockDevice, "", currentSymlink)
 	if err != nil {
 		klog.ErrorS(err, "error setting status symlinks")
 		return existing, err
@@ -160,28 +164,39 @@ func (dl *DeviceLinkHandler) ApplyStatus(ctx context.Context, pvName, namespace 
 		return existing, nil
 	}
 
+	if existing.Status.PreferredLinkTarget != copyToUpdate.Status.PreferredLinkTarget {
+		infoUpdate := fmt.Sprintf("PreferredLinkTarget has changed from %s to %s for device %s", existing.Status.PreferredLinkTarget, copyToUpdate.Status.PreferredLinkTarget, blockDevice.Name)
+		klog.Info(infoUpdate)
+		ownerObj, _ := dl.resolveOwnerObjectFromLVDL(ctx, copyToUpdate)
+		if ownerObj != nil {
+			dl.recorder.Eventf(ownerObj, corev1.EventTypeNormal, "PreferredSymlinkChanged", infoUpdate)
+		}
+	}
+
 	err = dl.client.Status().Update(ctx, copyToUpdate)
 
 	return copyToUpdate, err
 }
 
-func (dl *DeviceLinkHandler) setStatusSymlinks(lvdl *v1.LocalVolumeDeviceLink, blockDevice BlockDevice) (*v1.LocalVolumeDeviceLink, error) {
+func (dl *DeviceLinkHandler) setStatusSymlinks(lvdl *v1.LocalVolumeDeviceLink, blockDevice BlockDevice, preferredLinkTarget, currentSymlink string) (*v1.LocalVolumeDeviceLink, error) {
 	devicePath, err := blockDevice.GetDevPath()
 	if err != nil {
 		return lvdl, fmt.Errorf("failed to get /dev path for %s: %w", blockDevice.Name, err)
 	}
 
-	preferredSymlink, err := blockDevice.GetUncachedPathID()
-	if err != nil {
-		// IDPathNotFoundError means no by-id symlink exists for this device;
-		// treat it as "no preferred symlink" rather than a hard error.
-		var idNotFound IDPathNotFoundError
-		if !errors.As(err, &idNotFound) {
-			return lvdl, fmt.Errorf("failed to get preferred device link for %s: %w", blockDevice.Name, err)
+	if preferredLinkTarget == "" {
+		preferredLinkTarget, err = blockDevice.GetUncachedPathID()
+		if err != nil {
+			// IDPathNotFoundError means no by-id symlink exists for this device;
+			// treat it as "no preferred symlink" rather than a hard error.
+			var idNotFound IDPathNotFoundError
+			if !errors.As(err, &idNotFound) {
+				return lvdl, fmt.Errorf("failed to get preferred device link for %s: %w", blockDevice.Name, err)
+			}
+			preferredLinkTarget = ""
 		}
-		preferredSymlink = ""
 	}
-	klog.V(2).Infof("updating lvdl with currentSymlink: %s, preferredSymlink: %s, devicePath: %s, kname: %s", dl.currentSymlink, preferredSymlink, devicePath, blockDevice.KName)
+	klog.V(2).Infof("updating lvdl with currentSymlink: %s, preferredSymlink: %s, devicePath: %s, kname: %s", currentSymlink, preferredLinkTarget, devicePath, blockDevice.KName)
 
 	validLinks, err := dl.getValidByIDSymlinks(blockDevice.KName)
 	if err != nil {
@@ -194,8 +209,8 @@ func (dl *DeviceLinkHandler) setStatusSymlinks(lvdl *v1.LocalVolumeDeviceLink, b
 	}
 	klog.V(4).Infof("updating lvdl %s with, filesystemUUID: %s, validLinks: %+v", lvdl.Name, filesystemUUID, validLinks)
 
-	lvdl.Status.CurrentLinkTarget = dl.currentSymlink
-	lvdl.Status.PreferredLinkTarget = preferredSymlink
+	lvdl.Status.CurrentLinkTarget = currentSymlink
+	lvdl.Status.PreferredLinkTarget = preferredLinkTarget
 	lvdl.Status.ValidLinkTargets = validLinks
 	lvdl.Status.FilesystemUUID = filesystemUUID
 	return lvdl, nil
@@ -278,51 +293,33 @@ func getFilesystemUUID(devicePath string) (string, error) {
 // symLinkPath is the full path under /mnt/local-storage/<storageClass>/<deviceName>.
 // Returns nil if no action is needed or action succeeded, error if action failed.
 // On error, it sets a failure OperatorCondition on the LVDL object.
+// TODO: Compute PreferredLinkTarget dynamically by reading the filesystem
 func (dl *DeviceLinkHandler) RecreateSymlinkIfNeeded(ctx context.Context, lvdl *v1.LocalVolumeDeviceLink, symLinkPath string, blockDevice BlockDevice) (*v1.LocalVolumeDeviceLink, error) {
 	currentTarget := lvdl.Status.CurrentLinkTarget
-	preferredTarget := lvdl.Status.PreferredLinkTarget
+	preferredTarget, err := blockDevice.GetPathByID()
+	if err != nil {
+		msg := fmt.Sprintf("couldn't find preferredLinkTarget for device %s with currentLink %s: %v", blockDevice.Name, currentTarget, err)
+		condition := getCondition("PreferredTargetNotFound", msg, operatorv1.ConditionTrue)
+		return dl.updateStatus(ctx, lvdl, condition, blockDevice, "", currentTarget)
+	}
 
 	klog.InfoS("RecreateSymlinkIfNeeded: symlink needs update",
 		"pvName", lvdl.Name, "currentTarget", currentTarget, "preferredTarget", preferredTarget)
-
-	// 7. Validate preferredTarget exists on disk and is a symlink
-	preferredInfo, err := os.Lstat(preferredTarget)
-	if err != nil {
-		msg := fmt.Sprintf("preferred target %s does not exist: %v", preferredTarget, err)
-		condition := getCondition("PreferredTargetNotFound", msg, operatorv1.ConditionTrue)
-		return dl.updateStatus(ctx, lvdl, condition, blockDevice)
-	}
-	if preferredInfo.Mode()&os.ModeSymlink == 0 {
-		msg := fmt.Sprintf("preferred target %s is not a symlink", preferredTarget)
-		condition := getCondition("PreferredTargetNotSymlink", msg, operatorv1.ConditionTrue)
-		return dl.updateStatus(ctx, lvdl, condition, blockDevice)
-	}
 
 	// 8. Validate device identity: preferredTarget and currentTarget must resolve to the same device
 	resolvedPreferred, err := FilePathEvalSymLinks(preferredTarget)
 	if err != nil {
 		msg := fmt.Sprintf("failed to eval preferred target %s: %v", preferredTarget, err)
 		condition := getCondition("EvalSymlinkFailed", msg, operatorv1.ConditionTrue)
-		return dl.updateStatus(ctx, lvdl, condition, blockDevice)
+		return dl.updateStatus(ctx, lvdl, condition, blockDevice, preferredTarget, currentTarget)
 	}
 
-	resolvedCurrent, err := FilePathEvalSymLinks(currentTarget)
-	if err == nil && resolvedCurrent != resolvedPreferred {
-		msg := fmt.Sprintf("preferred target %s resolves to %s but current target %s resolves to %s: different devices",
-			preferredTarget, resolvedPreferred, currentTarget, resolvedCurrent)
-		condition := getCondition("DeviceMismatch", msg, operatorv1.ConditionTrue)
-		return dl.updateStatus(ctx, lvdl, condition, blockDevice)
-	}
-
-	// if resolvedCurrent fails, currentTarget is gone — proceed with recreation anyway
-
-	// 9. Validate no OTHER symlink in the directory already points to resolvedPreferred
 	symLinkDir := filepath.Dir(symLinkPath)
 	entries, err := FilePathGlob(symLinkDir + "/*")
 	if err != nil {
 		msg := fmt.Sprintf("failed to list symlink dir %s: %v", symLinkDir, err)
 		condition := getCondition("ListDirFailed", msg, operatorv1.ConditionTrue)
-		return dl.updateStatus(ctx, lvdl, condition, blockDevice)
+		return dl.updateStatus(ctx, lvdl, condition, blockDevice, preferredTarget, currentTarget)
 	}
 	for _, entry := range entries {
 		if entry == symLinkPath {
@@ -335,7 +332,7 @@ func (dl *DeviceLinkHandler) RecreateSymlinkIfNeeded(ctx context.Context, lvdl *
 		if resolvedEntry == resolvedPreferred {
 			msg := fmt.Sprintf("preferred target %s is already claimed by symlink %s", preferredTarget, entry)
 			condition := getCondition("TargetAlreadyClaimed", msg, operatorv1.ConditionTrue)
-			return dl.updateStatus(ctx, lvdl, condition, blockDevice)
+			return dl.updateStatus(ctx, lvdl, condition, blockDevice, preferredTarget, currentTarget)
 		}
 	}
 
@@ -347,13 +344,13 @@ func (dl *DeviceLinkHandler) RecreateSymlinkIfNeeded(ctx context.Context, lvdl *
 	if err := os.Symlink(preferredTarget, tmpPath); err != nil {
 		msg := fmt.Sprintf("failed to create temp symlink %s -> %s: %v", tmpPath, preferredTarget, err)
 		condition := getCondition("TempSymlinkCreateFailed", msg, operatorv1.ConditionTrue)
-		return dl.updateStatus(ctx, lvdl, condition, blockDevice)
+		return dl.updateStatus(ctx, lvdl, condition, blockDevice, preferredTarget, currentTarget)
 	}
 
 	if err := os.Rename(tmpPath, symLinkPath); err != nil {
 		msg := fmt.Sprintf("failed to atomically replace symlink %s: %v", symLinkPath, err)
 		condition := getCondition("RenameSymlinkFailed", msg, operatorv1.ConditionTrue)
-		return dl.updateStatus(ctx, lvdl, condition, blockDevice)
+		return dl.updateStatus(ctx, lvdl, condition, blockDevice, preferredTarget, currentTarget)
 	}
 
 	klog.InfoS("RecreateSymlinkIfNeeded: successfully updated symlink",
@@ -362,14 +359,13 @@ func (dl *DeviceLinkHandler) RecreateSymlinkIfNeeded(ctx context.Context, lvdl *
 
 	copyToUpdate := lvdl.DeepCopy()
 
-	dl.currentSymlink = preferredTarget
-
-	copyToUpdate, err = dl.setStatusSymlinks(copyToUpdate, blockDevice)
+	// After successful swap, the current symlink is now the preferred target
+	copyToUpdate, err = dl.setStatusSymlinks(copyToUpdate, blockDevice, preferredTarget, preferredTarget)
 	if err != nil {
 		klog.ErrorS(err, "error refreshing lvdl status after symlink recreation", "lvdl", lvdl.Name)
 		return lvdl, fmt.Errorf("refreshing lvdl status after symlink recreation failed: %w", err)
 	}
-	copyToUpdate.Status.CurrentLinkTarget = preferredTarget
+	// clear out any error conditions we previously reported.
 	copyToUpdate.Status.Conditions = []operatorv1.OperatorCondition{}
 
 	err = dl.client.Status().Update(ctx, copyToUpdate)
@@ -377,13 +373,51 @@ func (dl *DeviceLinkHandler) RecreateSymlinkIfNeeded(ctx context.Context, lvdl *
 		klog.ErrorS(err, "error updating lvdl object", "lvdl", lvdl.Name)
 		return lvdl, fmt.Errorf("updating lvdl failed with: %w", err)
 	}
+	ownerObj, ownerErr := dl.resolveOwnerObjectFromLVDL(ctx, lvdl)
+	if ownerErr != nil {
+		klog.ErrorS(ownerErr, "unable to resolve owner object for symlink recreated event", "lvdl", lvdl.Name)
+	} else {
+		dl.recorder.Eventf(ownerObj, corev1.EventTypeNormal, "SymlinkRecreated",
+			"Successfully updated symlink %s from %s to %s", symLinkPath, currentTarget, preferredTarget)
+	}
 
 	return copyToUpdate, err
 }
 
-func (dl *DeviceLinkHandler) updateStatus(ctx context.Context, lvdl *v1.LocalVolumeDeviceLink, condition operatorv1.OperatorCondition, blockDevice BlockDevice) (*v1.LocalVolumeDeviceLink, error) {
+func (dl *DeviceLinkHandler) resolveOwnerObjectFromLVDL(ctx context.Context, lvdl *v1.LocalVolumeDeviceLink) (runtime.Object, error) {
+	if lvdl == nil {
+		return nil, fmt.Errorf("lvdl is nil")
+	}
+	ownerRef := metav1.GetControllerOf(lvdl)
+	if ownerRef == nil {
+		if len(lvdl.OwnerReferences) == 0 {
+			return nil, fmt.Errorf("no owner references for lvdl %s", lvdl.Name)
+		}
+		ownerRef = &lvdl.OwnerReferences[0]
+	}
+
+	nn := types.NamespacedName{Name: ownerRef.Name, Namespace: lvdl.Namespace}
+	switch ownerRef.Kind {
+	case v1.LocalVolumeKind:
+		owner := &v1.LocalVolume{}
+		if err := dl.clientReader.Get(ctx, nn, owner); err != nil {
+			return nil, err
+		}
+		return owner, nil
+	case v1alpha1.LocalVolumeSetKind:
+		owner := &v1alpha1.LocalVolumeSet{}
+		if err := dl.clientReader.Get(ctx, nn, owner); err != nil {
+			return nil, err
+		}
+		return owner, nil
+	default:
+		return nil, fmt.Errorf("unsupported owner kind %q for lvdl %s", ownerRef.Kind, lvdl.Name)
+	}
+}
+
+func (dl *DeviceLinkHandler) updateStatus(ctx context.Context, lvdl *v1.LocalVolumeDeviceLink, condition operatorv1.OperatorCondition, blockDevice BlockDevice, preferredLinkTarget, currentSymlink string) (*v1.LocalVolumeDeviceLink, error) {
 	copyToUpdate := lvdl.DeepCopy()
-	copyToUpdate, err := dl.setStatusSymlinks(copyToUpdate, blockDevice)
+	copyToUpdate, err := dl.setStatusSymlinks(copyToUpdate, blockDevice, preferredLinkTarget, currentSymlink)
 	if err != nil {
 		klog.ErrorS(err, "error setting status symlinks")
 		return lvdl, fmt.Errorf("symlink recreation failed %s, setting conditions also failed with: %w", condition.Message, err)
@@ -431,7 +465,12 @@ func (dl *DeviceLinkHandler) setLVDLCondition(lvdl *v1.LocalVolumeDeviceLink, co
 	return lvdl
 }
 
-func HasMismatchingSymlink(lvdl *v1.LocalVolumeDeviceLink) bool {
+func HasMismatchingSymlink(lvdl *v1.LocalVolumeDeviceLink, blockDevice BlockDevice) bool {
+	lvdlName := "<nil>"
+	if lvdl != nil {
+		lvdlName = lvdl.Name
+	}
+	klog.V(4).Infof("checking for mismatching symlinks, lvdl %s", lvdlName)
 	if lvdl == nil {
 		return false
 	}
@@ -439,15 +478,19 @@ func HasMismatchingSymlink(lvdl *v1.LocalVolumeDeviceLink) bool {
 		return false
 	}
 
-	preferredTarget := lvdl.Status.PreferredLinkTarget
-	currentTarget := lvdl.Status.CurrentLinkTarget
+	preferredTarget, err := blockDevice.GetPathByID()
+	if err != nil {
+		klog.ErrorS(err, "error getting pathbyid for device", "device", blockDevice.Name)
+		return false
+	}
 
-	// 5. No preferred target known yet — wait for ApplyStatus to populate it
+	currentTarget := lvdl.Status.CurrentLinkTarget
+	klog.Infof("checking for mismatching symlinks current: %s, preferred: %s", currentTarget, preferredTarget)
+
 	if preferredTarget == "" {
 		return false
 	}
 
-	// 6. Already correct — clear any stale failure condition and return
 	if currentTarget == preferredTarget {
 		return false
 	}

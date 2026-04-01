@@ -184,7 +184,7 @@ func LocalVolumeTest(ctx *framework.Context, cleanupFuncs *[]cleanupFn) func(*te
 		// deletion + recreation preserves the correct symlink at each step.
 		t.Log("TEST: multi-step preferred link reconciliation (scsi-2 → scsi-3 → wwn)")
 		selectedPV, multiStepCleanups := verifyMultiStepPreferredLinkReconciliation(
-			t, ctx, f, namespace, lvStorageClassName, selectedPV, newPreferredTarget,
+			t, ctx, f, namespace, selectedPV, newPreferredTarget,
 		)
 		for i := range multiStepCleanups {
 			*cleanupFuncs = append(*cleanupFuncs, multiStepCleanups[i])

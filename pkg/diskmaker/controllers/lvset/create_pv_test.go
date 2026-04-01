@@ -46,7 +46,6 @@ func TestCreatePV(t *testing.T) {
 			lvset: localv1alpha1.LocalVolumeSet{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "lvset-a",
-					// Namespace: "a",
 				},
 				Spec: localv1alpha1.LocalVolumeSetSpec{
 					StorageClassName: "storageclass-a",
@@ -196,101 +195,111 @@ func TestCreatePV(t *testing.T) {
 	}
 	// iterate through testcases
 	for i, tc := range testTable {
-		t.Logf("Test Case #%d: %q", i, tc.desc)
+		t.Run(tc.desc, func(t *testing.T) {
+			t.Logf("Test Case #%d: %q", i, tc.desc)
 
-		// fake setup
-		tc.lvset.Spec.VolumeMode = localv1.PersistentVolumeMode(tc.desiredVolMode)
-		if tc.lvset.Namespace == "" {
-			tc.lvset.Namespace = "default"
-		}
-		tc.lvset.Kind = localv1alpha1.LocalVolumeSetKind
-		r, testConfig := newFakeLocalVolumeSetReconciler(t, &tc.lvset, &tc.node, &tc.sc)
-		r.nodeName = tc.node.Name
-		testConfig.runtimeConfig.Node = &tc.node
-		testConfig.runtimeConfig.Name = common.GetProvisionedByValue(tc.node)
-		testConfig.runtimeConfig.DiscoveryMap[tc.sc.Name] = provCommon.MountConfig{VolumeMode: tc.desiredVolMode}
+			// fake setup
+			tc.lvset.Spec.VolumeMode = localv1.PersistentVolumeMode(tc.desiredVolMode)
+			if tc.lvset.Namespace == "" {
+				tc.lvset.Namespace = "default"
+			}
+			tc.lvset.Kind = localv1alpha1.LocalVolumeSetKind
+			r, testConfig := newFakeLocalVolumeSetReconciler(t, &tc.lvset, &tc.node, &tc.sc)
+			r.nodeName = tc.node.Name
+			testConfig.runtimeConfig.Node = &tc.node
+			testConfig.runtimeConfig.Name = common.GetProvisionedByValue(tc.node)
+			testConfig.runtimeConfig.DiscoveryMap[tc.sc.Name] = provCommon.MountConfig{VolumeMode: tc.desiredVolMode}
 
-		fakeMap := map[string]string{
-			string(corev1.PersistentVolumeFilesystem): provUtil.FakeEntryFile,
-			string(corev1.PersistentVolumeBlock):      provUtil.FakeEntryBlock,
-		}
-		if len(tc.extraDirEntries) == 0 {
-			tc.extraDirEntries = make([]*provUtil.FakeDirEntry, 0)
-		}
+			oldReadLink := internal.Readlink
+			defer func() {
+				internal.Readlink = oldReadLink
+			}()
+			internal.Readlink = func(symlinkPath string) (string, error) {
+				return "/dev/disk/by-id/wwn-null", nil
+			}
 
-		tc.extraDirEntries = append(tc.extraDirEntries, &provUtil.FakeDirEntry{
-			Name:       tc.deviceName,
-			Capacity:   tc.deviceCapacity,
-			VolumeType: fakeMap[tc.actualVolMode],
-		})
-		dirFiles := map[string][]*provUtil.FakeDirEntry{
-			tc.sc.Name: tc.extraDirEntries,
-		}
-		testConfig.fakeVolUtil.AddNewDirEntries("/mnt/local-storage/", dirFiles)
+			fakeMap := map[string]string{
+				string(corev1.PersistentVolumeFilesystem): provUtil.FakeEntryFile,
+				string(corev1.PersistentVolumeBlock):      provUtil.FakeEntryBlock,
+			}
+			if len(tc.extraDirEntries) == 0 {
+				tc.extraDirEntries = make([]*provUtil.FakeDirEntry, 0)
+			}
 
-		err := common.CreateLocalPV(t.Context(), common.CreateLocalPVArgs{
-			LocalVolumeLikeObject: &tc.lvset,
-			RuntimeConfig:         r.runtimeConfig,
-			StorageClass:          tc.sc,
-			MountPointMap:         tc.mountPoints,
-			Client:                r.Client,
-			ClientReader:          r.ClientReader,
-			SymLinkPath:           tc.symlinkpath,
-			BlockDevice:           internal.BlockDevice{KName: filepath.Base(tc.deviceName)},
-			IDExists:              true,
-			ExtraLabelsForPV:      map[string]string{},
-		})
-		if tc.shouldErr {
-			assert.NotNil(t, err)
-		} else {
+			tc.extraDirEntries = append(tc.extraDirEntries, &provUtil.FakeDirEntry{
+				Name:       tc.deviceName,
+				Capacity:   tc.deviceCapacity,
+				VolumeType: fakeMap[tc.actualVolMode],
+			})
+			dirFiles := map[string][]*provUtil.FakeDirEntry{
+				tc.sc.Name: tc.extraDirEntries,
+			}
+			testConfig.fakeVolUtil.AddNewDirEntries("/mnt/local-storage/", dirFiles)
+
+			err := common.CreateLocalPV(t.Context(), common.CreateLocalPVArgs{
+				LocalVolumeLikeObject: &tc.lvset,
+				RuntimeConfig:         r.runtimeConfig,
+				StorageClass:          tc.sc,
+				MountPointMap:         tc.mountPoints,
+				Client:                r.Client,
+				ClientReader:          r.ClientReader,
+				SymLinkPath:           tc.symlinkpath,
+				BlockDevice:           internal.BlockDevice{KName: filepath.Base(tc.deviceName)},
+
+				ExtraLabelsForPV: map[string]string{},
+			})
+			if tc.shouldErr {
+				assert.NotNil(t, err)
+			} else {
+				assert.Nil(t, err)
+			}
+
+			if tc.shouldErr {
+				return
+			}
+			pv := &corev1.PersistentVolume{}
+			err = r.Client.Get(context.TODO(), types.NamespacedName{Name: common.GeneratePVName(filepath.Base(tc.symlinkpath), tc.node.GetName(), tc.sc.GetName())}, pv)
+
+			// provisioned-by annotation accurate
+			actualProvName, found := pv.ObjectMeta.Annotations[provCommon.AnnProvisionedBy]
+			assert.True(t, found)
+			assert.Equal(t, testConfig.runtimeConfig.Name, actualProvName)
+
+			// capacity accurate
+			pvCapacity, found := pv.Spec.Capacity["storage"]
+			assert.True(t, found)
+			expectedCapacity := resource.MustParse(fmt.Sprint(common.RoundDownCapacityPretty(tc.deviceCapacity)))
+
+			assert.Truef(t, pvCapacity.Equal(expectedCapacity), "actual: %s,expected: %s", pvCapacity, expectedCapacity)
+
+			// pvName accurate
+			assert.Equal(t, common.GeneratePVName(filepath.Base(tc.symlinkpath), tc.node.Name, tc.sc.Name), pv.Name)
+
+			// symlinkPath accurate
+			assert.NotNil(t, pv.Spec.Local)
+			assert.Equal(t, tc.symlinkpath, pv.Spec.Local.Path)
+
+			// storageclass accurate
+			assert.Equal(t, tc.sc.Name, pv.Spec.StorageClassName)
+
+			// reclaimPolicy accurate,
+			assert.Equal(t, *tc.sc.ReclaimPolicy, pv.Spec.PersistentVolumeReclaimPolicy)
+
+			// test idempotency by running again
+			err = common.CreateLocalPV(t.Context(), common.CreateLocalPVArgs{
+				LocalVolumeLikeObject: &tc.lvset,
+				RuntimeConfig:         r.runtimeConfig,
+				StorageClass:          tc.sc,
+				MountPointMap:         tc.mountPoints,
+				Client:                r.Client,
+				ClientReader:          r.ClientReader,
+				SymLinkPath:           tc.symlinkpath,
+				BlockDevice:           internal.BlockDevice{KName: filepath.Base(tc.deviceName)},
+
+				ExtraLabelsForPV: map[string]string{},
+			})
 			assert.Nil(t, err)
-		}
-
-		if tc.shouldErr {
-			return
-		}
-		pv := &corev1.PersistentVolume{}
-		err = r.Client.Get(context.TODO(), types.NamespacedName{Name: common.GeneratePVName(filepath.Base(tc.symlinkpath), tc.node.GetName(), tc.sc.GetName())}, pv)
-
-		// provisioned-by annotation accurate
-		actualProvName, found := pv.ObjectMeta.Annotations[provCommon.AnnProvisionedBy]
-		assert.True(t, found)
-		assert.Equal(t, testConfig.runtimeConfig.Name, actualProvName)
-
-		// capacity accurate
-		pvCapacity, found := pv.Spec.Capacity["storage"]
-		assert.True(t, found)
-		expectedCapacity := resource.MustParse(fmt.Sprint(common.RoundDownCapacityPretty(tc.deviceCapacity)))
-
-		assert.Truef(t, pvCapacity.Equal(expectedCapacity), "actual: %s,expected: %s", pvCapacity, expectedCapacity)
-
-		// pvName accurate
-		assert.Equal(t, common.GeneratePVName(filepath.Base(tc.symlinkpath), tc.node.Name, tc.sc.Name), pv.Name)
-
-		// symlinkPath accurate
-		assert.NotNil(t, pv.Spec.Local)
-		assert.Equal(t, tc.symlinkpath, pv.Spec.Local.Path)
-
-		// storageclass accurate
-		assert.Equal(t, tc.sc.Name, pv.Spec.StorageClassName)
-
-		// reclaimPolicy accurate,
-		assert.Equal(t, *tc.sc.ReclaimPolicy, pv.Spec.PersistentVolumeReclaimPolicy)
-
-		// test idempotency by running again
-		err = common.CreateLocalPV(t.Context(), common.CreateLocalPVArgs{
-			LocalVolumeLikeObject: &tc.lvset,
-			RuntimeConfig:         r.runtimeConfig,
-			StorageClass:          tc.sc,
-			MountPointMap:         tc.mountPoints,
-			Client:                r.Client,
-			ClientReader:          r.ClientReader,
-			SymLinkPath:           tc.symlinkpath,
-			BlockDevice:           internal.BlockDevice{KName: filepath.Base(tc.deviceName)},
-			IDExists:              true,
-			ExtraLabelsForPV:      map[string]string{},
 		})
-		assert.Nil(t, err)
 
 	}
 
@@ -366,6 +375,14 @@ func TestCreatePV_SetsLVDLOwnerRefToLocalVolumeSet(t *testing.T) {
 	internal.CmdExecutor = &testingexec.FakeExec{
 		CommandScript: []testingexec.FakeCommandAction{blkidAction},
 	}
+	oldReadLink := internal.Readlink
+	t.Cleanup(func() {
+		internal.Readlink = oldReadLink
+	})
+
+	internal.Readlink = func(symlinkPath string) (string, error) {
+		return "/dev/disk/by-id/wwn-null", nil
+	}
 
 	err := common.CreateLocalPV(t.Context(), common.CreateLocalPVArgs{
 		LocalVolumeLikeObject: &lvset,
@@ -376,7 +393,6 @@ func TestCreatePV_SetsLVDLOwnerRefToLocalVolumeSet(t *testing.T) {
 		ClientReader:          r.ClientReader,
 		SymLinkPath:           symLinkPath,
 		BlockDevice:           internal.BlockDevice{KName: "device-ownerref"},
-		IDExists:              true,
 		ExtraLabelsForPV:      map[string]string{},
 	})
 	assert.NoError(t, err)

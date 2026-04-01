@@ -19,6 +19,7 @@ var (
 	FilePathGlob                            = filepath.Glob
 	FilePathEvalSymLinks                    = filepath.EvalSymlinks
 	mountFile                               = "/proc/1/mountinfo"
+	Readlink                                = os.Readlink
 	CmdExecutor          utilexec.Interface = utilexec.New()
 )
 
@@ -305,39 +306,11 @@ func ListBlockDevices(devices []string) ([]BlockDevice, []string, error) {
 		if len(strings.Trim(row, " ")) == 0 {
 			break
 		}
-		outputMap := make(map[string]interface{})
-		// split by `" ` to avoid splitting on spaces in MODEL,VENDOR
-		keyValues := strings.Split(row, `" `)
-		for _, keyValue := range keyValues {
-			keyValueList := strings.Split(keyValue, "=")
-			if len(keyValueList) != 2 {
-				continue
-			}
-			key := strings.ToLower(keyValueList[0])
-			value := strings.Replace(keyValueList[1], `"`, "", -1)
-			outputMap[key] = strings.TrimSpace(value)
-		}
-
-		// only use device if name is populated, and non-empty
-		v, found := outputMap["name"]
-		if !found {
+		outputMap := parseLSBLKRow(row, deviceFSMap)
+		if outputMap == nil {
 			badRows = append(badRows, row)
-			break
+			klog.Warningf("failed to parse the lsblk rows. Bad rows: %+v", row)
 		}
-		name := v.(string)
-		if len(strings.Trim(name, " ")) == 0 {
-			badRows = append(badRows, row)
-			break
-		}
-		if len(badRows) > 0 {
-			klog.Warningf("failed to parse all the lsblk rows. Bad rows: %+v", badRows)
-		}
-
-		// Update device filesystem using `blkid`
-		if fs, ok := deviceFSMap[fmt.Sprintf("/dev/%s", name)]; ok {
-			outputMap["fsType"] = fs
-		}
-
 		outputMapList = append(outputMapList, outputMap)
 	}
 
@@ -356,6 +329,37 @@ func ListBlockDevices(devices []string) ([]BlockDevice, []string, error) {
 	}
 
 	return blockDevices, badRows, nil
+}
+
+func parseLSBLKRow(row string, deviceFSMap map[string]string) map[string]any {
+	outputMap := make(map[string]any)
+	// split by `" ` to avoid splitting on spaces in MODEL,VENDOR
+	keyValues := strings.Split(row, `" `)
+	for _, keyValue := range keyValues {
+		keyValueList := strings.Split(keyValue, "=")
+		if len(keyValueList) != 2 {
+			continue
+		}
+		key := strings.ToLower(keyValueList[0])
+		value := strings.Replace(keyValueList[1], `"`, "", -1)
+		outputMap[key] = strings.TrimSpace(value)
+	}
+
+	// only use device if name is populated, and non-empty
+	v, found := outputMap["name"]
+	if !found {
+		return nil
+	}
+	name := v.(string)
+	if len(strings.Trim(name, " ")) == 0 {
+		return nil
+	}
+	// Update device filesystem using `blkid`
+	if fs, ok := deviceFSMap[fmt.Sprintf("/dev/%s", name)]; ok {
+		outputMap["fsType"] = fs
+	}
+
+	return outputMap
 }
 
 // GetDeviceFSMap returns mapping between disks and the filesystem using blkid
