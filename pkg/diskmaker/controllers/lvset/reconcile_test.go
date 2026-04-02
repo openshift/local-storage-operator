@@ -595,10 +595,20 @@ func TestProcessRejectedDevicesForDeviceLinks(t *testing.T) {
 				lvdl.Status.CurrentLinkTarget = filepath.Join(tmpDir, lvset.Spec.StorageClassName, "claimed")
 			}
 
+			symLinkDir := filepath.Join(tmpDir, lvset.Spec.StorageClassName)
+			assert.NoError(t, os.MkdirAll(symLinkDir, 0755))
+			symlinkPath := filepath.Join(symLinkDir, "claimed")
 			r, _ := newFakeLocalVolumeSetReconciler(t,
 				lvset,
 				node,
-				&corev1.PersistentVolume{ObjectMeta: metav1.ObjectMeta{Name: pvName}},
+				&corev1.PersistentVolume{
+					ObjectMeta: metav1.ObjectMeta{Name: pvName},
+					Spec: corev1.PersistentVolumeSpec{
+						PersistentVolumeSource: corev1.PersistentVolumeSource{
+							Local: &corev1.LocalVolumeSource{Path: symlinkPath},
+						},
+					},
+				},
 				lvdl,
 			)
 			r.pvLinkCache = cache.NewLocalVolumeDeviceLinkCache(r.Client, nil)
@@ -606,9 +616,6 @@ func TestProcessRejectedDevicesForDeviceLinks(t *testing.T) {
 			r.runtimeConfig.Node = node
 			r.runtimeConfig.Namespace = testNamespace
 
-			symLinkDir := filepath.Join(tmpDir, lvset.Spec.StorageClassName)
-			assert.NoError(t, os.MkdirAll(symLinkDir, 0755))
-			symlinkPath := filepath.Join(symLinkDir, "claimed")
 			if tc.createSymlink {
 				target := "/dev/null"
 				if tc.danglingSymlink {

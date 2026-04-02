@@ -62,6 +62,9 @@ func (c CurrentBlockDeviceInfo) GetSymlinkTargetPath(ctx context.Context, symlin
 	}
 
 	lvdl, pv, err := c.getLVDLAndPV(ctx, client)
+	if err != nil {
+		return "", err
+	}
 	currentLinkTarget := lvdl.Status.CurrentLinkTarget
 	validLinkTargets := lvdl.Status.ValidLinkTargets
 	policy := lvdl.Spec.Policy
@@ -77,10 +80,10 @@ func (c CurrentBlockDeviceInfo) GetSymlinkTargetPath(ctx context.Context, symlin
 	}
 
 	if slices.Contains(validLinkTargets, newSymlinkSourcePath) {
-		currentTargetPath := currentLinkTarget
-		if pv.Spec.Local != nil && pv.Spec.Local.Path != "" {
-			currentTargetPath = pv.Spec.Local.Path
+		if pv.Spec.Local == nil || pv.Spec.Local.Path == "" {
+			return "", fmt.Errorf("pv %s has empty local path", pv.Name)
 		}
+		currentTargetPath := pv.Spec.Local.Path
 		symlinkBaseName := filepath.Base(currentTargetPath)
 		return filepath.Join(symlinkDir, symlinkBaseName), nil
 	}
