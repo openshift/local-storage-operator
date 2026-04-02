@@ -342,16 +342,6 @@ func saveAndRestoreGlobals(t *testing.T) {
 	})
 }
 
-// filePathGlobSkipByID returns a FilePathGlob function that returns empty results
-// for /dev/disk/by-id/* patterns (no real devices in tests) but delegates to
-// filepath.Glob for other patterns (e.g. test directory listings).
-func filePathGlobSkipByID(pattern string) ([]string, error) {
-	if pattern == DiskByIDDir+"*" || pattern == filepath.Join(DiskByIDDir, "/*") {
-		return nil, nil
-	}
-	return filepath.Glob(pattern)
-}
-
 // filePathGlobWithPreferred returns a glob func that returns preferredTarget
 // for /dev/disk/by-id/* patterns and delegates to filepath.Glob otherwise.
 func filePathGlobWithPreferred(preferredTarget string) func(string) ([]string, error) {
@@ -433,13 +423,6 @@ func (env *recreateSymlinkTestEnv) createExistingSymlink(t *testing.T, target st
 	t.Helper()
 	if err := createSymlink(t, target, env.symLinkPath); err != nil {
 		t.Fatalf("failed to create existing symlink: %v", err)
-	}
-}
-
-func (env *recreateSymlinkTestEnv) createPreferredRegularFile(t *testing.T) {
-	t.Helper()
-	if err := createTempFile(t, env.preferredTarget); err != nil {
-		t.Fatalf("failed to create regular file: %v", err)
 	}
 }
 

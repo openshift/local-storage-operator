@@ -1070,12 +1070,6 @@ func getFakeDiskMaker(t *testing.T, symlinkLocation string, objs ...runtime.Obje
 	return lvReconciler, tc
 }
 
-func getDeiveIDs() []string {
-	return []string{
-		"/dev/disk/by-id/xyz",
-	}
-}
-
 func createTmpDir(t *testing.T, dir, prefix string) string {
 	tmpDir, err := os.MkdirTemp(dir, prefix)
 	if err != nil {

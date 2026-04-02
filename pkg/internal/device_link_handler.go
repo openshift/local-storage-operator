@@ -41,9 +41,6 @@ type DeviceLinkHandler struct {
 }
 
 func NewDeviceLinkHandler(client client.Client, clientReader client.Reader, recorder record.EventRecorder) *DeviceLinkHandler {
-	if recorder == nil {
-		panic("device link handler requires a non-nil event recorder")
-	}
 	return &DeviceLinkHandler{
 		client:       client,
 		clientReader: clientReader,
@@ -148,10 +145,6 @@ func (dl *DeviceLinkHandler) ApplyStatus(ctx context.Context, pvName, namespace 
 		return nil, err
 	}
 
-	// rare case when ownerObj is nil
-	if existing == nil {
-		return nil, nil
-	}
 	copyToUpdate := existing.DeepCopy()
 	copyToUpdate, err = dl.setStatusSymlinks(copyToUpdate, blockDevice, "", currentSymlink)
 	if err != nil {
@@ -240,7 +233,7 @@ func (dl *DeviceLinkHandler) findOrCreateLVDL(ctx context.Context, pvName, names
 	}
 	if isNilOwnerObject(ownerObj) {
 		klog.Warningf("missing lvdl object %s during status update, but owner is nil; skipping creation for device: %s", pvName, devicePath)
-		return nil, nil
+		return nil, fmt.Errorf("unable to determine owner for LocalVolumeDeviceLink %s", pvName)
 	}
 	klog.Warningf("missing lvdl object %s during status update, creating one now for device: %s", pvName, devicePath)
 	existing, err = dl.createLVDL(ctx, pvName, namespace, ownerObj)

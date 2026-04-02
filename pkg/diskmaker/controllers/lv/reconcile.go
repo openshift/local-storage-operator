@@ -30,7 +30,6 @@ import (
 	provCommon "sigs.k8s.io/sig-storage-local-static-provisioner/pkg/common"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -42,11 +41,8 @@ import (
 // It also ensures that only stable device names are used.
 
 const (
-	ownerNamespaceLabel = "local.storage.openshift.io/owner-namespace"
-	ownerNameLabel      = "local.storage.openshift.io/owner-name"
 	// ComponentName for lv symlinker
 	ComponentName      = "localvolume-symlink-controller"
-	diskByIDPath       = "/dev/disk/by-id/*"
 	diskByIDPrefix     = "/dev/disk/by-id"
 	defaultRequeueTime = time.Minute
 	fastRequeueTime    = 5 * time.Second
@@ -179,12 +175,6 @@ func (r *LocalVolumeReconciler) createSymlink(
 	return true
 }
 
-func diskMakerLabels(crName string) map[string]string {
-	return map[string]string{
-		"app": fmt.Sprintf("local-volume-diskmaker-%s", crName),
-	}
-}
-
 func (r *LocalVolumeReconciler) checkForExistingPV(deviceNameLocation *internal.DiskLocation) bool {
 	pvs := r.runtimeConfig.Cache.ListPVs()
 	nodeLabels := r.runtimeConfig.Node.GetLabels()
@@ -231,36 +221,6 @@ func (r *LocalVolumeReconciler) generateConfig() *DiskConfig {
 
 	return configMapData
 }
-func addOwner(meta *metav1.ObjectMeta, cr *localv1.LocalVolume) {
-	trueVal := true
-	meta.OwnerReferences = []metav1.OwnerReference{
-		{
-			APIVersion: localv1.GroupVersion.String(),
-			Kind:       localv1.LocalVolumeKind,
-			Name:       cr.Name,
-			UID:        cr.UID,
-			Controller: &trueVal,
-		},
-	}
-}
-func addOwnerLabels(meta *metav1.ObjectMeta, cr *localv1.LocalVolume) bool {
-	changed := false
-	if meta.Labels == nil {
-		meta.Labels = map[string]string{}
-		changed = true
-	}
-	if v, exists := meta.Labels[ownerNamespaceLabel]; !exists || v != cr.Namespace {
-		meta.Labels[ownerNamespaceLabel] = cr.Namespace
-		changed = true
-	}
-	if v, exists := meta.Labels[ownerNameLabel]; !exists || v != cr.Name {
-		meta.Labels[ownerNameLabel] = cr.Name
-		changed = true
-	}
-
-	return changed
-}
-
 func (r *LocalVolumeReconciler) Reconcile(ctx context.Context, request ctrl.Request) (ctrl.Result, error) {
 	r.effectiveRequeueTime = defaultRequeueTime
 
@@ -441,6 +401,7 @@ func (r *LocalVolumeReconciler) processValidDevices(ctx context.Context, validDe
 				continue
 			}
 			if !matched {
+				r.logDeviceError(devicePath)
 				continue
 			}
 
@@ -463,6 +424,29 @@ func (r *LocalVolumeReconciler) processValidDevices(ctx context.Context, validDe
 		// update metrics for orphaned symlink devices
 		localmetrics.SetLVOrphanedSymlinksMetric(nodeName, storageClass, len(orphanSymlinkDevices))
 	}
+}
+
+func (r *LocalVolumeReconciler) logDeviceError(diskDevPath string) {
+	if !fileExists(diskDevPath) {
+		klog.InfoS("no file exists for device", "diskName", diskDevPath)
+		return
+	}
+	fileMode, err := os.Stat(diskDevPath)
+	if err != nil {
+		klog.ErrorS(err, "error attempting to stat", "diskName", diskDevPath)
+		return
+	}
+	msg := ""
+	switch mode := fileMode.Mode(); {
+	case mode.IsDir():
+		msg = fmt.Sprintf("unable to use directory %v for local storage. Use an existing block device.", diskDevPath)
+	case mode.IsRegular():
+		msg = fmt.Sprintf("unable to use regular file %v for local storage. Use an existing block device.", diskDevPath)
+	default:
+		msg = fmt.Sprintf("unable to find matching disk %v", diskDevPath)
+	}
+	r.eventSync.Report(r.localVolume, newDiskEvent(ErrorFindingMatchingDisk, msg, diskDevPath, corev1.EventTypeWarning))
+	klog.Info(msg)
 }
 
 func (r *LocalVolumeReconciler) resolveValidDeviceLocation(devicePath string, forceWipe bool, validDevices []internal.BlockDevice) (*internal.DiskLocation, bool, error) {
@@ -726,29 +710,6 @@ func ignoreDevices(dev internal.BlockDevice) bool {
 	}
 
 	return false
-}
-
-func (r *LocalVolumeReconciler) logDeviceError(diskDevPath string) {
-	if !fileExists(diskDevPath) {
-		klog.InfoS("no file exists for device", "diskName", diskDevPath)
-		return
-	}
-	fileMode, err := os.Stat(diskDevPath)
-	if err != nil {
-		klog.ErrorS(err, "error attempting to stat", "diskName", diskDevPath)
-		return
-	}
-	msg := ""
-	switch mode := fileMode.Mode(); {
-	case mode.IsDir():
-		msg = fmt.Sprintf("unable to use directory %v for local storage. Use an existing block device.", diskDevPath)
-	case mode.IsRegular():
-		msg = fmt.Sprintf("unable to use regular file %v for local storage. Use an existing block device.", diskDevPath)
-	default:
-		msg = fmt.Sprintf("unable to find matching disk %v", diskDevPath)
-	}
-	r.eventSync.Report(r.localVolume, newDiskEvent(ErrorFindingMatchingDisk, msg, diskDevPath, corev1.EventTypeWarning))
-	klog.Info(msg)
 }
 
 // findDeviceByID finds device ID and return device name(such as sda, sdb) and complete deviceID path
