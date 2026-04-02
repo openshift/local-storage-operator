@@ -307,6 +307,69 @@ func verifyMultiStepPreferredLinkReconciliation(
 	return pv, cleanups
 }
 
+// verifySymlinkFallbackOnDisappearingLink tests that when the current preferred
+// by-id symlink disappears from /dev/disk/by-id (e.g. udev removes a wwn- link),
+// LSO automatically detects the dangling symlink in /mnt/local-storage and
+// relinks it to the next-best available by-id symlink.
+//
+// Precondition: the PV's on-disk symlink currently points to currentPreferred
+// (e.g. wwn-*), and expectedFallback (e.g. scsi-3-*) also exists on the node
+// for the same underlying device. LVDL policy must already be PreferredLinkTarget.
+func verifySymlinkFallbackOnDisappearingLink(
+	t *testing.T,
+	ctx *framework.TestCtx,
+	f *framework.Framework,
+	namespace string,
+	pv corev1.PersistentVolume,
+	currentPreferred string,
+	expectedFallback string,
+) corev1.PersistentVolume {
+	matcher := gomega.NewWithT(t)
+	nodeHostName := findNodeHostnameForPV(t, &pv)
+
+	// Sanity: confirm the LVDL is in the expected state before we break anything.
+	lvdl := eventuallyGetLVDL(t, f, namespace, pv.Name)
+	matcher.Expect(lvdl.Status.CurrentLinkTarget).To(gomega.Equal(currentPreferred),
+		"precondition: LVDL CurrentLinkTarget should be the link we are about to remove")
+	matcher.Expect(lvdl.Spec.Policy).To(gomega.Equal(localv1.DeviceLinkPolicyPreferredLinkTarget),
+		"precondition: LVDL policy must be PreferredLinkTarget")
+
+	// Remove the current preferred link from /dev/disk/by-id/ on the node.
+	t.Logf("fallback test: removing current preferred link %s from node %s", currentPreferred, nodeHostName)
+	removeUdevSymlink(t, ctx, nodeHostName, currentPreferred)
+
+	// LSO should detect that the symlink in /mnt/local-storage is now dangling
+	// and relink it to the next-best by-id link.
+	t.Logf("fallback test: waiting for auto-relink from %s to %s", currentPreferred, expectedFallback)
+	lvdl = waitForLVDLLinkTargets(t, f, lvdl, expectedFallback, expectedFallback)
+
+	// Verify the on-disk symlink on the node now points to the fallback target.
+	verifyNodeSymlinkTarget(t, ctx, nodeHostName, pv.Spec.Local.Path, expectedFallback)
+
+	// Verify PV survives deletion and is recreated with the correct symlink.
+	t.Logf("fallback test: deleting PV %q and verifying recreation with fallback target", pv.Name)
+	oldPVUID := pv.UID
+	oldPVPath := pv.Spec.Local.Path
+	eventuallyDelete(t, false, &pv)
+
+	pv = waitForRecreatedPVByName(t, f, pv.Name, oldPVUID)
+	matcher.Expect(pv.Spec.Local.Path).To(gomega.Equal(oldPVPath),
+		"recreated PV should keep the same local path")
+	verifyNodeSymlinkTarget(t, ctx, nodeHostName, pv.Spec.Local.Path, expectedFallback)
+
+	// Confirm LVDL state after PV recreation.
+	lvdls := eventuallyFindLVDLsForPVs(t, f, namespace, []string{pv.Name})
+	matcher.Expect(lvdls).To(gomega.HaveLen(1), "expected exactly 1 LVDL for recreated PV")
+	matcher.Expect(lvdls[0].Status.CurrentLinkTarget).To(gomega.Equal(expectedFallback),
+		"LVDL CurrentLinkTarget after fallback and PV recreation")
+	matcher.Expect(lvdls[0].Status.PreferredLinkTarget).To(gomega.Equal(expectedFallback),
+		"LVDL PreferredLinkTarget after fallback and PV recreation")
+	matcher.Expect(lvdls[0].Spec.Policy).To(gomega.Equal(localv1.DeviceLinkPolicyPreferredLinkTarget),
+		"LVDL policy must remain PreferredLinkTarget after fallback")
+
+	return pv
+}
+
 // note these jobs must not exceed more than 63 characters
 func newCheckSymlinkTargetJob(nodeHostname, namespace, symlinkPath, expectedTarget string) (*batchv1.Job, error) {
 	script := `

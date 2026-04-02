@@ -186,6 +186,15 @@ func LocalVolumeTest(ctx *framework.Context, cleanupFuncs *[]cleanupFn) func(*te
 		for i := range multiStepCleanups {
 			*cleanupFuncs = append(*cleanupFuncs, multiStepCleanups[i])
 		}
+
+		// Symlink fallback test: after multi-step left the PV on the wwn link,
+		// remove it and verify LSO falls back to the next-best scsi-3 link.
+		t.Logf("TEST: symlink fallback on disappearing link for %s (wwn → scsi-3)", selectedPV.Name)
+		selectedPV = verifySymlinkFallbackOnDisappearingLink(
+			t, ctx, f, namespace, selectedPV,
+			"/dev/disk/by-id/wwn-local-storage-e2e-step3",
+			"/dev/disk/by-id/scsi-3-local-storage-e2e-step2",
+		)
 		pvs = []corev1.PersistentVolume{selectedPV}
 
 		// consume pvs
