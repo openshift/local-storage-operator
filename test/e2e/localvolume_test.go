@@ -174,9 +174,6 @@ func LocalVolumeTest(ctx *framework.Context, cleanupFuncs *[]cleanupFn) func(*te
 
 		selectedPV := pvs[0]
 		currentSymlink := currentSymlinkForDisk(selectedDisk)
-		newPreferredTarget := "/dev/disk/by-id/scsi-1-local-storage-e2e-test"
-		selectedPV, cleanupToRun := verifyPreferredLinkReconciliationForPV(t, ctx, f, namespace, selectedPV, currentSymlink, newPreferredTarget)
-		*cleanupFuncs = append(*cleanupFuncs, cleanupToRun)
 		pvs = []corev1.PersistentVolume{selectedPV}
 
 		// Multi-step preferred link reconciliation: verify that the preferred
@@ -184,7 +181,7 @@ func LocalVolumeTest(ctx *framework.Context, cleanupFuncs *[]cleanupFn) func(*te
 		// deletion + recreation preserves the correct symlink at each step.
 		t.Log("TEST: multi-step preferred link reconciliation (scsi-2 → scsi-3 → wwn)")
 		selectedPV, multiStepCleanups := verifyMultiStepPreferredLinkReconciliation(
-			t, ctx, f, namespace, selectedPV, newPreferredTarget,
+			t, ctx, f, namespace, selectedPV, currentSymlink,
 		)
 		for i := range multiStepCleanups {
 			*cleanupFuncs = append(*cleanupFuncs, multiStepCleanups[i])

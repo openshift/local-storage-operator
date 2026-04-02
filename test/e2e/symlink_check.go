@@ -75,41 +75,6 @@ set +x
 		})
 }
 
-func verifyPreferredLinkReconciliationForPV(t *testing.T, ctx *framework.TestCtx, f *framework.Framework, namespace string, pv corev1.PersistentVolume, currentSymlink, newPreferredTarget string) (corev1.PersistentVolume, cleanupFn) {
-
-	matcher := gomega.NewWithT(t)
-	// LVDL name is same as PV name
-	selectedLVDL := eventuallyGetLVDL(t, f, namespace, pv.Name)
-	nodeHostName := findNodeHostnameForPV(t, &pv)
-
-	addNewUdevSymlink(t, ctx, nodeHostName, currentSymlink, newPreferredTarget)
-	cleanupToRun := cleanupFn{
-		name: fmt.Sprintf("removeUdevSymlink-%s", filepath.Base(newPreferredTarget)),
-		fn: func(t *testing.T) error {
-			removeUdevSymlink(t, ctx, nodeHostName, newPreferredTarget)
-			return nil
-		},
-	}
-
-	t.Logf("verifying LVDL %s automatically updates PreferredLinkTarget when a new by-id link appears", selectedLVDL.Name)
-	selectedLVDL = waitForLVDLPreferredLinkTarget(t, f, selectedLVDL, newPreferredTarget)
-	matcher.Expect(selectedLVDL.Status.CurrentLinkTarget).To(gomega.Equal(currentSymlink))
-
-	t.Logf("setting LVDL policy to PreferredLinkTarget and waiting for automatic symlink reconciliation on %s", selectedLVDL.Name)
-	selectedLVDL = updateLVDLPolicy(t, f, selectedLVDL, localv1.DeviceLinkPolicyPreferredLinkTarget)
-	selectedLVDL = waitForLVDLLinkTargets(t, f, selectedLVDL, newPreferredTarget, newPreferredTarget)
-	verifyNodeSymlinkTarget(t, ctx, nodeHostName, pv.Spec.Local.Path, newPreferredTarget)
-
-	t.Log("verifying recreated PV uses the updated preferred link after policy-driven reconciliation")
-	oldPVUID := pv.UID
-	oldPVPath := pv.Spec.Local.Path
-	eventuallyDelete(t, false, &pv)
-	recreatedPV := waitForRecreatedPVByName(t, f, pv.Name, oldPVUID)
-	matcher.Expect(recreatedPV.Spec.Local.Path).To(gomega.Equal(oldPVPath))
-	verifyNodeSymlinkTarget(t, ctx, nodeHostName, recreatedPV.Spec.Local.Path, newPreferredTarget)
-	return recreatedPV, cleanupToRun
-}
-
 func currentSymlinkForDisk(d disk) string {
 	if d.id != "" {
 		return filepath.Join("/dev/disk/by-id", d.id)
@@ -253,7 +218,6 @@ func verifyMultiStepPreferredLinkReconciliation(
 	}
 	// Steps must go from lower to higher priority to trigger relinking.
 	// Priority (high to low): wwn > scsi-3 > scsi-2 > scsi-8 > scsi-S > scsi-1 > scsi-0 > scsi > nvme-eui > nvme
-	// The currentSymlink is already scsi-1 (from the single-step test), so we
 	// step through scsi-2 → scsi-3 → wwn (each higher priority than the last).
 	steps := []relinkStep{
 		{"scsi-2", "/dev/disk/by-id/scsi-2-local-storage-e2e-step1"},

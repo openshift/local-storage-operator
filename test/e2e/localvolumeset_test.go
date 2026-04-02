@@ -374,18 +374,13 @@ func LocalVolumeSetTest(ctx *framework.TestCtx, cleanupFuncs *[]cleanupFn) func(
 
 		selectedFSPV := fsPVs[0]
 		currentSymlink := findCurrentSymlinkForPV(t, nodeEnv, &selectedFSPV)
-		newPreferredTarget := "/dev/disk/by-id/scsi-1-local-storage-lvset-e2e-test"
-		t.Logf("Verifying symlink rename from %s to %s for PV %s", currentSymlink, newPreferredTarget, selectedFSPV.Name)
-		selectedFSPV, cleanupToRun := verifyPreferredLinkReconciliationForPV(t, ctx, f, namespace, selectedFSPV, currentSymlink, newPreferredTarget)
-		fsPVs[0] = selectedFSPV
-		*cleanupFuncs = append(*cleanupFuncs, cleanupToRun)
 
 		// Multi-step preferred link reconciliation: verify that the preferred
 		// symlink can be upgraded through multiple priority levels and that PV
 		// deletion + recreation preserves the correct symlink at each step.
 		t.Logf("TEST: multi-step preferred link reconciliation for lvset (scsi-2 → scsi-3 → wwn) for %s", selectedFSPV.Name)
 		selectedFSPV, multiStepCleanups := verifyMultiStepPreferredLinkReconciliation(
-			t, ctx, f, namespace, selectedFSPV, newPreferredTarget,
+			t, ctx, f, namespace, selectedFSPV, currentSymlink,
 		)
 		fsPVs[0] = selectedFSPV
 		for i := range multiStepCleanups {
