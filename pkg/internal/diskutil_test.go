@@ -3,15 +3,13 @@ package internal
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	utilexec "k8s.io/utils/exec"
+	testingexec "k8s.io/utils/exec/testing"
 )
-
-var lsblkOut string
-var blkidOut string
 
 const (
 	lsblkOutput1 = `NAME="sda" KNAME="sda" ROTA="1" TYPE="disk" SIZE="62914560000" MODEL="VBOX HARDDISK" VENDOR="ATA" RO="0" RM="0" STATE="running" SERIAL="" PARTLABEL=""
@@ -25,29 +23,24 @@ NAME="sdc3" KNAME="sdc3" ROTA="1" TYPE="part" SIZE="62913494528" MODEL="" VENDOR
 `
 )
 
-// helperCommand returns a fake exec.Cmd for unit tests
-func helperCommand(command string, args ...string) *exec.Cmd {
-	cs := []string{"-test.run=TestHelperProcess", "--", command}
-	cs = append(cs, args...)
-	cmd := exec.Command(os.Args[0], cs...)
-	cmd.Env = []string{"GO_WANT_HELPER_PROCESS=1", fmt.Sprintf("COMMAND=%s", command),
-		fmt.Sprintf("LSBLKOUT=%s", lsblkOut), fmt.Sprintf("BLKIDOUT=%s", blkidOut),
-		fmt.Sprintf("GOCOVERDIR=%s", os.TempDir())}
-	return cmd
-}
-
-func TestHelperProcess(t *testing.T) {
-	if os.Getenv("GO_WANT_HELPER_PROCESS") != "1" {
-		return
+// newFakeExecutor creates a FakeExec that returns the given outputs in order.
+func newFakeExecutor(outputs ...string) *testingexec.FakeExec {
+	fe := &testingexec.FakeExec{}
+	for _, output := range outputs {
+		out := output
+		fakeCmd := &testingexec.FakeCmd{
+			CombinedOutputScript: []testingexec.FakeAction{
+				func() ([]byte, []byte, error) {
+					return []byte(out), nil, nil
+				},
+			},
+		}
+		cmdAction := func(cmd string, args ...string) utilexec.Cmd {
+			return fakeCmd
+		}
+		fe.CommandScript = append(fe.CommandScript, cmdAction)
 	}
-
-	defer os.Exit(0)
-	switch os.Getenv("COMMAND") {
-	case "lsblk":
-		fmt.Fprintf(os.Stdout, "%s", os.Getenv("LSBLKOUT"))
-	case "blkid":
-		fmt.Fprintf(os.Stdout, "%s", os.Getenv("BLKIDOUT"))
-	}
+	return fe
 }
 
 func TestListBlockDevices(t *testing.T) {
@@ -138,6 +131,7 @@ func TestListBlockDevices(t *testing.T) {
 		{
 			label:             "Case 3: empty lsblk output",
 			lsblkOutput:       "",
+			blkIDOutput:       "",
 			totalBlockDevices: 0,
 			totalBadRows:      0,
 			expected:          []BlockDevice{},
@@ -145,6 +139,7 @@ func TestListBlockDevices(t *testing.T) {
 		{
 			label:             "Case 4: lsblk output with white space",
 			lsblkOutput:       `NAME="sda" MODEL="VBOX HARDDISK   " VENDOR="ATA   "`,
+			blkIDOutput:       "",
 			totalBlockDevices: 1,
 			totalBadRows:      0,
 			expected: []BlockDevice{
@@ -158,26 +153,29 @@ func TestListBlockDevices(t *testing.T) {
 	}
 
 	for _, tc := range testcases {
-		lsblkOut = tc.lsblkOutput
-		blkidOut = tc.blkIDOutput
-		ExecCommand = helperCommand
-		defer func() { ExecCommand = exec.Command }()
-		blockDevices, badRows, err := ListBlockDevices([]string{})
-		assert.NoError(t, err)
-		assert.Equalf(t, tc.totalBadRows, len(badRows), "[%s] total bad rows list didn't match", tc.label)
-		assert.Equalf(t, tc.totalBlockDevices, len(blockDevices), "[%s] total block device list didn't match", tc.label)
-		for i := 0; i < len(blockDevices); i++ {
-			assert.Equalf(t, tc.expected[i].Name, blockDevices[i].Name, "[%q: Device: %d]: invalid block device name", tc.label, i+1)
-			assert.Equalf(t, tc.expected[i].Type, blockDevices[i].Type, "[%q: Device: %d]: invalid block device type", tc.label, i+1)
-			assert.Equalf(t, tc.expected[i].FSType, blockDevices[i].FSType, "[%q: Device: %d]: invalid block device file system", tc.label, i+1)
-			assert.Equalf(t, tc.expected[i].Size, blockDevices[i].Size, "[%q: Device: %d]: invalid block device size", tc.label, i+1)
-			assert.Equalf(t, tc.expected[i].Vendor, blockDevices[i].Vendor, "[%q: Device: %d]: invalid block device vendor", tc.label, i+1)
-			assert.Equalf(t, tc.expected[i].Model, blockDevices[i].Model, "[%q: Device: %d]: invalid block device Model", tc.label, i+1)
-			assert.Equalf(t, tc.expected[i].Serial, blockDevices[i].Serial, "[%q: Device: %d]: invalid block device serial", tc.label, i+1)
-			assert.Equalf(t, tc.expected[i].Rotational, blockDevices[i].Rotational, "[%q: Device: %d]: invalid block device rotational property", tc.label, i+1)
-			assert.Equalf(t, tc.expected[i].ReadOnly, blockDevices[i].ReadOnly, "[%q: Device: %d]: invalid block device read only value", tc.label, i+1)
-			assert.Equalf(t, tc.expected[i].PartLabel, blockDevices[i].PartLabel, "[%q: Device: %d]: invalid block device PartLabel value", tc.label, i+1)
-		}
+		t.Run(tc.label, func(t *testing.T) {
+			// blkid is called first (by GetDeviceFSMap), then lsblk
+			oldExecutor := CmdExecutor
+			CmdExecutor = newFakeExecutor(tc.blkIDOutput, tc.lsblkOutput)
+			defer func() { CmdExecutor = oldExecutor }()
+
+			blockDevices, badRows, err := ListBlockDevices([]string{})
+			assert.NoError(t, err)
+			assert.Equalf(t, tc.totalBadRows, len(badRows), "total bad rows list didn't match")
+			assert.Equalf(t, tc.totalBlockDevices, len(blockDevices), "total block device list didn't match")
+			for i := 0; i < len(blockDevices); i++ {
+				assert.Equalf(t, tc.expected[i].Name, blockDevices[i].Name, "[Device: %d]: invalid block device name", i+1)
+				assert.Equalf(t, tc.expected[i].Type, blockDevices[i].Type, "[Device: %d]: invalid block device type", i+1)
+				assert.Equalf(t, tc.expected[i].FSType, blockDevices[i].FSType, "[Device: %d]: invalid block device file system", i+1)
+				assert.Equalf(t, tc.expected[i].Size, blockDevices[i].Size, "[Device: %d]: invalid block device size", i+1)
+				assert.Equalf(t, tc.expected[i].Vendor, blockDevices[i].Vendor, "[Device: %d]: invalid block device vendor", i+1)
+				assert.Equalf(t, tc.expected[i].Model, blockDevices[i].Model, "[Device: %d]: invalid block device Model", i+1)
+				assert.Equalf(t, tc.expected[i].Serial, blockDevices[i].Serial, "[Device: %d]: invalid block device serial", i+1)
+				assert.Equalf(t, tc.expected[i].Rotational, blockDevices[i].Rotational, "[Device: %d]: invalid block device rotational property", i+1)
+				assert.Equalf(t, tc.expected[i].ReadOnly, blockDevices[i].ReadOnly, "[Device: %d]: invalid block device read only value", i+1)
+				assert.Equalf(t, tc.expected[i].PartLabel, blockDevices[i].PartLabel, "[Device: %d]: invalid block device PartLabel value", i+1)
+			}
+		})
 	}
 
 }
@@ -204,13 +202,15 @@ func TestGetDeviceFSMap(t *testing.T) {
 	}
 
 	for _, tc := range testcases {
-		blkidOut = tc.blkIDOutput
-		ExecCommand = helperCommand
-		defer func() { ExecCommand = exec.Command }()
+		t.Run(tc.label, func(t *testing.T) {
+			oldExecutor := CmdExecutor
+			CmdExecutor = newFakeExecutor(tc.blkIDOutput)
+			defer func() { CmdExecutor = oldExecutor }()
 
-		actual, err := GetDeviceFSMap([]string{})
-		assert.NoError(t, err)
-		assert.Equalf(t, tc.expected, actual, "[%s]: failed to get device filesystem map", tc.label)
+			actual, err := GetDeviceFSMap([]string{})
+			assert.NoError(t, err)
+			assert.Equalf(t, tc.expected, actual, "failed to get device filesystem map")
+		})
 	}
 }
 
@@ -344,7 +344,6 @@ func TestGetPathByID(t *testing.T) {
 	testcases := []struct {
 		label               string
 		blockDevice         BlockDevice
-		existingDeviceId    string
 		fakeGlobfunc        func(string) ([]string, error)
 		fakeEvalSymlinkfunc func(string) (string, error)
 		expected            string
@@ -402,9 +401,8 @@ func TestGetPathByID(t *testing.T) {
 			expected: "/dev/disk/by-id/wwn-abcde",
 		},
 		{
-			label:            "Prefer supplied path over anything else",
-			blockDevice:      BlockDevice{Name: "sdb", KName: "sdb", PathByID: ""},
-			existingDeviceId: "scsi-abcde",
+			label:       "Prefer wwn path over scsi path",
+			blockDevice: BlockDevice{Name: "sdb", KName: "sdb", PathByID: ""},
 			fakeGlobfunc: func(path string) ([]string, error) {
 				return []string{"/dev/disk/by-id/abcde", "/dev/disk/by-id/wwn-abcde", "/dev/disk/by-id/scsi-abcde"}, nil
 
@@ -412,7 +410,7 @@ func TestGetPathByID(t *testing.T) {
 			fakeEvalSymlinkfunc: func(string) (string, error) {
 				return "/dev/sdb", nil
 			},
-			expected: "/dev/disk/by-id/scsi-abcde",
+			expected: "/dev/disk/by-id/wwn-abcde",
 		},
 		{
 			label:       "Prefer nvme-eui paths if available",
@@ -479,9 +477,8 @@ func TestGetPathByID(t *testing.T) {
 			expected: "/dev/disk/by-id/scsi-abcde",
 		},
 		{
-			label:            "Prefer existingDeviceId over higher priroity scsi paths",
-			blockDevice:      BlockDevice{Name: "sdb", KName: "sdb", PathByID: ""},
-			existingDeviceId: "scsi-0NVME_MODEL_abcde",
+			label:       "Prefer scsi-3* over lower priority scsi paths",
+			blockDevice: BlockDevice{Name: "sdb", KName: "sdb", PathByID: ""},
 			fakeGlobfunc: func(path string) ([]string, error) {
 				return []string{
 					"/dev/disk/by-id/scsi-abcde",
@@ -496,7 +493,7 @@ func TestGetPathByID(t *testing.T) {
 			fakeEvalSymlinkfunc: func(string) (string, error) {
 				return "/dev/sdb", nil
 			},
-			expected: "/dev/disk/by-id/scsi-0NVME_MODEL_abcde",
+			expected: "/dev/disk/by-id/scsi-3faeb3bf4dc5abcde",
 		},
 	}
 
@@ -508,7 +505,7 @@ func TestGetPathByID(t *testing.T) {
 			FilePathEvalSymLinks = filepath.EvalSymlinks
 		}()
 
-		actual, err := tc.blockDevice.GetPathByID(tc.existingDeviceId)
+		actual, err := tc.blockDevice.GetPathByID()
 		assert.NoError(t, err)
 		assert.Equalf(t, tc.expected, actual, "[%s] failed to get device path by ID", tc.label)
 
@@ -556,7 +553,7 @@ func TestGetPathByIDFail(t *testing.T) {
 			FilePathEvalSymLinks = filepath.EvalSymlinks
 		}()
 
-		actual, err := tc.blockDevice.GetPathByID("" /*existing symlinkpath */)
+		actual, err := tc.blockDevice.GetPathByID()
 		assert.Error(t, err)
 		assert.Equalf(t, tc.expected, actual, "[%s] failed to get device path by ID", tc.label)
 

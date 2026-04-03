@@ -3,41 +3,34 @@ package discovery
 import (
 	"fmt"
 	"os"
-	"os/exec"
-	"path/filepath"
 	"testing"
 
 	"github.com/openshift/local-storage-operator/api/v1alpha1"
 	"github.com/openshift/local-storage-operator/pkg/diskmaker"
 	"github.com/openshift/local-storage-operator/pkg/internal"
 	"github.com/stretchr/testify/assert"
+	utilexec "k8s.io/utils/exec"
+	testingexec "k8s.io/utils/exec/testing"
 )
 
-var lsblkOut string
-var blkidOut string
-
-// helperCommand returns a fake exec.Cmd for unit tests
-func helperCommand(command string, args ...string) *exec.Cmd {
-	cs := []string{"-test.run=TestHelperProcess", "--", command}
-	cs = append(cs, args...)
-	cmd := exec.Command(os.Args[0], cs...)
-	cmd.Env = []string{"GO_WANT_HELPER_PROCESS=1", fmt.Sprintf("COMMAND=%s", command),
-		fmt.Sprintf("LSBLKOUT=%s", lsblkOut), fmt.Sprintf("BLKIDOUT=%s", blkidOut)}
-	return cmd
-}
-
-func TestHelperProcess(t *testing.T) {
-	if os.Getenv("GO_WANT_HELPER_PROCESS") != "1" {
-		return
+// newFakeExecutor creates a FakeExec that returns the given outputs in order.
+func newFakeExecutor(outputs ...string) *testingexec.FakeExec {
+	fe := &testingexec.FakeExec{}
+	for _, output := range outputs {
+		out := output
+		fakeCmd := &testingexec.FakeCmd{
+			CombinedOutputScript: []testingexec.FakeAction{
+				func() ([]byte, []byte, error) {
+					return []byte(out), nil, nil
+				},
+			},
+		}
+		cmdAction := func(cmd string, args ...string) utilexec.Cmd {
+			return fakeCmd
+		}
+		fe.CommandScript = append(fe.CommandScript, cmdAction)
 	}
-
-	defer os.Exit(0)
-	switch os.Getenv("COMMAND") {
-	case "lsblk":
-		fmt.Fprintf(os.Stdout, "%s", os.Getenv("LSBLKOUT"))
-	case "blkid":
-		fmt.Fprintf(os.Stdout, "%s", os.Getenv("BLKIDOUT"))
-	}
+	return fe
 }
 
 func TestDiscoverDevices(t *testing.T) {
@@ -60,17 +53,20 @@ func TestDiscoverDevices(t *testing.T) {
 		},
 	}
 
-	for _, tc := range testcases {
-		lsblkOut = tc.fakelsblkCmdOutput
-		blkidOut = tc.fakeblkidCmdOutput
-		internal.ExecCommand = helperCommand
-		internal.FilePathGlob = tc.fakeGlobfunc
-		defer func() {
-			internal.FilePathGlob = filepath.Glob
-			internal.ExecCommand = exec.Command
-		}()
-		err := tc.deviceDiscovery.discoverDevices()
-		assert.NoError(t, err)
+	for i, tc := range testcases {
+		t.Run(fmt.Sprintf("case-%d", i), func(t *testing.T) {
+			origExec := internal.CmdExecutor
+			origGlob := internal.FilePathGlob
+			// blkid is called first (by GetDeviceFSMap), then lsblk
+			internal.CmdExecutor = newFakeExecutor(tc.fakeblkidCmdOutput, tc.fakelsblkCmdOutput)
+			internal.FilePathGlob = tc.fakeGlobfunc
+			t.Cleanup(func() {
+				internal.FilePathGlob = origGlob
+				internal.CmdExecutor = origExec
+			})
+			err := tc.deviceDiscovery.discoverDevices()
+			assert.NoError(t, err)
+		})
 	}
 
 }
@@ -98,17 +94,21 @@ func TestDiscoverDevicesFail(t *testing.T) {
 		},
 	}
 
-	for _, tc := range testcases {
-		lsblkOut = tc.fakeLsblkCmdOutput
-		internal.ExecCommand = helperCommand
-		internal.FilePathGlob = tc.fakeGlobfunc
-		defer func() {
-			internal.FilePathGlob = filepath.Glob
-			internal.ExecCommand = exec.Command
-		}()
-		tc.deviceDiscovery.apiClient = tc.mockClient
-		err := tc.deviceDiscovery.discoverDevices()
-		assert.Error(t, err)
+	for i, tc := range testcases {
+		t.Run(fmt.Sprintf("case-%d", i), func(t *testing.T) {
+			origExec := internal.CmdExecutor
+			origGlob := internal.FilePathGlob
+			// blkid is called first (by GetDeviceFSMap), then lsblk
+			internal.CmdExecutor = newFakeExecutor("", tc.fakeLsblkCmdOutput)
+			internal.FilePathGlob = tc.fakeGlobfunc
+			t.Cleanup(func() {
+				internal.FilePathGlob = origGlob
+				internal.CmdExecutor = origExec
+			})
+			tc.deviceDiscovery.apiClient = tc.mockClient
+			err := tc.deviceDiscovery.discoverDevices()
+			assert.Error(t, err)
+		})
 	}
 }
 
@@ -213,13 +213,16 @@ func TestIgnoreDevices(t *testing.T) {
 	}
 
 	for _, tc := range testcases {
-		internal.FilePathGlob = tc.fakeGlobfunc
-		defer func() {
-			internal.FilePathGlob = filepath.Glob
-		}()
+		t.Run(tc.label, func(t *testing.T) {
+			origGlob := internal.FilePathGlob
+			internal.FilePathGlob = tc.fakeGlobfunc
+			t.Cleanup(func() {
+				internal.FilePathGlob = origGlob
+			})
 
-		actual := ignoreDevices(tc.blockDevice)
-		assert.Equalf(t, tc.expected, actual, "[%s]: %s", tc.label, tc.errMessage)
+			actual := ignoreDevices(tc.blockDevice)
+			assert.Equalf(t, tc.expected, actual, "[%s]: %s", tc.label, tc.errMessage)
+		})
 	}
 }
 
@@ -280,17 +283,20 @@ func TestValidBlockDevices(t *testing.T) {
 	}
 
 	for _, tc := range testcases {
-		lsblkOut = tc.fakeLsblkCmdOutput
-		blkidOut = tc.fakeblkidCmdOutput
-		internal.ExecCommand = helperCommand
-		internal.FilePathGlob = tc.fakeGlobfunc
-		defer func() {
-			internal.FilePathGlob = filepath.Glob
-			internal.ExecCommand = exec.Command
-		}()
-		actual, err := getValidBlockDevices()
-		assert.NoError(t, err)
-		assert.Equalf(t, tc.expectedDiscoveredDeviceSize, len(actual), "[%s]: %s", tc.label, tc.errMessage)
+		t.Run(tc.label, func(t *testing.T) {
+			origExec := internal.CmdExecutor
+			origGlob := internal.FilePathGlob
+			// blkid is called first (by GetDeviceFSMap), then lsblk
+			internal.CmdExecutor = newFakeExecutor(tc.fakeblkidCmdOutput, tc.fakeLsblkCmdOutput)
+			internal.FilePathGlob = tc.fakeGlobfunc
+			t.Cleanup(func() {
+				internal.FilePathGlob = origGlob
+				internal.CmdExecutor = origExec
+			})
+			actual, err := getValidBlockDevices()
+			assert.NoError(t, err)
+			assert.Equalf(t, tc.expectedDiscoveredDeviceSize, len(actual), "[%s]: %s", tc.label, tc.errMessage)
+		})
 	}
 }
 
@@ -565,31 +571,35 @@ func TestGetDiscoveredDevices(t *testing.T) {
 	}
 
 	for _, tc := range testcases {
-		internal.FilePathGlob = tc.fakeGlobfunc
-		internal.FilePathEvalSymLinks = tc.fakeEvalSymlinkfunc
-		defer func() {
-			internal.FilePathGlob = filepath.Glob
-			internal.FilePathEvalSymLinks = filepath.EvalSymlinks
-		}()
+		t.Run(tc.label, func(t *testing.T) {
+			origGlob := internal.FilePathGlob
+			origEval := internal.FilePathEvalSymLinks
+			internal.FilePathGlob = tc.fakeGlobfunc
+			internal.FilePathEvalSymLinks = tc.fakeEvalSymlinkfunc
+			t.Cleanup(func() {
+				internal.FilePathGlob = origGlob
+				internal.FilePathEvalSymLinks = origEval
+			})
 
-		actual := getDiscoverdDevices(tc.blockDevices)
+			actual := getDiscoverdDevices(tc.blockDevices)
 
-		if !assert.Equalf(t, len(tc.expected), len(actual), "Expected discovered device count: %v, but got: %v ", len(tc.expected), len(actual)) {
-			t.Errorf("\nExpected:\n%#v\nGot:\n%#v", tc.expected, actual)
-		}
+			if !assert.Equalf(t, len(tc.expected), len(actual), "Expected discovered device count: %v, but got: %v ", len(tc.expected), len(actual)) {
+				t.Errorf("\nExpected:\n%#v\nGot:\n%#v", tc.expected, actual)
+			}
 
-		for i := 0; i < len(tc.expected); i++ {
-			assert.Equalf(t, tc.expected[i].DeviceID, actual[i].DeviceID, "[%s: Discovered Device: %d]: invalid device ID", tc.label, i+1)
-			assert.Equalf(t, tc.expected[i].Path, actual[i].Path, "[%s: Discovered Device: %d]: invalid device path", tc.label, i+1)
-			assert.Equalf(t, tc.expected[i].Model, actual[i].Model, "[%s: Discovered Device: %d]: invalid device model", tc.label, i+1)
-			assert.Equalf(t, tc.expected[i].Type, actual[i].Type, "[%s: Discovered Device: %d]: invalid device type", tc.label, i+1)
-			assert.Equalf(t, tc.expected[i].Vendor, actual[i].Vendor, "[%s: Discovered Device: %d]: invalid device vendor", tc.label, i+1)
-			assert.Equalf(t, tc.expected[i].Serial, actual[i].Serial, "[%s: Discovered Device: %d]: invalid device serial", tc.label, i+1)
-			assert.Equalf(t, tc.expected[i].Size, actual[i].Size, "[%s: Discovered Device: %d]: invalid device size", tc.label, i+1)
-			assert.Equalf(t, tc.expected[i].Property, actual[i].Property, "[%s: Discovered Device: %d]: invalid device property", tc.label, i+1)
-			assert.Equalf(t, tc.expected[i].FSType, actual[i].FSType, "[%s: Discovered Device: %d]: invalid device filesystem", tc.label, i+1)
-			assert.Equalf(t, tc.expected[i].Status, actual[i].Status, "[%s: Discovered Device: %d]: invalid device status", tc.label, i+1)
-		}
+			for i := 0; i < len(tc.expected); i++ {
+				assert.Equalf(t, tc.expected[i].DeviceID, actual[i].DeviceID, "[%s: Discovered Device: %d]: invalid device ID", tc.label, i+1)
+				assert.Equalf(t, tc.expected[i].Path, actual[i].Path, "[%s: Discovered Device: %d]: invalid device path", tc.label, i+1)
+				assert.Equalf(t, tc.expected[i].Model, actual[i].Model, "[%s: Discovered Device: %d]: invalid device model", tc.label, i+1)
+				assert.Equalf(t, tc.expected[i].Type, actual[i].Type, "[%s: Discovered Device: %d]: invalid device type", tc.label, i+1)
+				assert.Equalf(t, tc.expected[i].Vendor, actual[i].Vendor, "[%s: Discovered Device: %d]: invalid device vendor", tc.label, i+1)
+				assert.Equalf(t, tc.expected[i].Serial, actual[i].Serial, "[%s: Discovered Device: %d]: invalid device serial", tc.label, i+1)
+				assert.Equalf(t, tc.expected[i].Size, actual[i].Size, "[%s: Discovered Device: %d]: invalid device size", tc.label, i+1)
+				assert.Equalf(t, tc.expected[i].Property, actual[i].Property, "[%s: Discovered Device: %d]: invalid device property", tc.label, i+1)
+				assert.Equalf(t, tc.expected[i].FSType, actual[i].FSType, "[%s: Discovered Device: %d]: invalid device filesystem", tc.label, i+1)
+				assert.Equalf(t, tc.expected[i].Status, actual[i].Status, "[%s: Discovered Device: %d]: invalid device status", tc.label, i+1)
+			}
+		})
 	}
 }
 

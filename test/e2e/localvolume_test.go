@@ -111,7 +111,7 @@ func LocalVolumeTest(ctx *framework.Context, cleanupFuncs *[]cleanupFn) func(*te
 		selectedDisk := nodeEnv[0].disks[0]
 		matcher.Expect(selectedDisk.path).ShouldNot(gomega.BeZero(), "device path should not be empty")
 
-		localVolume := getFakeLocalVolume(selectedNode, selectedDisk.path, namespace)
+		localVolume := getLocalVolume(selectedNode, selectedDisk.path, namespace)
 
 		matcher.Eventually(func() error {
 			t.Log("creating localvolume")
@@ -158,33 +158,58 @@ func LocalVolumeTest(ctx *framework.Context, cleanupFuncs *[]cleanupFn) func(*te
 		// verify pv annotation
 		t.Logf("looking for %q annotation on pvs", provCommon.AnnProvisionedBy)
 		verifyProvisionerAnnotation(t, pvs, nodeList.Items)
-
-		t.Logf("Checking for recreation of PVs on symlink change")
-		// get first PV and change its symlink to verify if PV comes back when preferredSymlink changes
-		selectedPV := pvs[0]
-		nodeHostName := findNodeHostnameForPV(t, &selectedPV)
-		t.Logf("Using hostname %s", nodeHostName)
-		var currentSymlink string
-		if selectedDisk.id != "" {
-			currentSymlink = filepath.Join("/dev/disk/by-id", selectedDisk.id)
-		} else {
-			currentSymlink = filepath.Join("/dev", "name")
-		}
-		newPreferredTarget := "/dev/disk/by-id/scsi-1-local-storage-e2e-test"
-		addNewUdevSymlink(t, ctx, nodeHostName, currentSymlink, newPreferredTarget)
-
-		// verify deletion
+		pvNames := make([]string, 0, len(pvs))
 		for _, pv := range pvs {
-			eventuallyDelete(t, false, &pv)
+			pvNames = append(pvNames, pv.Name)
 		}
-		// verify that PVs come back after deletion
-		pvs = eventuallyFindPVs(t, f, localVolume.Spec.StorageClassDevices[0].StorageClassName, 1)
+		t.Log("verifying LocalVolumeDeviceLink objects were created for PVs")
+		lvdls := eventuallyFindLVDLsForPVs(t, f, namespace, pvNames)
+		lvdlNames := make([]string, 0, len(lvdls))
+		for _, lvdl := range lvdls {
+			lvdlNames = append(lvdlNames, lvdl.Name)
+			matcher.Expect(lvdl.Status.CurrentLinkTarget).ToNot(gomega.BeEmpty(), "expected CurrentLinkTarget for LVDL %q", lvdl.Name)
+			matcher.Expect(lvdl.Status.PreferredLinkTarget).ToNot(gomega.BeEmpty(), "expected PreferredLinkTarget for LVDL %q", lvdl.Name)
+			matcher.Expect(lvdl.Status.ValidLinkTargets).ToNot(gomega.BeEmpty(), "expected ValidLinkTargets for LVDL %q", lvdl.Name)
+		}
+
+		selectedPV := pvs[0]
+		currentSymlink := currentSymlinkForDisk(selectedDisk)
+		pvs = []corev1.PersistentVolume{selectedPV}
+
+		// Multi-step preferred link reconciliation: verify that the preferred
+		// symlink can be upgraded through multiple priority levels and that PV
+		// deletion + recreation preserves the correct symlink at each step.
+		t.Log("TEST: multi-step preferred link reconciliation (scsi-2 → scsi-3 → wwn)")
+		selectedPV, multiStepCleanups := verifyMultiStepPreferredLinkReconciliation(
+			t, ctx, f, namespace, selectedPV, currentSymlink,
+		)
+		for i := range multiStepCleanups {
+			*cleanupFuncs = append(*cleanupFuncs, multiStepCleanups[i])
+		}
+
+		// Symlink fallback test: after multi-step left the PV on the wwn link,
+		// remove it and verify LSO falls back to the next-best scsi-3 link.
+		t.Logf("TEST: symlink fallback on disappearing link for %s (wwn → scsi-3)", selectedPV.Name)
+		selectedPV = verifySymlinkFallbackOnDisappearingLink(
+			t, ctx, f, namespace, selectedPV,
+			"/dev/disk/by-id/wwn-local-storage-e2e-step3",
+			"/dev/disk/by-id/scsi-3-local-storage-e2e-step2",
+		)
+		pvs = []corev1.PersistentVolume{selectedPV}
 
 		// consume pvs
 		consumingObjectList := make([]client.Object, 0)
+		filesystemConsumedPVNames := make([]string, 0)
 		for _, pv := range pvs {
 			pvc, job, pod := consumePV(t, ctx, pv)
 			consumingObjectList = append(consumingObjectList, job, pvc, pod)
+			if pv.Spec.VolumeMode == nil || *pv.Spec.VolumeMode == corev1.PersistentVolumeFilesystem {
+				filesystemConsumedPVNames = append(filesystemConsumedPVNames, pv.Name)
+			}
+		}
+		if len(filesystemConsumedPVNames) > 0 {
+			t.Log("verifying filesystemUUID is populated on LVDL for consumed filesystem PVs")
+			verifyLVDLFilesystemUUIDForPVs(t, f, namespace, filesystemConsumedPVNames)
 		}
 		// release pvs
 		eventuallyDelete(t, false, consumingObjectList...)
@@ -240,11 +265,66 @@ func LocalVolumeTest(ctx *framework.Context, cleanupFuncs *[]cleanupFn) func(*te
 			return false
 		}).Should(gomega.BeTrue(), "verifying LocalVolume has been deleted", localVolume.Name)
 
+		t.Log("verifying LocalVolumeDeviceLink objects are deleted after LocalVolume deletion")
+		verifyLVDLsDeleted(t, f, namespace, lvdlNames)
+
 		// check for leftover symlinks before cleanup
 		symLinkPath := path.Join(common.GetLocalDiskLocationPath(), lvStorageClassName)
 		checkForSymlinks(t, ctx, nodeEnv, symLinkPath)
 	}
 
+}
+
+func verifyLVDLFilesystemUUIDForPVs(t *testing.T, f *framework.Framework, namespace string, pvNames []string) {
+	matcher := gomega.NewWithT(t)
+	pvNameSet := map[string]struct{}{}
+	for _, pvName := range pvNames {
+		pvNameSet[pvName] = struct{}{}
+	}
+	matcher.Eventually(func() bool {
+		lvdlList := &localv1.LocalVolumeDeviceLinkList{}
+		err := f.Client.List(goctx.TODO(), lvdlList, client.InNamespace(namespace))
+		if err != nil {
+			t.Logf("error listing LocalVolumeDeviceLink objects while verifying filesystemUUID: %v", err)
+			return false
+		}
+		uuidFoundCount := 0
+		for _, lvdl := range lvdlList.Items {
+			if _, ok := pvNameSet[lvdl.Spec.PersistentVolumeName]; !ok {
+				continue
+			}
+			if lvdl.Status.FilesystemUUID == "" {
+				t.Logf("filesystemUUID not populated yet for LVDL %q / PV %q", lvdl.Name, lvdl.Spec.PersistentVolumeName)
+				return false
+			}
+			uuidFoundCount++
+		}
+		return uuidFoundCount == len(pvNameSet)
+	}, time.Minute*5, time.Second*5).Should(gomega.BeTrue(), "waiting for filesystemUUID on all consumed filesystem PV LVDLs")
+}
+
+func verifyLVDLsDeleted(t *testing.T, f *framework.Framework, namespace string, lvdlNames []string) {
+	matcher := gomega.NewWithT(t)
+	targetNames := map[string]struct{}{}
+	for _, name := range lvdlNames {
+		targetNames[name] = struct{}{}
+	}
+
+	matcher.Eventually(func() bool {
+		lvdlList := &localv1.LocalVolumeDeviceLinkList{}
+		err := f.Client.List(goctx.TODO(), lvdlList, client.InNamespace(namespace))
+		if err != nil {
+			t.Logf("error listing LocalVolumeDeviceLink objects during deletion check: %v", err)
+			return false
+		}
+		for _, lvdl := range lvdlList.Items {
+			if _, ok := targetNames[lvdl.Name]; ok {
+				t.Logf("LocalVolumeDeviceLink %q still exists", lvdl.Name)
+				return false
+			}
+		}
+		return true
+	}, time.Minute*5, time.Second*5).Should(gomega.BeTrue(), "waiting for LVDL deletion after LocalVolume deletion")
 }
 
 func verifyProvisionerAnnotation(t *testing.T, pvs []corev1.PersistentVolume, nodeList []corev1.Node) {
@@ -524,7 +604,7 @@ func waitForNodeTaintUpdate(t *testing.T, kubeclient kubernetes.Interface, node 
 	return *newNode, nil
 }
 
-func getFakeLocalVolume(selectedNode v1.Node, selectedDisk, namespace string) *localv1.LocalVolume {
+func getLocalVolume(selectedNode v1.Node, selectedDisk, namespace string) *localv1.LocalVolume {
 	localVolume := &localv1.LocalVolume{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "LocalVolume",
@@ -586,23 +666,4 @@ func deleteResource(obj client.Object, namespace, name string, client framework.
 		return false, nil
 	})
 	return waitErr
-}
-
-// findNodeHostnameForLVDL returns the node hostname where the LVDL's PV is scheduled,
-// by inspecting the PV's spec.nodeAffinity (Required, LabelHostname).
-func findNodeHostnameForPV(t *testing.T, pv *v1.PersistentVolume) string {
-	t.Helper()
-	pvName := pv.Name
-	if pv.Spec.NodeAffinity == nil || pv.Spec.NodeAffinity.Required == nil {
-		t.Fatalf("PV %s has no NodeAffinity.Required", pvName)
-	}
-	for _, term := range pv.Spec.NodeAffinity.Required.NodeSelectorTerms {
-		for _, expr := range term.MatchExpressions {
-			if expr.Key == corev1.LabelHostname && len(expr.Values) > 0 {
-				return expr.Values[0]
-			}
-		}
-	}
-	t.Fatalf("PV %s NodeAffinity has no %q expression", pvName, corev1.LabelHostname)
-	return ""
 }

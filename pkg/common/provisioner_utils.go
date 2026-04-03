@@ -6,10 +6,13 @@ import (
 	"fmt"
 	"hash/fnv"
 	"path/filepath"
+	"strings"
 
 	localv1 "github.com/openshift/local-storage-operator/api/v1"
+	"github.com/openshift/local-storage-operator/pkg/internal"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -42,19 +45,42 @@ func GenerateMountMap(runtimeConfig *provCommon.RuntimeConfig) (sets.String, err
 	return mountPointMap, nil
 }
 
+// CreateLocalPVArgs holds the arguments for CreateLocalPV.
+type CreateLocalPVArgs struct {
+	LocalVolumeLikeObject runtime.Object
+	RuntimeConfig         *provCommon.RuntimeConfig
+	StorageClass          storagev1.StorageClass
+	MountPointMap         sets.String
+	Client                client.Client
+	// symlinkPath points to path on /mnt/local-storage
+	SymLinkPath      string
+	ExtraLabelsForPV map[string]string
+
+	// ClientReader is used to read objects from the apiserver
+	// skipping cache
+	ClientReader client.Reader
+
+	// CurrentSymlink points to source to which SymLinkPath points to.
+	// it could be a path in /dev/disk/by-id or could be simply
+	// /dev/sda etc if nothing exists
+	CurrentSymlink string
+	// BlockDevice is the block device backing this PV.
+	BlockDevice internal.BlockDevice
+}
+
 // CreateLocalPV is used to create a local PV against a symlink
 // after passing the same validations against that symlink that local-static-provisioner uses
-func CreateLocalPV(
-	obj runtime.Object,
-	runtimeConfig *provCommon.RuntimeConfig,
-	storageClass storagev1.StorageClass,
-	mountPointMap sets.String,
-	client client.Client,
-	symLinkPath string,
-	deviceName string,
-	idExists bool,
-	extraLabelsForPV map[string]string,
-) error {
+func CreateLocalPV(ctx context.Context, args CreateLocalPVArgs) error {
+	obj := args.LocalVolumeLikeObject
+	runtimeConfig := args.RuntimeConfig
+	storageClass := args.StorageClass
+	mountPointMap := args.MountPointMap
+	client := args.Client
+
+	// symlinkPath points to path on /mnt/local-storage
+	symLinkPath := args.SymLinkPath
+	deviceName := args.BlockDevice.KName
+	extraLabelsForPV := args.ExtraLabelsForPV
 	nodeLabels := runtimeConfig.Node.GetLabels()
 	hostname, found := nodeLabels[corev1.LabelHostname]
 	if !found {
@@ -79,6 +105,44 @@ func CreateLocalPV(
 		},
 	}
 
+	accessor, err := meta.Accessor(obj)
+	if err != nil {
+		return fmt.Errorf("could not get object metadata accessor from obj: %+v", obj)
+	}
+	name := accessor.GetName()
+	namespace := accessor.GetNamespace()
+	kind := obj.GetObjectKind().GroupVersionKind().Kind
+	if len(name) == 0 || len(namespace) == 0 || len(kind) == 0 {
+		return fmt.Errorf("name: %q, namespace: %q, or  kind: %q is empty for obj: %+v", name, namespace, kind, obj)
+	}
+
+	deviceHandler := internal.NewDeviceLinkHandler(client, args.ClientReader, args.RuntimeConfig.Recorder)
+	klog.V(4).Infof("finding lvdl %s %s", pvName, namespace)
+	lvdl, err := deviceHandler.FindLVDL(ctx, pvName, namespace)
+	if err != nil && !apierrors.IsNotFound(err) {
+		klog.Infof("error finding lvdl %s: %v", pvName, err)
+		return fmt.Errorf("error finding localvolumedevicelink object %s: %w", pvName, err)
+	}
+
+	// Symlink recreation must happen before PV creation because it fixes the
+	// symlink that the PV will reference. RecreateSymlinkIfNeeded already
+	// updates the LVDL status, so we skip ApplyStatus later.
+	requiresSymlinkRecreation := internal.HasMismatchingSymlink(lvdl, args.BlockDevice)
+	if requiresSymlinkRecreation {
+		if _, err := deviceHandler.RecreateSymlinkIfNeeded(ctx, lvdl, symLinkPath, args.BlockDevice); err != nil {
+			return fmt.Errorf("error recreating symlink: %w", err)
+		}
+	}
+
+	effectiveCurrentSource, err := internal.Readlink(symLinkPath)
+	if err != nil {
+		currentPreferredLink, _ := args.BlockDevice.GetPathByID()
+		klog.ErrorS(err, "could not read symlink", "symlink", symLinkPath, "currentSymlink", args.CurrentSymlink, "preferredCurrent", currentPreferredLink)
+		return fmt.Errorf("unable to resolve symlink %s: %v", symLinkPath, err)
+	}
+
+	idExists := strings.HasPrefix(effectiveCurrentSource, internal.DiskByIDDir)
+
 	mountConfig, found := runtimeConfig.DiscoveryMap[storageClass.GetName()]
 	if !found {
 		return fmt.Errorf("could not find config for storageClass: %q", storageClass.GetName())
@@ -93,7 +157,8 @@ func CreateLocalPV(
 
 	// Do not attempt to create or update existing PV's that have been released
 	existingPV := &corev1.PersistentVolume{ObjectMeta: metav1.ObjectMeta{Name: pvName}}
-	err = client.Get(context.TODO(), types.NamespacedName{Name: pvName}, existingPV)
+	err = client.Get(ctx, types.NamespacedName{Name: pvName}, existingPV)
+
 	if err == nil && existingPV.Status.Phase == corev1.VolumeReleased {
 		klog.InfoS("PV is still being cleaned, not going to recreate it", "pvName", pvName, "disk", deviceName)
 		// Caller should try again soon
@@ -126,19 +191,6 @@ func CreateLocalPV(
 		// totalCapacityFSBytes += capacityByte
 	default:
 		return fmt.Errorf("path %q has unexpected volume type %q", symLinkPath, actualVolumeMode)
-	}
-
-	accessor, err := meta.Accessor(obj)
-	if err != nil {
-
-		return fmt.Errorf("could not get object metadata accessor from obj: %+v", obj)
-	}
-
-	name := accessor.GetName()
-	namespace := accessor.GetNamespace()
-	kind := obj.GetObjectKind().GroupVersionKind().Kind
-	if len(name) == 0 || len(namespace) == 0 || len(kind) == 0 {
-		return fmt.Errorf("name: %q, namespace: %q, or  kind: %q is empty for obj: %+v", name, namespace, kind, obj)
 	}
 
 	labels := map[string]string{
@@ -189,7 +241,7 @@ func CreateLocalPV(
 	controllerutil.AddFinalizer(newPV, LSOSymlinkDeleterFinalizer)
 
 	klog.InfoS("creating PV", "pvName", pvName)
-	opRes, err := controllerutil.CreateOrUpdate(context.TODO(), client, existingPV, func() error {
+	opRes, err := controllerutil.CreateOrUpdate(ctx, client, existingPV, func() error {
 		if existingPV.CreationTimestamp.IsZero() {
 			// operations for create
 			newPV.DeepCopyInto(existingPV)
@@ -229,8 +281,19 @@ func CreateLocalPV(
 	if opRes != controllerutil.OperationResultNone {
 		klog.InfoS("PV changed", "pvName", pvName, "status", opRes)
 	}
+	if err != nil {
+		return err
+	}
 
-	return err
+	// ApplyStatus creates/updates the LVDL after the PV exists. Skip it when
+	// RecreateSymlinkIfNeeded already updated the LVDL status above.
+	if !requiresSymlinkRecreation {
+		if _, err := deviceHandler.ApplyStatus(ctx, pvName, namespace, args.BlockDevice, obj, args.CurrentSymlink); err != nil {
+			return fmt.Errorf("error applying device link status: %w", err)
+		}
+	}
+
+	return nil
 }
 
 // GeneratePVName is used to generate a PV name based on the filename, node, and storageclass
