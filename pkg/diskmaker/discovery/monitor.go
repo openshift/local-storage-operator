@@ -57,11 +57,20 @@ func udevBlockMonitor(c chan string, period time.Duration) {
 func rawUdevBlockMonitor(c chan string, matches, exclusions []string) {
 	defer close(c)
 
-	// stdbuf -oL performs line bufferred output
-	cmd := exec.Command("stdbuf", "-oL", "udevadm", "monitor", "-u", "-k", "-s", "block")
+	cmd := newUdevMonitorCommand()
+	if cmd == nil {
+		klog.Warning("udevadm based monitoring requires nsenter")
+		return
+	}
+
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		klog.Warningf("Cannot open udevadm stdout: %v", err)
+		return
+	}
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		klog.Warningf("Cannot open udevadm stderr: %v", err)
 		return
 	}
 
@@ -71,10 +80,24 @@ func rawUdevBlockMonitor(c chan string, matches, exclusions []string) {
 		return
 	}
 
+	stderrDone := make(chan struct{})
+	go func() {
+		defer close(stderrDone)
+
+		scanner := bufio.NewScanner(stderr)
+		for scanner.Scan() {
+			klog.Warningf("udevadm monitor stderr: %s", scanner.Text())
+		}
+		if scanErr := scanner.Err(); scanErr != nil {
+			klog.Warningf("udevadm monitor stderr scanner error: %v", scanErr)
+		}
+	}()
+
 	defer func() {
 		if waitErr := cmd.Wait(); waitErr != nil {
 			klog.Warningf("udevadm monitor exited with error: %v", waitErr)
 		}
+		<-stderrDone
 	}()
 
 	scanner := bufio.NewScanner(stdout)
@@ -96,6 +119,14 @@ func rawUdevBlockMonitor(c chan string, matches, exclusions []string) {
 	}
 
 	klog.Info("udevadm monitor finished")
+}
+
+func newUdevMonitorCommand() *exec.Cmd {
+	if _, pathErr := exec.LookPath("nsenter"); pathErr == nil {
+		return exec.Command("nsenter", "--mount=/proc/1/ns/mnt", "--", "udevadm", "monitor", "-u", "-k", "-s", "block")
+	}
+	klog.Warningf("nsenter binary not found, falling back to polling for devices via lsblk")
+	return nil
 }
 
 func matchUdevEvent(text string, matches, exclusions []string) (bool, error) {
