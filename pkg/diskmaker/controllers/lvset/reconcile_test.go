@@ -1,6 +1,7 @@
 package lvset
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -11,6 +12,7 @@ import (
 	v1api "github.com/openshift/local-storage-operator/api/v1"
 	v1alphav1api "github.com/openshift/local-storage-operator/api/v1alpha1"
 	"github.com/openshift/local-storage-operator/pkg/common"
+	"github.com/openshift/local-storage-operator/pkg/diskmaker/diskmakertest"
 	"github.com/openshift/local-storage-operator/pkg/internal"
 	test "github.com/openshift/local-storage-operator/test/framework"
 	"github.com/stretchr/testify/assert"
@@ -360,6 +362,81 @@ func TestProcessNewSymlink(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestProcessNewSymlink_SiblingFallback_LVSet mirrors the LocalVolume sibling-fallback
+// scenario: stale dangling symlink and LVDL valid targets include a sibling by-id path.
+// Exercises FindStalePVs → provisionFromExistingPV → CreateLocalPV with a LocalVolumeSet owner.
+func TestProcessNewSymlink_SiblingFallback_LVSet(t *testing.T) {
+	fixture := diskmakertest.SetupSiblingFallback(t, diskmakertest.DefaultSiblingFallbackConfig())
+	cfg := fixture.Config
+
+	lvset := &v1alphav1api.LocalVolumeSet{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       v1alphav1api.LocalVolumeSetKind,
+			APIVersion: v1alphav1api.GroupVersion.String(),
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "lvset-sibling-fallback",
+			Namespace: cfg.TestNamespace,
+		},
+		Spec: v1alphav1api.LocalVolumeSetSpec{
+			StorageClassName: cfg.SCName,
+		},
+	}
+	node := &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:   cfg.TestNodeName,
+			Labels: map[string]string{corev1.LabelHostname: cfg.TestNodeName},
+		},
+	}
+
+	objs := append([]runtime.Object{lvset, node}, fixture.RuntimeObjects()...)
+	r, tc := newFakeLocalVolumeSetReconciler(t, objs...)
+	r.pvLinkCache.SeedForTests(fixture.LocalVolumeDeviceLink())
+	r.nodeName = node.Name
+	r.runtimeConfig.Node = node
+	r.runtimeConfig.Name = common.GetProvisionedByValue(*node)
+	r.runtimeConfig.Namespace = cfg.TestNamespace
+	r.runtimeConfig.DiscoveryMap[cfg.SCName] = provCommon.MountConfig{
+		VolumeMode: string(corev1.PersistentVolumeBlock),
+	}
+
+	fixture.AddFakeVolumeDirEntries(tc.fakeVolUtil)
+
+	sc := fixture.StorageClass()
+	device := internal.BlockDevice{Name: cfg.BlockDevKName, KName: cfg.BlockDevKName}
+
+	result, err := r.processNewSymlink(
+		context.Background(),
+		lvset,
+		device,
+		[]internal.BlockDevice{device},
+		*sc,
+		sets.NewString(),
+		fixture.SymLinkDir,
+	)
+	assert.NoError(t, err)
+	assert.NotNil(t, result)
+
+	gotLinkTarget, err := os.Readlink(fixture.SymlinkPath)
+	assert.NoError(t, err)
+	assert.Equal(t, cfg.NewByID, gotLinkTarget,
+		"symlink under local-storage should be updated to the current preferred by-id path")
+
+	pv := &corev1.PersistentVolume{}
+	err = r.Client.Get(context.Background(), types.NamespacedName{Name: fixture.ExpectedPVName}, pv)
+	assert.NoError(t, err, "provisioned PV should exist after sibling fallback")
+	assert.Equal(t, fixture.SymlinkPath, pv.Spec.Local.Path,
+		"PV local path should be preserved from the original symlink name")
+	assert.Equal(t, v1api.LocalVolumeSetKind, pv.Labels[common.PVOwnerKindLabel])
+
+	gotLVDL := &v1api.LocalVolumeDeviceLink{}
+	err = r.Client.Get(context.Background(), types.NamespacedName{Name: fixture.ExpectedPVName, Namespace: cfg.TestNamespace}, gotLVDL)
+	assert.NoError(t, err)
+	assert.Equal(t, cfg.NewByID, gotLVDL.Status.CurrentLinkTarget)
+	assert.Equal(t, cfg.NewByID, gotLVDL.Status.PreferredLinkTarget)
+	assert.ElementsMatch(t, []string{cfg.NewByID, cfg.SiblingByID}, gotLVDL.Status.ValidLinkTargets)
 }
 
 func TestProvisionFromExistingPV(t *testing.T) {

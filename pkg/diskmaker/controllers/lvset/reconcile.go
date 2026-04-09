@@ -34,7 +34,6 @@ import (
 const (
 	// ComponentName for lvset symlinker
 	ComponentName      = "localvolumeset-symlink-controller"
-	pvOwnerKey         = "pvOwner"
 	defaultRequeueTime = time.Minute
 	fastRequeueTime    = 5 * time.Second
 )

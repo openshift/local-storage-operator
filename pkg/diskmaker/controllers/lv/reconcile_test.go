@@ -20,6 +20,7 @@ import (
 	localv1 "github.com/openshift/local-storage-operator/api/v1"
 	localv1alpha1 "github.com/openshift/local-storage-operator/api/v1alpha1"
 	"github.com/openshift/local-storage-operator/pkg/common"
+	"github.com/openshift/local-storage-operator/pkg/diskmaker/diskmakertest"
 	"github.com/openshift/local-storage-operator/pkg/internal"
 	test "github.com/openshift/local-storage-operator/test/framework"
 	"github.com/openshift/local-storage-operator/test/framework/util"
@@ -1005,6 +1006,87 @@ func TestIgnoredDevicesProcessedWhenNoValidDevices(t *testing.T) {
 	assert.Equal(t, preferredByID, gotLVDL.Status.PreferredLinkTarget)
 	assert.Equal(t, filesystemUUID, gotLVDL.Status.FilesystemUUID)
 	assert.ElementsMatch(t, []string{preferredByID, secondaryByID}, gotLVDL.Status.ValidLinkTargets)
+}
+
+// TestProcessNewSymlink_SiblingFallback verifies that when a device's preferred
+// /dev/disk/by-id symlink changes while diskmaker is not running (e.g. OS upgrade),
+// the reconciler can still find the stale PV via a sibling by-id symlink that
+// remains in the LVDL's ValidLinkTargets.
+//
+// Scenario:
+//  1. PV was provisioned with /dev/disk/by-id/wwn-old as CurrentLinkTarget
+//  2. Node reboots, wwn-old disappears, wwn-new appears (same device)
+//  3. scsi-sibling still exists and is recorded in LVDL's ValidLinkTargets
+//  4. Diskmaker reconciles via processValidDevices (device path /dev/sdb); dangling
+//     symlink does not match in GetSymlinkedForCurrentSC, so provisionValidDevice
+//     calls processNewSymlink after resolving DiskID to wwn-new
+//  5. FindStalePVs falls back to sibling lookup, finds the LVDL via scsi-sibling
+//  6. GetSymlinkTargetPath warns (wwn-new not in ValidLinkTargets) but returns path
+//  7. CreateLocalPV recreates the symlink and updates the PV / LVDL
+func TestProcessNewSymlink_SiblingFallback(t *testing.T) {
+	fixture := diskmakertest.SetupSiblingFallback(t, diskmakertest.DefaultSiblingFallbackConfig())
+	cfg := fixture.Config
+
+	lv := &localv1.LocalVolume{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: localv1.GroupVersion.String(),
+			Kind:       "LocalVolume",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "lv-relink",
+			Namespace: cfg.TestNamespace,
+		},
+	}
+
+	objs := append([]runtime.Object{lv}, fixture.RuntimeObjects()...)
+	r, tc := getFakeDiskMaker(t, fixture.TmpRoot, objs...)
+	r.localVolume = lv
+	r.runtimeConfig.Node = &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:   cfg.TestNodeName,
+			Labels: map[string]string{corev1.LabelHostname: cfg.TestNodeName},
+		},
+	}
+	r.runtimeConfig.Name = common.GetProvisionedByValue(*r.runtimeConfig.Node)
+	r.runtimeConfig.Namespace = cfg.TestNamespace
+	r.runtimeConfig.DiscoveryMap[cfg.SCName] = provCommon.MountConfig{
+		VolumeMode: string(corev1.PersistentVolumeBlock),
+	}
+	r.fsInterface = FakeFileSystemInterface{}
+
+	r.pvLinkCache.SeedForTests(fixture.LocalVolumeDeviceLink())
+
+	fixture.AddFakeVolumeDirEntries(tc.fakeVolUtil)
+
+	diskConfig := &DiskConfig{
+		Disks: map[string]*Disks{
+			cfg.SCName: {
+				DevicePaths: []string{filepath.Join("/dev", cfg.BlockDevKName)},
+			},
+		},
+	}
+	validDevices := []internal.BlockDevice{
+		{Name: cfg.BlockDevKName, KName: cfg.BlockDevKName},
+	}
+
+	r.processValidDevices(context.TODO(), validDevices, diskConfig, sets.NewString())
+
+	gotLinkTarget, err := os.Readlink(fixture.SymlinkPath)
+	assert.NoError(t, err)
+	assert.Equal(t, cfg.NewByID, gotLinkTarget,
+		"symlink under local-storage should be updated to the current preferred by-id path")
+
+	pv := &corev1.PersistentVolume{}
+	err = tc.fakeClient.Get(context.TODO(), types.NamespacedName{Name: fixture.ExpectedPVName}, pv)
+	assert.NoError(t, err, "provisioned PV should exist after sibling fallback")
+	assert.Equal(t, fixture.SymlinkPath, pv.Spec.Local.Path,
+		"PV local path should be preserved from the original symlink name")
+	gotLVDL := &localv1.LocalVolumeDeviceLink{}
+	err = tc.fakeClient.Get(context.TODO(), types.NamespacedName{Name: fixture.ExpectedPVName, Namespace: cfg.TestNamespace}, gotLVDL)
+	assert.NoError(t, err)
+	assert.Equal(t, cfg.NewByID, gotLVDL.Status.CurrentLinkTarget)
+	assert.Equal(t, cfg.NewByID, gotLVDL.Status.PreferredLinkTarget)
+	assert.ElementsMatch(t, []string{cfg.NewByID, cfg.SiblingByID}, gotLVDL.Status.ValidLinkTargets)
 }
 
 func getFakeDiskMaker(t *testing.T, symlinkLocation string, objs ...runtime.Object) (*LocalVolumeReconciler, *testContext) {
