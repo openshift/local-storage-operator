@@ -640,7 +640,6 @@ func (r *LocalVolumeSetReconciler) provisionPV(
 		ClientReader:          r.ClientReader,
 		SymLinkPath:           symlinkPath,
 		ExtraLabelsForPV:      map[string]string{},
-		CurrentSymlink:        symlinkSourcePath,
 		BlockDevice:           dev,
 		CacheWriter:           r.pvLinkCache,
 	}
@@ -694,12 +693,6 @@ func (r *LocalVolumeSetReconciler) provisionFromExistingPV(
 	storageClass storagev1.StorageClass,
 	mountPointMap sets.String,
 	symlinkPath string) error {
-	// read the current source to which symlink in /mnt/local-storage points to
-	effectiveCurrentSource, err := internal.Readlink(symlinkPath)
-	if err != nil {
-		klog.ErrorS(err, "error evaluating symlink", "symlink", symlinkPath)
-	}
-
 	createLocalPVArgs := common.CreateLocalPVArgs{
 		LocalVolumeLikeObject: obj,
 		RuntimeConfig:         r.runtimeConfig,
@@ -709,7 +702,6 @@ func (r *LocalVolumeSetReconciler) provisionFromExistingPV(
 		ClientReader:          r.ClientReader,
 		SymLinkPath:           symlinkPath,
 		ExtraLabelsForPV:      map[string]string{},
-		CurrentSymlink:        effectiveCurrentSource,
 		BlockDevice:           blockDevice,
 		CacheWriter:           r.pvLinkCache,
 	}

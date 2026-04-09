@@ -617,7 +617,6 @@ func (r *LocalVolumeReconciler) provisionPV(ctx context.Context, scName string, 
 		ClientReader:          r.ClientReader,
 		SymLinkPath:           deviceNameLocation.SymlinkPath,
 		ExtraLabelsForPV:      lvOwnerLabels,
-		CurrentSymlink:        deviceNameLocation.SymlinkSource,
 		BlockDevice:           deviceNameLocation.BlockDevice,
 		CacheWriter:           r.pvLinkCache,
 	}

@@ -570,18 +570,18 @@ func TestCreateLocalPV_DeviceLinkLifecycle(t *testing.T) {
 			})
 
 			var expectedPreferredSymlink string
-			var expectedCurrentSymlink string
 
 			// triggerRelink case triggers change of symlink to new preferredLinkTarget.
 			// RecreateSymlinkIfNeeded uses blockDevice.GetPathByID() which returns
 			// fakeByIDLink, so both current and preferred become fakeByIDLink after relink.
 			if tc.triggerRelink {
 				assert.NoError(t, os.Symlink(currentTarget, symLinkPath))
-				expectedCurrentSymlink = fakeByIDLink
 				expectedPreferredSymlink = fakeByIDLink
-			} else {
-				expectedCurrentSymlink = currentTarget
 			}
+
+			// effectiveCurrentSource is always resolved via internal.Readlink inside
+			// CreateLocalPV, which the stub returns as fakeByIDLink.
+			expectedCurrentSymlink := fakeByIDLink
 
 			origGlob := internal.FilePathGlob
 			origEval := internal.FilePathEvalSymLinks
@@ -621,7 +621,6 @@ func TestCreateLocalPV_DeviceLinkLifecycle(t *testing.T) {
 				},
 				CacheWriter:      r.pvLinkCache,
 				ExtraLabelsForPV: map[string]string{},
-				CurrentSymlink:   currentTarget,
 			})
 			assert.NoError(t, err)
 
