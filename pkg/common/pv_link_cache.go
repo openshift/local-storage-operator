@@ -14,6 +14,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	k8scache "k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 )
@@ -142,6 +143,8 @@ func (l *LocalVolumeDeviceLinkCache) Start(ctx context.Context) error {
 		return err
 	}
 
+	l.watchForEvents(informer)
+
 	// Wait for the LVDL informer to complete its initial list.
 	if !l.mgr.GetCache().WaitForCacheSync(ctx) {
 		return fmt.Errorf("cache sync failed for LocalVolumeDeviceLink")
@@ -157,6 +160,15 @@ func (l *LocalVolumeDeviceLinkCache) Start(ctx context.Context) error {
 		l.addOrUpdateLVDL(&lvdlList.Items[i])
 	}
 
+	// Signal that the cache is ready for use by reconcilers.
+	close(l.synced)
+	klog.InfoS("LVDL cache synced", "entries", len(l.localDeviceInfos))
+
+	<-ctx.Done()
+	return nil
+}
+
+func (l *LocalVolumeDeviceLinkCache) watchForEvents(informer cache.Informer) {
 	// Watch for subsequent changes.
 	informer.AddEventHandler(k8scache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj any) {
@@ -178,13 +190,6 @@ func (l *LocalVolumeDeviceLinkCache) Start(ctx context.Context) error {
 			}
 		},
 	})
-
-	// Signal that the cache is ready for use by reconcilers.
-	close(l.synced)
-	klog.InfoS("LVDL cache synced", "entries", len(l.localDeviceInfos))
-
-	<-ctx.Done()
-	return nil
 }
 
 func (l *LocalVolumeDeviceLinkCache) FindStalePVs(symlink string, blockDevice internal.BlockDevice) (CurrentBlockDeviceInfo, bool, error) {

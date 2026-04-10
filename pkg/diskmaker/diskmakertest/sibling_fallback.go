@@ -14,8 +14,6 @@ import (
 	storagev1 "k8s.io/api/storage/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	utilexec "k8s.io/utils/exec"
-	testingexec "k8s.io/utils/exec/testing"
 
 	provUtil "sigs.k8s.io/sig-storage-local-static-provisioner/pkg/util"
 )
@@ -101,11 +99,7 @@ func SetupSiblingFallback(t *testing.T, cfg SiblingFallbackConfig) *SiblingFallb
 	t.Helper()
 	cfg = mergeSiblingFallbackConfig(cfg)
 
-	tmpRoot, err := os.MkdirTemp("", cfg.TempDirPrefix)
-	if err != nil {
-		t.Fatalf("mkdir temp: %v", err)
-	}
-	t.Cleanup(func() { _ = os.RemoveAll(tmpRoot) })
+	tmpRoot := TempDir(t, cfg.TempDirPrefix)
 	symLinkDir := filepath.Join(tmpRoot, cfg.SCName)
 	if err := os.MkdirAll(symLinkDir, 0o755); err != nil {
 		t.Fatalf("mkdir symLinkDir: %v", err)
@@ -125,47 +119,28 @@ func SetupSiblingFallback(t *testing.T, cfg SiblingFallbackConfig) *SiblingFallb
 		ExpectedPVName: expectedPVName,
 	}
 
-	origGlob := internal.FilePathGlob
-	origEval := internal.FilePathEvalSymLinks
-	origExec := internal.CmdExecutor
-	t.Cleanup(func() {
-		internal.FilePathGlob = origGlob
-		internal.FilePathEvalSymLinks = origEval
-		internal.CmdExecutor = origExec
-	})
-
-	internal.FilePathGlob = func(pattern string) ([]string, error) {
-		if strings.HasPrefix(pattern, internal.DiskByIDDir) {
-			return []string{cfg.NewByID, cfg.SiblingByID}, nil
-		}
-		return filepath.Glob(pattern)
-	}
-	internal.FilePathEvalSymLinks = func(p string) (string, error) {
-		switch p {
-		case cfg.NewByID, cfg.SiblingByID:
-			return filepath.Join("/dev", cfg.BlockDevKName), nil
-		case cfg.OldByID:
-			return "", os.ErrNotExist
-		default:
-			if p == symlinkPath {
-				return filepath.Join("/dev", cfg.BlockDevKName), nil
+	WithInternalMocks(t, func() {
+		internal.FilePathGlob = func(pattern string) ([]string, error) {
+			if strings.HasPrefix(pattern, internal.DiskByIDDir) {
+				return []string{cfg.NewByID, cfg.SiblingByID}, nil
 			}
-			return filepath.EvalSymlinks(p)
+			return filepath.Glob(pattern)
 		}
-	}
-
-	blkidAction := func(cmd string, args ...string) utilexec.Cmd {
-		return &testingexec.FakeCmd{
-			CombinedOutputScript: []testingexec.FakeAction{
-				func() ([]byte, []byte, error) {
-					return []byte(cfg.BlkidUUID), nil, nil
-				},
-			},
+		internal.FilePathEvalSymLinks = func(p string) (string, error) {
+			switch p {
+			case cfg.NewByID, cfg.SiblingByID:
+				return filepath.Join("/dev", cfg.BlockDevKName), nil
+			case cfg.OldByID:
+				return "", os.ErrNotExist
+			default:
+				if p == symlinkPath {
+					return filepath.Join("/dev", cfg.BlockDevKName), nil
+				}
+				return filepath.EvalSymlinks(p)
+			}
 		}
-	}
-	internal.CmdExecutor = &testingexec.FakeExec{
-		CommandScript: []testingexec.FakeCommandAction{blkidAction},
-	}
+		internal.CmdExecutor = BlkidAlwaysFakeExec(cfg.BlkidUUID, nil)
+	})
 
 	return f
 }

@@ -13,9 +13,6 @@ import (
 	"testing"
 	"time"
 
-	utilexec "k8s.io/utils/exec"
-	testingexec "k8s.io/utils/exec/testing"
-
 	"github.com/openshift/library-go/pkg/operator/resource/resourceread"
 	localv1 "github.com/openshift/local-storage-operator/api/v1"
 	localv1alpha1 "github.com/openshift/local-storage-operator/api/v1alpha1"
@@ -147,8 +144,7 @@ func TestResolveValidDeviceLocation(t *testing.T) {
 }
 
 func TestLoadConfig(t *testing.T) {
-	tempDir := createTmpDir(t, "", "diskmaker")
-	defer os.RemoveAll(tempDir)
+	tempDir := diskmakertest.TempDir(t, "diskmaker")
 	diskConfig := &DiskConfig{
 		Disks: map[string]*Disks{
 			"foo": {
@@ -198,8 +194,7 @@ func TestLoadConfig(t *testing.T) {
 }
 
 func TestProcessExistingSymlink_UsesFullSymlinkPath(t *testing.T) {
-	tmpRoot := createTmpDir(t, "", "existing-symlink")
-	defer os.RemoveAll(tmpRoot)
+	tmpRoot := diskmakertest.TempDir(t, "existing-symlink")
 
 	reclaimPolicyDelete := corev1.PersistentVolumeReclaimDelete
 	lv := &localv1.LocalVolume{
@@ -247,17 +242,12 @@ func TestProcessExistingSymlink_UsesFullSymlinkPath(t *testing.T) {
 		},
 	})
 
-	origGlob := internal.FilePathGlob
-	origExec := internal.CmdExecutor
-	t.Cleanup(func() {
-		internal.FilePathGlob = origGlob
-		internal.CmdExecutor = origExec
+	diskmakertest.WithInternalMocks(t, func() {
+		internal.FilePathGlob = func(string) ([]string, error) {
+			return nil, nil
+		}
+		internal.CmdExecutor = diskmakertest.BlkidForDevicePathFakeExec(filepath.Join("/dev", deviceName), "")
 	})
-
-	internal.FilePathGlob = func(string) ([]string, error) {
-		return nil, nil
-	}
-	internal.CmdExecutor = fakeBlkidExecutor(filepath.Join("/dev", deviceName), "")
 
 	diskLocation := &internal.DiskLocation{
 		DiskNamePath: deviceTarget,
@@ -352,8 +342,7 @@ func TestProvisionValidDevice(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			tmpRoot := createTmpDir(t, "", "provision-valid-device")
-			defer os.RemoveAll(tmpRoot)
+			tmpRoot := diskmakertest.TempDir(t, "provision-valid-device")
 
 			lv := &localv1.LocalVolume{
 				TypeMeta: metav1.TypeMeta{
@@ -410,28 +399,21 @@ func TestProvisionValidDevice(t *testing.T) {
 				assert.NoError(t, os.Symlink("/dev/null", filepath.Join(symLinkDir, "claimed")))
 			}
 
-			origGlob := internal.FilePathGlob
-			origEval := internal.FilePathEvalSymLinks
-			origExec := internal.CmdExecutor
-			t.Cleanup(func() {
-				internal.FilePathGlob = origGlob
-				internal.FilePathEvalSymLinks = origEval
-				internal.CmdExecutor = origExec
+			diskmakertest.WithInternalMocks(t, func() {
+				internal.FilePathGlob = func(pattern string) ([]string, error) {
+					if pattern == filepath.Join(internal.DiskByIDDir, "*") {
+						return []string{fakeByIDLink}, nil
+					}
+					return filepath.Glob(pattern)
+				}
+				internal.FilePathEvalSymLinks = func(path string) (string, error) {
+					if path == fakeByIDLink {
+						return "/dev/null", nil
+					}
+					return filepath.EvalSymlinks(path)
+				}
+				internal.CmdExecutor = diskmakertest.BlkidForDevicePathFakeExec("/dev/null", "")
 			})
-
-			internal.FilePathGlob = func(pattern string) ([]string, error) {
-				if pattern == filepath.Join(internal.DiskByIDDir, "*") {
-					return []string{fakeByIDLink}, nil
-				}
-				return filepath.Glob(pattern)
-			}
-			internal.FilePathEvalSymLinks = func(path string) (string, error) {
-				if path == fakeByIDLink {
-					return "/dev/null", nil
-				}
-				return filepath.EvalSymlinks(path)
-			}
-			internal.CmdExecutor = fakeBlkidExecutor("/dev/null", "")
 
 			diskLocation := &internal.DiskLocation{
 				UserProvidedPath: "/dev/null",
@@ -459,8 +441,7 @@ func TestProcessValidDevices(t *testing.T) {
 	reclaimPolicyDelete := corev1.PersistentVolumeReclaimDelete
 	fakeByIDLink := "/dev/disk/by-id/wwn-null"
 
-	tmpRoot := createTmpDir(t, "", "process-valid-devices")
-	defer os.RemoveAll(tmpRoot)
+	tmpRoot := diskmakertest.TempDir(t, "process-valid-devices")
 
 	lv := &localv1.LocalVolume{
 		TypeMeta: metav1.TypeMeta{
@@ -504,28 +485,21 @@ func TestProcessValidDevices(t *testing.T) {
 		},
 	})
 
-	origGlob := internal.FilePathGlob
-	origEval := internal.FilePathEvalSymLinks
-	origExec := internal.CmdExecutor
-	t.Cleanup(func() {
-		internal.FilePathGlob = origGlob
-		internal.FilePathEvalSymLinks = origEval
-		internal.CmdExecutor = origExec
+	diskmakertest.WithInternalMocks(t, func() {
+		internal.FilePathGlob = func(pattern string) ([]string, error) {
+			if pattern == filepath.Join(internal.DiskByIDDir, "*") {
+				return []string{fakeByIDLink}, nil
+			}
+			return filepath.Glob(pattern)
+		}
+		internal.FilePathEvalSymLinks = func(path string) (string, error) {
+			if path == fakeByIDLink {
+				return "/dev/null", nil
+			}
+			return filepath.EvalSymlinks(path)
+		}
+		internal.CmdExecutor = diskmakertest.BlkidForDevicePathFakeExec("/dev/null", "")
 	})
-
-	internal.FilePathGlob = func(pattern string) ([]string, error) {
-		if pattern == filepath.Join(internal.DiskByIDDir, "*") {
-			return []string{fakeByIDLink}, nil
-		}
-		return filepath.Glob(pattern)
-	}
-	internal.FilePathEvalSymLinks = func(path string) (string, error) {
-		if path == fakeByIDLink {
-			return "/dev/null", nil
-		}
-		return filepath.EvalSymlinks(path)
-	}
-	internal.CmdExecutor = fakeBlkidExecutor("/dev/null", "")
 
 	diskConfig := &DiskConfig{
 		Disks: map[string]*Disks{
@@ -557,10 +531,9 @@ func TestProcessValidDevices(t *testing.T) {
 }
 
 func TestCreateSymLinkByDeviceID(t *testing.T) {
-	tmpSymLinkTargetDir := createTmpDir(t, "", "target")
+	tmpSymLinkTargetDir := diskmakertest.TempDir(t, "target")
 	fakeDisk := createTmpFile(t, "", "diskName", emptyFile)
 	fakeDiskByID := createTmpFile(t, "", "diskID", emptyFile)
-	defer os.RemoveAll(tmpSymLinkTargetDir)
 	defer os.Remove(fakeDisk.Name())
 	defer os.Remove(fakeDiskByID.Name())
 
@@ -629,12 +602,11 @@ func TestWipeDeviceWhenCreateSymLinkByDeviceName(t *testing.T) {
 		test := tests[i]
 		volHelper := util.NewVolumeHelper()
 		t.Run(test.name, func(t *testing.T) {
-			tmpSymLinkTargetDir := createTmpDir(t, "", "target")
+			tmpSymLinkTargetDir := diskmakertest.TempDir(t, "target")
 			fakeDisk := createTmpFile(t, "", "diskName", tinyFile)
 			fname := fakeDisk.Name()
 			volHelper.FormatAsExt4(t, fname)
 			defer os.Remove(fname)
-			defer os.RemoveAll(tmpSymLinkTargetDir)
 
 			lv := &localv1.LocalVolume{
 				TypeMeta: metav1.TypeMeta{
@@ -751,8 +723,7 @@ func TestProcessRejectedDevicesForDeviceLinks(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			tmpRoot := createTmpDir(t, "", "rejected-devices")
-			defer os.RemoveAll(tmpRoot)
+			tmpRoot := diskmakertest.TempDir(t, "rejected-devices")
 
 			symLinkDir := filepath.Join(tmpRoot, storageClassName)
 			err := os.MkdirAll(symLinkDir, 0755)
@@ -795,62 +766,33 @@ func TestProcessRejectedDevicesForDeviceLinks(t *testing.T) {
 			r.runtimeConfig.Namespace = testNamespace
 			r.fsInterface = FakeFileSystemInterface{}
 
-			origGlob := internal.FilePathGlob
-			origEval := internal.FilePathEvalSymLinks
-			origExec := internal.CmdExecutor
-			defer func() {
-				internal.FilePathGlob = origGlob
-				internal.FilePathEvalSymLinks = origEval
-				internal.CmdExecutor = origExec
-			}()
-
-			internal.FilePathGlob = func(pattern string) ([]string, error) {
-				if strings.HasPrefix(pattern, internal.DiskByIDDir) {
-					if tc.byIDGlobErr != nil {
-						return nil, tc.byIDGlobErr
+			diskmakertest.WithInternalMocks(t, func() {
+				internal.FilePathGlob = func(pattern string) ([]string, error) {
+					if strings.HasPrefix(pattern, internal.DiskByIDDir) {
+						if tc.byIDGlobErr != nil {
+							return nil, tc.byIDGlobErr
+						}
+						return []string{preferredByID, secondaryByID}, nil
 					}
-					return []string{preferredByID, secondaryByID}, nil
+					return filepath.Glob(pattern)
 				}
-				return filepath.Glob(pattern)
-			}
 
-			internal.FilePathEvalSymLinks = func(p string) (string, error) {
-				switch p {
-				case preferredByID, secondaryByID:
-					// Simulate by-id links resolving to this block device.
-					return filepath.Join("/dev", blockDevKName), nil
-				default:
-					return filepath.EvalSymlinks(p)
-				}
-			}
-
-			if tc.execCommandErr {
-				blkidAction := func(cmd string, args ...string) utilexec.Cmd {
-					return &testingexec.FakeCmd{
-						CombinedOutputScript: []testingexec.FakeAction{
-							func() ([]byte, []byte, error) {
-								return nil, nil, fmt.Errorf("exit status 1")
-							},
-						},
+				internal.FilePathEvalSymLinks = func(p string) (string, error) {
+					switch p {
+					case preferredByID, secondaryByID:
+						// Simulate by-id links resolving to this block device.
+						return filepath.Join("/dev", blockDevKName), nil
+					default:
+						return filepath.EvalSymlinks(p)
 					}
 				}
-				internal.CmdExecutor = &testingexec.FakeExec{
-					CommandScript: []testingexec.FakeCommandAction{blkidAction},
+
+				if tc.execCommandErr {
+					internal.CmdExecutor = diskmakertest.BlkidAlwaysFakeExec("", fmt.Errorf("exit status 1"))
+				} else {
+					internal.CmdExecutor = diskmakertest.BlkidAlwaysFakeExec(filesystemUUID, nil)
 				}
-			} else {
-				blkidAction := func(cmd string, args ...string) utilexec.Cmd {
-					return &testingexec.FakeCmd{
-						CombinedOutputScript: []testingexec.FakeAction{
-							func() ([]byte, []byte, error) {
-								return []byte(filesystemUUID), nil, nil
-							},
-						},
-					}
-				}
-				internal.CmdExecutor = &testingexec.FakeExec{
-					CommandScript: []testingexec.FakeCommandAction{blkidAction},
-				}
-			}
+			})
 
 			kname := blockDevKName
 			if tc.useEmptyKName {
@@ -911,8 +853,7 @@ func TestIgnoredDevicesProcessedWhenNoValidDevices(t *testing.T) {
 		filesystemUUID = "uuid-test-1234"
 	)
 
-	tmpRoot := createTmpDir(t, "", "ignored-devices")
-	defer os.RemoveAll(tmpRoot)
+	tmpRoot := diskmakertest.TempDir(t, "ignored-devices")
 
 	symLinkDir := filepath.Join(tmpRoot, storageClassName)
 	err := os.MkdirAll(symLinkDir, 0755)
@@ -949,41 +890,23 @@ func TestIgnoredDevicesProcessedWhenNoValidDevices(t *testing.T) {
 	r.runtimeConfig.Namespace = testNamespace
 	r.fsInterface = FakeFileSystemInterface{}
 
-	origGlob := internal.FilePathGlob
-	origEval := internal.FilePathEvalSymLinks
-	origExec := internal.CmdExecutor
-	defer func() {
-		internal.FilePathGlob = origGlob
-		internal.FilePathEvalSymLinks = origEval
-		internal.CmdExecutor = origExec
-	}()
-
-	internal.FilePathGlob = func(pattern string) ([]string, error) {
-		if strings.HasPrefix(pattern, internal.DiskByIDDir) {
-			return []string{preferredByID, secondaryByID}, nil
+	diskmakertest.WithInternalMocks(t, func() {
+		internal.FilePathGlob = func(pattern string) ([]string, error) {
+			if strings.HasPrefix(pattern, internal.DiskByIDDir) {
+				return []string{preferredByID, secondaryByID}, nil
+			}
+			return filepath.Glob(pattern)
 		}
-		return filepath.Glob(pattern)
-	}
-	internal.FilePathEvalSymLinks = func(p string) (string, error) {
-		switch p {
-		case preferredByID, secondaryByID:
-			return filepath.Join("/dev", blockDevKName), nil
-		default:
-			return filepath.EvalSymlinks(p)
+		internal.FilePathEvalSymLinks = func(p string) (string, error) {
+			switch p {
+			case preferredByID, secondaryByID:
+				return filepath.Join("/dev", blockDevKName), nil
+			default:
+				return filepath.EvalSymlinks(p)
+			}
 		}
-	}
-	blkidAction := func(cmd string, args ...string) utilexec.Cmd {
-		return &testingexec.FakeCmd{
-			CombinedOutputScript: []testingexec.FakeAction{
-				func() ([]byte, []byte, error) {
-					return []byte(filesystemUUID), nil, nil
-				},
-			},
-		}
-	}
-	internal.CmdExecutor = &testingexec.FakeExec{
-		CommandScript: []testingexec.FakeCommandAction{blkidAction},
-	}
+		internal.CmdExecutor = diskmakertest.BlkidAlwaysFakeExec(filesystemUUID, nil)
+	})
 
 	diskConfig := &DiskConfig{
 		Disks: map[string]*Disks{
@@ -1149,14 +1072,6 @@ func getFakeDiskMaker(t *testing.T, symlinkLocation string, objs ...runtime.Obje
 	)
 
 	return lvReconciler, tc
-}
-
-func createTmpDir(t *testing.T, dir, prefix string) string {
-	tmpDir, err := os.MkdirTemp(dir, prefix)
-	if err != nil {
-		t.Fatalf("error creating temp directory : %v", err)
-	}
-	return tmpDir
 }
 
 func createTmpFile(t *testing.T, dir, pattern string, size int64) *os.File {
@@ -1437,7 +1352,7 @@ func TestDeleteReconcile(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			tmpSymLinkTargetDir := createTmpDir(t, "", "target")
+			tmpSymLinkTargetDir := diskmakertest.TempDir(t, "target")
 
 			cmBytes, err := f.ReadFile("testfiles/provisioner_conf.yaml")
 			if err != nil {
