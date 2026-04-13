@@ -267,7 +267,7 @@ func TestProcessNewSymlink(t *testing.T) {
 				device,
 				[]internal.BlockDevice{device},
 				*sc,
-				sets.NewString(),
+				sets.New[string](),
 				symLinkDirPath,
 			)
 
@@ -380,7 +380,7 @@ func TestProcessNewSymlink_SiblingFallback_LVSet(t *testing.T) {
 				device,
 				[]internal.BlockDevice{device},
 				*sc,
-				sets.NewString(),
+				sets.New[string](),
 				fixture.SymLinkDir,
 			)
 			assert.NotNil(t, result)
@@ -514,7 +514,7 @@ func TestProvisionFromExistingPV(t *testing.T) {
 				lvset,
 				internal.BlockDevice{Name: "null", KName: "null"},
 				*sc,
-				sets.NewString(),
+				sets.New[string](),
 				symlinkPath,
 			)
 

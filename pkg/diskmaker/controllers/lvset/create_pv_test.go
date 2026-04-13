@@ -37,7 +37,7 @@ func TestCreatePV(t *testing.T) {
 		desiredVolMode  string
 		deviceName      string
 		deviceCapacity  int64
-		mountPoints     sets.String
+		mountPoints     sets.Set[string]
 		extraDirEntries []*provUtil.FakeDirEntry
 	}{
 		{
@@ -64,7 +64,7 @@ func TestCreatePV(t *testing.T) {
 			},
 			actualVolMode:  string(localv1.PersistentVolumeBlock),
 			desiredVolMode: string(localv1.PersistentVolumeBlock),
-			mountPoints:    sets.NewString(),
+			mountPoints:    sets.New[string](),
 			symlinkpath:    "/mnt/local-storage/storageclass-a/device-a",
 			deviceCapacity: 10 * common.GiB,
 			deviceName:     "device-a",
@@ -95,7 +95,7 @@ func TestCreatePV(t *testing.T) {
 			},
 			actualVolMode:  string(localv1.PersistentVolumeFilesystem),
 			desiredVolMode: string(localv1.PersistentVolumeBlock),
-			mountPoints:    sets.NewString(),
+			mountPoints:    sets.New[string](),
 			symlinkpath:    "/mnt/local-storage/storageclass-a/device-a",
 			deviceCapacity: 10 * common.GiB,
 			deviceName:     "device-a",
@@ -125,7 +125,7 @@ func TestCreatePV(t *testing.T) {
 			},
 			actualVolMode:  string(localv1.PersistentVolumeBlock),
 			desiredVolMode: string(localv1.PersistentVolumeFilesystem),
-			mountPoints:    sets.NewString(),
+			mountPoints:    sets.New[string](),
 			symlinkpath:    "/mnt/local-storage/storageclass-a/device-a",
 			deviceCapacity: 10 * common.GiB,
 			deviceName:     "device-a",
@@ -155,7 +155,7 @@ func TestCreatePV(t *testing.T) {
 			},
 			actualVolMode:  string(localv1.PersistentVolumeFilesystem),
 			desiredVolMode: string(localv1.PersistentVolumeFilesystem),
-			mountPoints:    sets.NewString("/mnt/local-storage/storageclass-a/device-a"),
+			mountPoints:    sets.New[string]("/mnt/local-storage/storageclass-a/device-a"),
 			symlinkpath:    "/mnt/local-storage/storageclass-a/device-a",
 			deviceCapacity: 10 * common.GiB,
 			deviceName:     "device-a",
@@ -186,7 +186,7 @@ func TestCreatePV(t *testing.T) {
 			},
 			actualVolMode:  string(localv1.PersistentVolumeFilesystem),
 			desiredVolMode: string(localv1.PersistentVolumeFilesystem),
-			mountPoints:    sets.NewString("a", "b"), // device not present
+			mountPoints:    sets.New[string]("a", "b"), // device not present
 			symlinkpath:    "/mnt/local-storage/storageclass-b/device-b",
 			deviceCapacity: 10 * common.GiB,
 			deviceName:     "device-b",
@@ -363,7 +363,7 @@ func TestCreatePV_SetsLVDLOwnerRefToLocalVolumeSet(t *testing.T) {
 		LocalVolumeLikeObject: &lvset,
 		RuntimeConfig:         r.runtimeConfig,
 		StorageClass:          sc,
-		MountPointMap:         sets.NewString(),
+		MountPointMap:         sets.New[string](),
 		Client:                r.Client,
 		ClientReader:          r.ClientReader,
 		SymLinkPath:           symLinkPath,

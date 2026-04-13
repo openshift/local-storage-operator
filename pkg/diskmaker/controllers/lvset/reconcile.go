@@ -516,7 +516,7 @@ func (r *LocalVolumeSetReconciler) processNewSymlink(
 	blockDevice internal.BlockDevice,
 	blockDevices []internal.BlockDevice,
 	storageClass storagev1.StorageClass,
-	mountPointMap sets.String,
+	mountPointMap sets.Set[string],
 	symLinkDir string,
 ) (*processNewSymlinkResult, error) {
 	result := &processNewSymlinkResult{}
@@ -598,7 +598,7 @@ func (r *LocalVolumeSetReconciler) provisionPV(
 	obj *localv1alpha1.LocalVolumeSet,
 	dev internal.BlockDevice,
 	storageClass storagev1.StorageClass,
-	mountPointMap sets.String,
+	mountPointMap sets.Set[string],
 	symlinkSourcePath string,
 	symlinkPath string,
 ) error {
@@ -690,7 +690,7 @@ func (r *LocalVolumeSetReconciler) provisionFromExistingPV(
 	obj *localv1alpha1.LocalVolumeSet,
 	blockDevice internal.BlockDevice,
 	storageClass storagev1.StorageClass,
-	mountPointMap sets.String,
+	mountPointMap sets.Set[string],
 	symlinkPath string) error {
 	createLocalPVArgs := common.CreateLocalPVArgs{
 		LocalVolumeLikeObject: obj,

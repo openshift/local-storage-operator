@@ -30,9 +30,8 @@ import (
 var ErrTryAgain = errors.New("retry provisioning")
 
 // GenerateMountMap is used to get a set of mountpoints that can be quickly looked up
-func GenerateMountMap(runtimeConfig *provCommon.RuntimeConfig) (sets.String, error) {
-	type empty struct{}
-	mountPointMap := sets.NewString()
+func GenerateMountMap(runtimeConfig *provCommon.RuntimeConfig) (sets.Set[string], error) {
+	mountPointMap := sets.New[string]()
 	// Retrieve list of mount points to iterate through discovered paths (aka files) below
 	mountPoints, err := runtimeConfig.Mounter.List()
 	if err != nil {
@@ -50,7 +49,7 @@ type CreateLocalPVArgs struct {
 	LocalVolumeLikeObject runtime.Object
 	RuntimeConfig         *provCommon.RuntimeConfig
 	StorageClass          storagev1.StorageClass
-	MountPointMap         sets.String
+	MountPointMap         sets.Set[string]
 	Client                client.Client
 	// symlinkPath points to path on /mnt/local-storage
 	SymLinkPath      string

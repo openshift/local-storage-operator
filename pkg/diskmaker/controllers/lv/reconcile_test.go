@@ -257,7 +257,7 @@ func TestProcessExistingSymlink_UsesFullSymlinkPath(t *testing.T) {
 		},
 	}
 
-	err := d.processExistingSymlink(context.TODO(), sc.Name, symlinkPath, diskLocation, sets.NewString())
+	err := d.processExistingSymlink(context.TODO(), sc.Name, symlinkPath, diskLocation, sets.New[string]())
 	assert.NoError(t, err)
 	assert.Equal(t, symlinkPath, diskLocation.SymlinkPath)
 	assert.Equal(t, deviceTarget, diskLocation.SymlinkSource)
@@ -424,7 +424,7 @@ func TestProvisionValidDevice(t *testing.T) {
 				},
 			}
 
-			provisioned := d.provisionValidDevice(t.Context(), storageClassName, symLinkDir, "/dev/null", diskLocation, sets.NewString())
+			provisioned := d.provisionValidDevice(t.Context(), storageClassName, symLinkDir, "/dev/null", diskLocation, sets.New[string]())
 			assert.Equal(t, tc.expectProvisioned, provisioned)
 			assert.Equal(t, tc.expectRequeue, d.effectiveRequeueTime)
 
@@ -515,7 +515,7 @@ func TestProcessValidDevices(t *testing.T) {
 		t.Context(),
 		[]internal.BlockDevice{{Name: "null", KName: "null", PathByID: fakeByIDLink}},
 		diskConfig,
-		sets.NewString(),
+		sets.New[string](),
 	)
 
 	pvName := common.GeneratePVName(filepath.Base(fakeByIDLink), node.Name, storageClassName)
@@ -1017,7 +1017,7 @@ func TestProcessNewSymlink_SiblingFallback(t *testing.T) {
 				deviceLocation.DiskID = matchedDeviceID
 			}
 
-			provisioned, err := r.processNewSymlink(context.TODO(), cfg.SCName, deviceLocation, sets.NewString())
+			provisioned, err := r.processNewSymlink(context.TODO(), cfg.SCName, deviceLocation, sets.New[string]())
 			if tt.expectErr != "" {
 				assert.ErrorContains(t, err, tt.expectErr)
 				assert.False(t, provisioned)
