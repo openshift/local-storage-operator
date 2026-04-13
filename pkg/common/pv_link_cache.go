@@ -143,8 +143,10 @@ func (l *LocalVolumeDeviceLinkCache) Start(ctx context.Context) error {
 		return err
 	}
 
-	l.watchForEvents(informer)
-
+	_, err = l.watchForEvents(informer)
+	if err != nil {
+		return err
+	}
 	// Wait for the LVDL informer to complete its initial list.
 	if !l.mgr.GetCache().WaitForCacheSync(ctx) {
 		return fmt.Errorf("cache sync failed for LocalVolumeDeviceLink")
@@ -162,15 +164,15 @@ func (l *LocalVolumeDeviceLinkCache) Start(ctx context.Context) error {
 
 	// Signal that the cache is ready for use by reconcilers.
 	close(l.synced)
-	klog.InfoS("LVDL cache synced", "entries", len(l.localDeviceInfos))
+	klog.InfoS("LVDL cache synced")
 
 	<-ctx.Done()
 	return nil
 }
 
-func (l *LocalVolumeDeviceLinkCache) watchForEvents(informer cache.Informer) {
+func (l *LocalVolumeDeviceLinkCache) watchForEvents(informer cache.Informer) (k8scache.ResourceEventHandlerRegistration, error) {
 	// Watch for subsequent changes.
-	informer.AddEventHandler(k8scache.ResourceEventHandlerFuncs{
+	return informer.AddEventHandler(k8scache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj any) {
 			if lvdl, ok := obj.(*v1.LocalVolumeDeviceLink); ok {
 				l.addOrUpdateLVDL(lvdl)

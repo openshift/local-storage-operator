@@ -312,21 +312,22 @@ func TestProcessNewSymlink(t *testing.T) {
 // Exercises FindStalePVs → provisionFromExistingPV → CreateLocalPV with a LocalVolumeSet owner.
 func TestProcessNewSymlink_SiblingFallback_LVSet(t *testing.T) {
 	testCases := []struct {
-		name      string
-		lvsetName string
-		policy    v1api.DeviceLinkPolicy
-		expectErr string
+		name          string
+		lvsetName     string
+		policy        v1api.DeviceLinkPolicy
+		expectUpdated bool
 	}{
 		{
-			name:      "PreferredLinkTarget policy resolves sibling fallback",
-			lvsetName: "lvset-sibling-fallback",
-			policy:    v1api.DeviceLinkPolicyPreferredLinkTarget,
+			name:          "PreferredLinkTarget policy resolves sibling fallback",
+			lvsetName:     "lvset-sibling-fallback",
+			policy:        v1api.DeviceLinkPolicyPreferredLinkTarget,
+			expectUpdated: true,
 		},
 		{
-			name:      "policy None cannot fix stale symlink via sibling fallback",
-			lvsetName: "lvset-sibling-fallback-none",
-			policy:    v1api.DeviceLinkPolicyNone,
-			expectErr: "found stale symlink link",
+			name:          "policy None cannot fix stale symlink via sibling fallback",
+			lvsetName:     "lvset-sibling-fallback-none",
+			policy:        v1api.DeviceLinkPolicyNone,
+			expectUpdated: false,
 		},
 	}
 
@@ -384,15 +385,16 @@ func TestProcessNewSymlink_SiblingFallback_LVSet(t *testing.T) {
 				fixture.SymLinkDir,
 			)
 			assert.NotNil(t, result)
-			if tc.expectErr != "" {
-				assert.ErrorContains(t, err, tc.expectErr)
-				return
-			}
-
 			assert.NoError(t, err)
 
 			gotLinkTarget, err := os.Readlink(fixture.SymlinkPath)
 			assert.NoError(t, err)
+			if !tc.expectUpdated {
+				assert.Equal(t, cfg.OldByID, gotLinkTarget,
+					"symlink should remain unchanged when sibling fallback is not allowed to repair it")
+				return
+			}
+
 			assert.Equal(t, cfg.NewByID, gotLinkTarget,
 				"symlink under local-storage should be updated to the current preferred by-id path")
 
