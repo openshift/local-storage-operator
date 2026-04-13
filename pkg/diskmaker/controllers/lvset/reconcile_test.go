@@ -311,75 +311,106 @@ func TestProcessNewSymlink(t *testing.T) {
 // scenario: stale dangling symlink and LVDL valid targets include a sibling by-id path.
 // Exercises FindStalePVs → provisionFromExistingPV → CreateLocalPV with a LocalVolumeSet owner.
 func TestProcessNewSymlink_SiblingFallback_LVSet(t *testing.T) {
-	fixture := diskmakertest.SetupSiblingFallback(t, diskmakertest.DefaultSiblingFallbackConfig())
-	cfg := fixture.Config
-
-	lvset := &v1alphav1api.LocalVolumeSet{
-		TypeMeta: metav1.TypeMeta{
-			Kind:       v1alphav1api.LocalVolumeSetKind,
-			APIVersion: v1alphav1api.GroupVersion.String(),
+	testCases := []struct {
+		name      string
+		lvsetName string
+		policy    v1api.DeviceLinkPolicy
+		expectErr string
+	}{
+		{
+			name:      "PreferredLinkTarget policy resolves sibling fallback",
+			lvsetName: "lvset-sibling-fallback",
+			policy:    v1api.DeviceLinkPolicyPreferredLinkTarget,
 		},
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "lvset-sibling-fallback",
-			Namespace: cfg.TestNamespace,
-		},
-		Spec: v1alphav1api.LocalVolumeSetSpec{
-			StorageClassName: cfg.SCName,
-		},
-	}
-	node := &corev1.Node{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:   cfg.TestNodeName,
-			Labels: map[string]string{corev1.LabelHostname: cfg.TestNodeName},
+		{
+			name:      "policy None cannot fix stale symlink via sibling fallback",
+			lvsetName: "lvset-sibling-fallback-none",
+			policy:    v1api.DeviceLinkPolicyNone,
+			expectErr: "found stale symlink link",
 		},
 	}
 
-	objs := append([]runtime.Object{lvset, node}, fixture.RuntimeObjects()...)
-	r, tc := newFakeLocalVolumeSetReconciler(t, objs...)
-	r.pvLinkCache.SeedForTests(fixture.LocalVolumeDeviceLink())
-	r.nodeName = node.Name
-	r.runtimeConfig.Node = node
-	r.runtimeConfig.Name = common.GetProvisionedByValue(*node)
-	r.runtimeConfig.Namespace = cfg.TestNamespace
-	r.runtimeConfig.DiscoveryMap[cfg.SCName] = provCommon.MountConfig{
-		VolumeMode: string(corev1.PersistentVolumeBlock),
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			fixture := diskmakertest.SetupSiblingFallback(t, diskmakertest.DefaultSiblingFallbackConfig())
+			cfg := fixture.Config
+
+			lvset := &v1alphav1api.LocalVolumeSet{
+				TypeMeta: metav1.TypeMeta{
+					Kind:       v1alphav1api.LocalVolumeSetKind,
+					APIVersion: v1alphav1api.GroupVersion.String(),
+				},
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      tc.lvsetName,
+					Namespace: cfg.TestNamespace,
+				},
+				Spec: v1alphav1api.LocalVolumeSetSpec{
+					StorageClassName: cfg.SCName,
+				},
+			}
+			node := &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:   cfg.TestNodeName,
+					Labels: map[string]string{corev1.LabelHostname: cfg.TestNodeName},
+				},
+			}
+
+			lvdl := fixture.LocalVolumeDeviceLink()
+			lvdl.Spec.Policy = tc.policy
+
+			objs := []runtime.Object{lvset, node, fixture.PersistentVolume(), lvdl, fixture.StorageClass()}
+			r, testCtx := newFakeLocalVolumeSetReconciler(t, objs...)
+			r.pvLinkCache.SeedForTests(lvdl)
+			r.nodeName = node.Name
+			r.runtimeConfig.Node = node
+			r.runtimeConfig.Name = common.GetProvisionedByValue(*node)
+			r.runtimeConfig.Namespace = cfg.TestNamespace
+			r.runtimeConfig.DiscoveryMap[cfg.SCName] = provCommon.MountConfig{
+				VolumeMode: string(corev1.PersistentVolumeBlock),
+			}
+
+			fixture.AddFakeVolumeDirEntries(testCtx.fakeVolUtil)
+
+			sc := fixture.StorageClass()
+			device := internal.BlockDevice{Name: cfg.BlockDevKName, KName: cfg.BlockDevKName}
+
+			result, err := r.processNewSymlink(
+				context.Background(),
+				lvset,
+				device,
+				[]internal.BlockDevice{device},
+				*sc,
+				sets.NewString(),
+				fixture.SymLinkDir,
+			)
+			assert.NotNil(t, result)
+			if tc.expectErr != "" {
+				assert.ErrorContains(t, err, tc.expectErr)
+				return
+			}
+
+			assert.NoError(t, err)
+
+			gotLinkTarget, err := os.Readlink(fixture.SymlinkPath)
+			assert.NoError(t, err)
+			assert.Equal(t, cfg.NewByID, gotLinkTarget,
+				"symlink under local-storage should be updated to the current preferred by-id path")
+
+			pv := &corev1.PersistentVolume{}
+			err = r.Client.Get(context.Background(), types.NamespacedName{Name: fixture.ExpectedPVName}, pv)
+			assert.NoError(t, err, "provisioned PV should exist after sibling fallback")
+			assert.Equal(t, fixture.SymlinkPath, pv.Spec.Local.Path,
+				"PV local path should be preserved from the original symlink name")
+			assert.Equal(t, v1api.LocalVolumeSetKind, pv.Labels[common.PVOwnerKindLabel])
+
+			gotLVDL := &v1api.LocalVolumeDeviceLink{}
+			err = r.Client.Get(context.Background(), types.NamespacedName{Name: fixture.ExpectedPVName, Namespace: cfg.TestNamespace}, gotLVDL)
+			assert.NoError(t, err)
+			assert.Equal(t, cfg.NewByID, gotLVDL.Status.CurrentLinkTarget)
+			assert.Equal(t, cfg.NewByID, gotLVDL.Status.PreferredLinkTarget)
+			assert.ElementsMatch(t, []string{cfg.NewByID, cfg.SiblingByID}, gotLVDL.Status.ValidLinkTargets)
+		})
 	}
-
-	fixture.AddFakeVolumeDirEntries(tc.fakeVolUtil)
-
-	sc := fixture.StorageClass()
-	device := internal.BlockDevice{Name: cfg.BlockDevKName, KName: cfg.BlockDevKName}
-
-	result, err := r.processNewSymlink(
-		context.Background(),
-		lvset,
-		device,
-		[]internal.BlockDevice{device},
-		*sc,
-		sets.NewString(),
-		fixture.SymLinkDir,
-	)
-	assert.NoError(t, err)
-	assert.NotNil(t, result)
-
-	gotLinkTarget, err := os.Readlink(fixture.SymlinkPath)
-	assert.NoError(t, err)
-	assert.Equal(t, cfg.NewByID, gotLinkTarget,
-		"symlink under local-storage should be updated to the current preferred by-id path")
-
-	pv := &corev1.PersistentVolume{}
-	err = r.Client.Get(context.Background(), types.NamespacedName{Name: fixture.ExpectedPVName}, pv)
-	assert.NoError(t, err, "provisioned PV should exist after sibling fallback")
-	assert.Equal(t, fixture.SymlinkPath, pv.Spec.Local.Path,
-		"PV local path should be preserved from the original symlink name")
-	assert.Equal(t, v1api.LocalVolumeSetKind, pv.Labels[common.PVOwnerKindLabel])
-
-	gotLVDL := &v1api.LocalVolumeDeviceLink{}
-	err = r.Client.Get(context.Background(), types.NamespacedName{Name: fixture.ExpectedPVName, Namespace: cfg.TestNamespace}, gotLVDL)
-	assert.NoError(t, err)
-	assert.Equal(t, cfg.NewByID, gotLVDL.Status.CurrentLinkTarget)
-	assert.Equal(t, cfg.NewByID, gotLVDL.Status.PreferredLinkTarget)
-	assert.ElementsMatch(t, []string{cfg.NewByID, cfg.SiblingByID}, gotLVDL.Status.ValidLinkTargets)
 }
 
 func TestProvisionFromExistingPV(t *testing.T) {

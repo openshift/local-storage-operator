@@ -560,7 +560,7 @@ func (r *LocalVolumeSetReconciler) processNewSymlink(
 		symlinkPath, err = currentDevice.GetSymlinkTargetPath(ctx, symLinkDir, symlinkSourcePath, r.Client)
 		if err != nil {
 			r.reportProvisioningFailure(lvset, blockDevice.KName, err)
-			return result, nil
+			return result, err
 		}
 		err = r.provisionFromExistingPV(ctx, lvset, blockDevice, storageClass, mountPointMap, symlinkPath)
 		if err == common.ErrTryAgain {
