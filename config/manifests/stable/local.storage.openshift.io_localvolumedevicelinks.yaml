@@ -42,6 +42,13 @@ spec:
           spec:
             description: spec holds user settable values for the device link
             properties:
+              nodeName:
+                description: |-
+                  nodeName is the name of the Openshift node on which this
+                  LocalVolumeDeviceLink object exists
+                maxLength: 253
+                minLength: 1
+                type: string
               persistentVolumeName:
                 description: persistentVolumeName is the name of the persistent volume
                   linked to the device
@@ -66,6 +73,7 @@ spec:
                 - PreferredLinkTarget
                 type: string
             required:
+            - nodeName
             - persistentVolumeName
             type: object
           status:

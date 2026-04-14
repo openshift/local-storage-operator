@@ -99,7 +99,7 @@ func newFakeLocalVolumeSetReconciler(t *testing.T, objs ...runtime.Object) (*Loc
 		fakeVolUtil:   fakeVolUtil,
 	}
 
-	pvLinkCache := common.NewLocalVolumeDeviceLinkCache(fakeClient, nil)
+	pvLinkCache := common.NewLocalVolumeDeviceLinkCache(fakeClient, nil, "test-node")
 	pvLinkCache.MarkSyncedForTests()
 
 	lvsReconciler := NewLocalVolumeSetReconciler(
@@ -227,7 +227,7 @@ func TestProcessNewSymlink(t *testing.T) {
 			}
 
 			r, ctx := newFakeLocalVolumeSetReconciler(t, objs...)
-			r.pvLinkCache = common.NewLocalVolumeDeviceLinkCache(r.Client, nil)
+			r.pvLinkCache = common.NewLocalVolumeDeviceLinkCache(r.Client, nil, node.Name)
 			r.nodeName = node.Name
 			r.runtimeConfig.Node = node
 			r.runtimeConfig.Name = common.GetProvisionedByValue(*node)
@@ -358,9 +358,12 @@ func TestProcessNewSymlink_SiblingFallback_LVSet(t *testing.T) {
 
 			lvdl := fixture.LocalVolumeDeviceLink()
 			lvdl.Spec.Policy = tc.policy
+			lvdl.Spec.NodeName = node.Name
 
 			objs := []runtime.Object{lvset, node, fixture.PersistentVolume(), lvdl, fixture.StorageClass()}
 			r, testCtx := newFakeLocalVolumeSetReconciler(t, objs...)
+			r.pvLinkCache = common.NewLocalVolumeDeviceLinkCache(r.Client, nil, node.Name)
+			r.pvLinkCache.MarkSyncedForTests()
 			r.pvLinkCache.SeedForTests(lvdl)
 			r.nodeName = node.Name
 			r.runtimeConfig.Node = node
@@ -637,6 +640,7 @@ func TestProcessRejectedDevicesForDeviceLinks(t *testing.T) {
 				},
 				Spec: v1api.LocalVolumeDeviceLinkSpec{
 					PersistentVolumeName: pvName,
+					NodeName:             node.Name,
 					Policy:               tc.initialPolicy,
 				},
 				Status: v1api.LocalVolumeDeviceLinkStatus{
@@ -664,7 +668,7 @@ func TestProcessRejectedDevicesForDeviceLinks(t *testing.T) {
 				},
 				lvdl,
 			)
-			r.pvLinkCache = common.NewLocalVolumeDeviceLinkCache(r.Client, nil)
+			r.pvLinkCache = common.NewLocalVolumeDeviceLinkCache(r.Client, nil, node.Name)
 			r.nodeName = node.Name
 			r.runtimeConfig.Node = node
 			r.runtimeConfig.Namespace = testNamespace

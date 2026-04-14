@@ -86,6 +86,12 @@ func startManager(cmd *cobra.Command, args []string) error {
 		klog.ErrorS(err, "failed to get watch namespace")
 		return err
 	}
+	localNodeName := common.GetNodeNameEnvVar()
+	if localNodeName == "" {
+		err = errors.New("MY_NODE_NAME must be set for diskmaker-manager to scope LocalVolumeDeviceLink cache to the local node")
+		klog.ErrorS(err, "failed to determine local node name")
+		return err
+	}
 
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Cache: cache.Options{
@@ -103,7 +109,7 @@ func startManager(cmd *cobra.Command, args []string) error {
 	// Create the shared LVDL cache and register it as a manager.Runnable.
 	// The manager will call Start(ctx) after its own caches are started,
 	// and the cache waits for LVDL informer sync before processing events.
-	pvLinkCache := common.NewLocalVolumeDeviceLinkCache(mgr.GetClient(), mgr)
+	pvLinkCache := common.NewLocalVolumeDeviceLinkCache(mgr.GetClient(), mgr, localNodeName)
 	if err := mgr.Add(pvLinkCache); err != nil {
 		klog.ErrorS(err, "failed to add pvLinkCache runnable")
 		return err
