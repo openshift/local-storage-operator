@@ -90,7 +90,7 @@ func eventuallyFindPVs(t *testing.T, f *framework.Framework, storageClassName st
 	matcher := gomega.NewWithT(t)
 	matcher.Eventually(func() []corev1.PersistentVolume {
 		pvList := &corev1.PersistentVolumeList{}
-		t.Log(fmt.Sprintf("waiting for %d PVs to be created with StorageClass: %q", expectedPVs, storageClassName))
+		t.Logf("waiting for %d PVs to be created with StorageClass: %q", expectedPVs, storageClassName)
 		matcher.Eventually(func() error {
 			return f.Client.List(context.TODO(), pvList)
 		}).ShouldNot(gomega.HaveOccurred())
@@ -130,6 +130,16 @@ func eventuallyFindLVDLsForPVs(t *testing.T, f *framework.Framework, namespace s
 		return len(foundLVDLs) == len(pvNameSet)
 	}, time.Minute*5, time.Second*5).Should(gomega.BeTrue(), "waiting for LVDL objects with populated status for all PVs")
 	return foundLVDLs
+}
+
+func assertLVDLsContainTarget(t *testing.T, lvdls []localv1.LocalVolumeDeviceLink, expectedTarget string, expectedCount int) {
+	matcher := gomega.NewWithT(t)
+	matcher.Expect(lvdls).To(gomega.HaveLen(expectedCount),
+		"expected %d LVDLs for target %q", expectedCount, expectedTarget)
+	for _, lvdl := range lvdls {
+		matcher.Expect(lvdl.Status.ValidLinkTargets).To(gomega.ContainElement(expectedTarget),
+			"expected ValidLinkTargets for LVDL %q to contain %q", lvdl.Name, expectedTarget)
+	}
 }
 
 // waits for PVs of the same name to become available

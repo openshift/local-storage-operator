@@ -110,6 +110,84 @@ func LocalVolumeTest(ctx *framework.Context, cleanupFuncs *[]cleanupFn) func(*te
 
 		selectedDisk := nodeEnv[0].disks[0]
 		matcher.Expect(selectedDisk.path).ShouldNot(gomega.BeZero(), "device path should not be empty")
+		sharedAliasDisk := nodeEnv[1].disks[0]
+		matcher.Expect(sharedAliasDisk.path).ShouldNot(gomega.BeZero(), "shared alias device path should not be empty")
+
+		t.Log("TEST: duplicate by-id cache reproducer for LocalVolume using shared scsi-8 alias")
+		addSharedUdevSymlink(t, ctx, cleanupFuncs, []sharedByIDSymlinkTarget{
+			{
+				nodeHostname: nodeEnv[0].node.Labels[corev1.LabelHostname],
+				currentLink:  currentSymlinkForDisk(selectedDisk),
+			},
+			{
+				nodeHostname: nodeEnv[1].node.Labels[corev1.LabelHostname],
+				currentLink:  currentSymlinkForDisk(sharedAliasDisk),
+			},
+		}, sharedScsi8Link)
+
+		sharedLocalVolume := getLocalVolume(selectedNode, sharedScsi8Link, namespace)
+		sharedLocalVolume.Name = "test-local-disk-shared-byid"
+		sharedLocalVolume.Spec.StorageClassDevices[0].StorageClassName = "test-local-sc-shared-byid"
+
+		matcher.Eventually(func() error {
+			t.Log("creating shared localvolume reproducer")
+			return f.Client.Create(goctx.TODO(), sharedLocalVolume, &framework.CleanupOptions{TestContext: ctx})
+		}, time.Minute, time.Second*2).ShouldNot(gomega.HaveOccurred(), "creating shared localvolume reproducer")
+
+		addToCleanupFuncs(cleanupFuncs, "cleanupSharedLVResources", func(t *testing.T) error {
+			return cleanupLVResources(t, f, sharedLocalVolume)
+		})
+
+		err = waitForDaemonSet(t, f.KubeClient, namespace, nodedaemon.DiskMakerName, retryInterval, timeout)
+		if err != nil {
+			t.Fatalf("error waiting for diskmaker daemonset for shared localvolume reproducer: %v", err)
+		}
+		err = verifyLocalVolume(t, sharedLocalVolume, f.Client)
+		if err != nil {
+			t.Fatalf("error verifying shared localvolume reproducer: %v", err)
+		}
+		err = checkLocalVolumeStatus(t, sharedLocalVolume)
+		if err != nil {
+			t.Fatalf("error checking shared localvolume reproducer condition: %v", err)
+		}
+
+		sharedPVs := eventuallyFindPVs(t, f, sharedLocalVolume.Spec.StorageClassDevices[0].StorageClassName, 1)
+		matcher.Expect(filepath.Base(sharedPVs[0].Spec.Local.Path)).To(gomega.Equal(filepath.Base(sharedScsi8Link)))
+		sharedPVNames := []string{sharedPVs[0].Name}
+		sharedLVDLs := eventuallyFindLVDLsForPVs(t, f, namespace, sharedPVNames)
+		assertLVDLsContainTarget(t, sharedLVDLs, sharedScsi8Link, 1)
+
+		matcher.Eventually(func() error {
+			t.Log("expanding shared localvolume reproducer to a second node")
+			key := types.NamespacedName{Name: sharedLocalVolume.Name, Namespace: sharedLocalVolume.Namespace}
+			if err := f.Client.Get(goctx.TODO(), key, sharedLocalVolume); err != nil {
+				return err
+			}
+			matchFields := sharedLocalVolume.Spec.NodeSelector.NodeSelectorTerms[0].MatchFields
+			if len(matchFields) == 0 {
+				return fmt.Errorf("shared localvolume reproducer node selector is missing matchFields")
+			}
+			matchFields[0].Values = append(matchFields[0].Values, nodeEnv[1].node.Name)
+			sharedLocalVolume.Spec.NodeSelector.NodeSelectorTerms[0].MatchFields = matchFields
+			return f.Client.Update(goctx.TODO(), sharedLocalVolume)
+		}, time.Minute, time.Second*2).ShouldNot(gomega.HaveOccurred(), "updating shared localvolume reproducer")
+
+		sharedPVs = eventuallyFindPVs(t, f, sharedLocalVolume.Spec.StorageClassDevices[0].StorageClassName, 2)
+		sharedPVNames = make([]string, 0, len(sharedPVs))
+		for _, pv := range sharedPVs {
+			matcher.Expect(filepath.Base(pv.Spec.Local.Path)).To(gomega.Equal(filepath.Base(sharedScsi8Link)))
+			sharedPVNames = append(sharedPVNames, pv.Name)
+		}
+		sharedLVDLs = eventuallyFindLVDLsForPVs(t, f, namespace, sharedPVNames)
+		assertLVDLsContainTarget(t, sharedLVDLs, sharedScsi8Link, 2)
+
+		t.Log("cleaning up LocalVolume duplicate by-id reproducer before continuing with standard test flow")
+		err = cleanupLVResources(t, f, sharedLocalVolume)
+		if err != nil {
+			t.Fatalf("error cleaning up shared localvolume reproducer: %v", err)
+		}
+		removeUdevSymlink(t, ctx, nodeEnv[0].node.Labels[corev1.LabelHostname], sharedScsi8Link)
+		removeUdevSymlink(t, ctx, nodeEnv[1].node.Labels[corev1.LabelHostname], sharedScsi8Link)
 
 		localVolume := getLocalVolume(selectedNode, selectedDisk.path, namespace)
 

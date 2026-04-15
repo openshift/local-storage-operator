@@ -5,6 +5,7 @@ import (
 	goctx "context"
 	"fmt"
 	"path"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -111,6 +112,7 @@ func LocalVolumeSetTest(ctx *framework.TestCtx, cleanupFuncs *[]cleanupFn) func(
 		thirtyGi := resource.MustParse("30G")
 		fiftyGi := resource.MustParse("50G")
 		hundredTi := resource.MustParse("100Ti")
+		one := int32(1)
 		two := int32(2)
 		three := int32(3)
 
@@ -150,6 +152,88 @@ func LocalVolumeSetTest(ctx *framework.TestCtx, cleanupFuncs *[]cleanupFn) func(
 		t.Log("creating and attaching disks")
 		createAndAttachAWSVolumes(t, ec2Client, ctx, namespace, nodeEnv)
 		nodeEnv = populateDeviceInfo(t, ctx, nodeEnv)
+
+		t.Log("TEST: duplicate by-id cache reproducer for LocalVolumeSet using shared scsi-8 alias")
+		addSharedUdevSymlink(t, ctx, cleanupFuncs, []sharedByIDSymlinkTarget{
+			{
+				nodeHostname: nodeEnv[0].node.Labels[corev1.LabelHostname],
+				currentLink:  currentSymlinkForDisk(nodeEnv[0].disks[0]),
+			},
+			{
+				nodeHostname: nodeEnv[1].node.Labels[corev1.LabelHostname],
+				currentLink:  currentSymlinkForDisk(nodeEnv[1].disks[0]),
+			},
+		}, sharedScsi8Link)
+
+		sharedLVSet := &localv1alpha1.LocalVolumeSet{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "shared-byid-10g",
+				Namespace: namespace,
+			},
+			Spec: localv1alpha1.LocalVolumeSetSpec{
+				StorageClassName: "shared-byid-10g",
+				MaxDeviceCount:   &one,
+				VolumeMode:       localv1.PersistentVolumeBlock,
+				NodeSelector: &corev1.NodeSelector{NodeSelectorTerms: []corev1.NodeSelectorTerm{
+					{
+						MatchExpressions: []corev1.NodeSelectorRequirement{
+							{
+								Key:      corev1.LabelHostname,
+								Operator: corev1.NodeSelectorOpIn,
+								Values:   []string{nodeEnv[0].node.ObjectMeta.Labels[corev1.LabelHostname]},
+							},
+						},
+					},
+				}},
+				DeviceInclusionSpec: &localv1alpha1.DeviceInclusionSpec{
+					DeviceTypes: []localv1alpha1.DeviceType{localv1alpha1.RawDisk},
+					MinSize:     &tenGi,
+					MaxSize:     &tenGi,
+				},
+			},
+		}
+
+		t.Logf("creating localvolumeset %q", sharedLVSet.GetName())
+		err = f.Client.Create(context.TODO(), sharedLVSet, &framework.CleanupOptions{TestContext: ctx})
+		matcher.Expect(err).NotTo(gomega.HaveOccurred(), "create shared localvolumeset reproducer")
+		lvSets = append(lvSets, sharedLVSet)
+
+		sharedPVs := eventuallyFindPVs(t, f, sharedLVSet.Spec.StorageClassName, 1)
+		matcher.Expect(filepath.Base(sharedPVs[0].Spec.Local.Path)).To(gomega.Equal(filepath.Base(sharedScsi8Link)))
+		sharedPVNames := []string{sharedPVs[0].Name}
+		sharedLVDLs := eventuallyFindLVDLsForPVs(t, f, namespace, sharedPVNames)
+		assertLVDLsContainTarget(t, sharedLVDLs, sharedScsi8Link, 1)
+
+		matcher.Eventually(func() error {
+			t.Log("expanding shared localvolumeset reproducer to a second node")
+			key := types.NamespacedName{Name: sharedLVSet.GetName(), Namespace: sharedLVSet.GetNamespace()}
+			if err := f.Client.Get(context.TODO(), key, sharedLVSet); err != nil {
+				return err
+			}
+			sharedLVSet.Spec.MaxDeviceCount = &two
+			sharedLVSet.Spec.NodeSelector.NodeSelectorTerms[0].MatchExpressions[0].Values = append(
+				sharedLVSet.Spec.NodeSelector.NodeSelectorTerms[0].MatchExpressions[0].Values,
+				nodeEnv[1].node.ObjectMeta.Labels[corev1.LabelHostname],
+			)
+			return f.Client.Update(context.TODO(), sharedLVSet)
+		}, time.Minute, time.Second*2).ShouldNot(gomega.HaveOccurred(), "updating shared localvolumeset reproducer")
+
+		sharedPVs = eventuallyFindPVs(t, f, sharedLVSet.Spec.StorageClassName, 2)
+		sharedPVNames = make([]string, 0, len(sharedPVs))
+		for _, pv := range sharedPVs {
+			matcher.Expect(filepath.Base(pv.Spec.Local.Path)).To(gomega.Equal(filepath.Base(sharedScsi8Link)))
+			sharedPVNames = append(sharedPVNames, pv.Name)
+		}
+		sharedLVDLs = eventuallyFindLVDLsForPVs(t, f, namespace, sharedPVNames)
+		assertLVDLsContainTarget(t, sharedLVDLs, sharedScsi8Link, 2)
+
+		t.Log("cleaning up LocalVolumeSet duplicate by-id reproducer before continuing with standard test flow")
+		err = cleanupLVSetResources(t, &[]*localv1alpha1.LocalVolumeSet{sharedLVSet})
+		if err != nil {
+			t.Fatalf("error cleaning up shared localvolumeset reproducer: %v", err)
+		}
+		removeUdevSymlink(t, ctx, nodeEnv[0].node.Labels[corev1.LabelHostname], sharedScsi8Link)
+		removeUdevSymlink(t, ctx, nodeEnv[1].node.Labels[corev1.LabelHostname], sharedScsi8Link)
 
 		// create block and fs on two nodes parallely
 		// do cleanup job verification
