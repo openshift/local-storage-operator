@@ -110,6 +110,85 @@ func LocalVolumeTest(ctx *framework.Context, cleanupFuncs *[]cleanupFn) func(*te
 
 		selectedDisk := nodeEnv[0].disks[0]
 		matcher.Expect(selectedDisk.path).ShouldNot(gomega.BeZero(), "device path should not be empty")
+		sharedSelectedDisk := nodeEnv[0].disks[1]
+		matcher.Expect(sharedSelectedDisk.path).ShouldNot(gomega.BeZero(), "shared selected device path should not be empty")
+		sharedAliasDisk := nodeEnv[1].disks[1]
+		matcher.Expect(sharedAliasDisk.path).ShouldNot(gomega.BeZero(), "shared alias device path should not be empty")
+
+		t.Log("TEST: duplicate by-id cache reproducer for LocalVolume using shared scsi-8 alias")
+		addSharedUdevSymlink(t, ctx, cleanupFuncs, []sharedByIDSymlinkTarget{
+			{
+				nodeHostname: nodeEnv[0].node.Labels[corev1.LabelHostname],
+				currentLink:  currentSymlinkForDisk(sharedSelectedDisk),
+			},
+			{
+				nodeHostname: nodeEnv[1].node.Labels[corev1.LabelHostname],
+				currentLink:  currentSymlinkForDisk(sharedAliasDisk),
+			},
+		}, sharedScsi8Link)
+
+		sharedLocalVolume := getLocalVolume(selectedNode, sharedScsi8Link, namespace)
+		sharedLocalVolume.Name = "test-local-disk-shared-byid"
+		sharedLocalVolume.Spec.StorageClassDevices[0].StorageClassName = "test-local-sc-shared-byid"
+
+		matcher.Eventually(func() error {
+			t.Log("creating shared localvolume reproducer")
+			return f.Client.Create(goctx.TODO(), sharedLocalVolume, &framework.CleanupOptions{TestContext: ctx})
+		}, time.Minute, time.Second*2).ShouldNot(gomega.HaveOccurred(), "creating shared localvolume reproducer")
+
+		err = waitForDaemonSet(t, f.KubeClient, namespace, nodedaemon.DiskMakerName, retryInterval, timeout)
+		if err != nil {
+			t.Fatalf("error waiting for diskmaker daemonset for shared localvolume reproducer: %v", err)
+		}
+		err = verifyLocalVolume(t, sharedLocalVolume, f.Client)
+		if err != nil {
+			t.Fatalf("error verifying shared localvolume reproducer: %v", err)
+		}
+		err = checkLocalVolumeStatus(t, sharedLocalVolume)
+		if err != nil {
+			t.Fatalf("error checking shared localvolume reproducer condition: %v", err)
+		}
+
+		sharedPVs := eventuallyFindPVs(t, f, sharedLocalVolume.Spec.StorageClassDevices[0].StorageClassName, 1)
+		matcher.Expect(filepath.Base(sharedPVs[0].Spec.Local.Path)).To(gomega.Equal(filepath.Base(sharedScsi8Link)))
+		sharedPVNames := []string{sharedPVs[0].Name}
+		sharedLVDLs := eventuallyFindLVDLsForPVs(t, f, namespace, sharedPVNames)
+		assertLVDLsContainTargetAndNodes(t, sharedLVDLs, sharedScsi8Link, []string{nodeEnv[0].node.Name})
+
+		matcher.Eventually(func() error {
+			t.Log("expanding shared localvolume reproducer to a second node")
+			key := types.NamespacedName{Name: sharedLocalVolume.Name, Namespace: sharedLocalVolume.Namespace}
+			if err := f.Client.Get(goctx.TODO(), key, sharedLocalVolume); err != nil {
+				return err
+			}
+			matchFields := sharedLocalVolume.Spec.NodeSelector.NodeSelectorTerms[0].MatchFields
+			if len(matchFields) == 0 {
+				return fmt.Errorf("shared localvolume reproducer node selector is missing matchFields")
+			}
+			secondNodeTerm := sharedLocalVolume.Spec.NodeSelector.NodeSelectorTerms[0]
+			secondNodeTerm.MatchFields = append([]v1.NodeSelectorRequirement(nil), matchFields...)
+			secondNodeTerm.MatchFields[0].Values = []string{nodeEnv[1].node.Name}
+			sharedLocalVolume.Spec.NodeSelector.NodeSelectorTerms = append(
+				sharedLocalVolume.Spec.NodeSelector.NodeSelectorTerms,
+				secondNodeTerm,
+			)
+			return f.Client.Update(goctx.TODO(), sharedLocalVolume)
+		}, time.Minute, time.Second*2).ShouldNot(gomega.HaveOccurred(), "updating shared localvolume reproducer")
+
+		sharedPVs = eventuallyFindPVs(t, f, sharedLocalVolume.Spec.StorageClassDevices[0].StorageClassName, 2)
+		sharedPVNames = make([]string, 0, len(sharedPVs))
+		for _, pv := range sharedPVs {
+			matcher.Expect(filepath.Base(pv.Spec.Local.Path)).To(gomega.Equal(filepath.Base(sharedScsi8Link)))
+			sharedPVNames = append(sharedPVNames, pv.Name)
+		}
+		sharedLVDLs = eventuallyFindLVDLsForPVs(t, f, namespace, sharedPVNames)
+		assertLVDLsContainTargetAndNodes(t, sharedLVDLs, sharedScsi8Link, []string{nodeEnv[0].node.Name, nodeEnv[1].node.Name})
+
+		t.Log("cleaning up LocalVolume duplicate by-id reproducer before continuing with standard test flow")
+		cleanupLVAndWaitForOwnedPVsToDisappear(t, f, sharedLocalVolume)
+
+		removeUdevSymlink(t, ctx, nodeEnv[0].node.Labels[corev1.LabelHostname], sharedScsi8Link)
+		removeUdevSymlink(t, ctx, nodeEnv[1].node.Labels[corev1.LabelHostname], sharedScsi8Link)
 
 		localVolume := getLocalVolume(selectedNode, selectedDisk.path, namespace)
 
@@ -195,6 +274,7 @@ func LocalVolumeTest(ctx *framework.Context, cleanupFuncs *[]cleanupFn) func(*te
 			"/dev/disk/by-id/wwn-local-storage-e2e-step3",
 			"/dev/disk/by-id/scsi-3-local-storage-e2e-step2",
 		)
+
 		pvs = []corev1.PersistentVolume{selectedPV}
 
 		// consume pvs
@@ -272,7 +352,6 @@ func LocalVolumeTest(ctx *framework.Context, cleanupFuncs *[]cleanupFn) func(*te
 		symLinkPath := path.Join(common.GetLocalDiskLocationPath(), lvStorageClassName)
 		checkForSymlinks(t, ctx, nodeEnv, symLinkPath)
 	}
-
 }
 
 func verifyLVDLFilesystemUUIDForPVs(t *testing.T, f *framework.Framework, namespace string, pvNames []string) {
@@ -356,28 +435,76 @@ func verifyProvisionerAnnotation(t *testing.T, pvs []corev1.PersistentVolume, no
 
 }
 
+func waitForLocalVolumeAndOwnedPVsToDisappear(t *testing.T, f *framework.Framework, localVolume *localv1.LocalVolume) {
+	matcher := gomega.NewWithT(t)
+
+	matcher.Eventually(func() error {
+		key := types.NamespacedName{Name: localVolume.Name, Namespace: localVolume.Namespace}
+		currentLocalVolume := &localv1.LocalVolume{}
+		err := f.Client.Get(context.TODO(), key, currentLocalVolume)
+		if err != nil {
+			if !errors.IsNotFound(err) && !errors.IsGone(err) {
+				return err
+			}
+		} else {
+			return fmt.Errorf("localvolume %q still exists with finalizers: %+v", currentLocalVolume.Name, currentLocalVolume.Finalizers)
+		}
+
+		pvList := &corev1.PersistentVolumeList{}
+		err = f.Client.List(context.TODO(), pvList, client.MatchingLabels{
+			common.PVOwnerKindLabel:      localv1.LocalVolumeKind,
+			common.PVOwnerNamespaceLabel: localVolume.Namespace,
+			common.PVOwnerNameLabel:      localVolume.Name,
+		})
+		if err != nil {
+			return err
+		}
+		if len(pvList.Items) > 0 {
+			pvNames := make([]string, 0, len(pvList.Items))
+			for _, pv := range pvList.Items {
+				pvNames = append(pvNames, pv.Name)
+			}
+			return fmt.Errorf("waiting for owned PVs to disappear for localvolume %q: %+v", localVolume.Name, pvNames)
+		}
+
+		return nil
+	}, time.Minute*8, time.Second*5).ShouldNot(gomega.HaveOccurred(), "waiting for localvolume %q and owned PVs to be deleted", localVolume.Name)
+}
+
+func cleanupLVAndWaitForOwnedPVsToDisappear(t *testing.T, f *framework.Framework, localVolume *localv1.LocalVolume) {
+	eventuallyDelete(t, false, localVolume)
+	waitForLocalVolumeAndOwnedPVsToDisappear(t, f, localVolume)
+}
+
 func cleanupLVResources(t *testing.T, f *framework.Framework, localVolume *localv1.LocalVolume) error {
-	// cleanup lv force-removing the finalizer if necessary
+	// first mark lv for deletion without removing finalizer
+	eventuallyDelete(t, false, localVolume)
+	pvList := &corev1.PersistentVolumeList{}
+	matcher := gomega.NewWithT(t)
+	matcher.Eventually(func() error {
+		err := f.Client.List(context.TODO(), pvList, client.MatchingLabels{
+			common.PVOwnerKindLabel:      localv1.LocalVolumeKind,
+			common.PVOwnerNamespaceLabel: localVolume.Namespace,
+			common.PVOwnerNameLabel:      localVolume.Name,
+		})
+		if err != nil {
+			return err
+		}
+		t.Logf("Deleting %d PVs", len(pvList.Items))
+		for _, pv := range pvList.Items {
+			eventuallyDelete(t, false, &pv)
+		}
+		return nil
+	}, time.Minute*3, time.Second*2).ShouldNot(gomega.HaveOccurred(), "cleaning up pvs for lv: %q", localVolume.GetName())
+
+	// Delete the owning resources after their PVs are fully gone so the
+	// diskmaker cleanup path can remove PV finalizers first.
 	eventuallyDelete(t, true, localVolume)
 	sc := &storagev1.StorageClass{
 		TypeMeta:   metav1.TypeMeta{Kind: localv1.LocalVolumeKind},
 		ObjectMeta: metav1.ObjectMeta{Name: localVolume.Spec.StorageClassDevices[0].StorageClassName},
 	}
 	eventuallyDelete(t, false, sc)
-	pvList := &corev1.PersistentVolumeList{}
-	matcher := gomega.NewWithT(t)
-	matcher.Eventually(func() error {
-		err := f.Client.List(context.TODO(), pvList)
-		if err != nil {
-			return err
-		}
-		t.Logf("Deleting %d PVs", len(pvList.Items))
-		for _, pv := range pvList.Items {
-			// pv.TypeMeta.Kind = kind
-			eventuallyDelete(t, false, &pv)
-		}
-		return nil
-	}, time.Minute*3, time.Second*2).ShouldNot(gomega.HaveOccurred(), "cleaning up pvs for lv: %q", localVolume.GetName())
 
 	return nil
 
