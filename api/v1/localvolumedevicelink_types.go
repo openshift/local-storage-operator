@@ -52,12 +52,12 @@ type LocalVolumeDeviceLinkSpec struct {
 	// +kubebuilder:validation:MaxLength=253
 	PersistentVolumeName string `json:"persistentVolumeName"`
 
-	// nodeName is the name of the Openshift node on which this
+	// nodeName is the name of the OpenShift node on which this
 	// LocalVolumeDeviceLink object exists
 	// +required
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=253
-	NodeName string `json:"nodeName"`
+	NodeName string `json:"nodeName,omitempty"`
 
 	// policy expresses how to manage symlinks for the device.
 	// "None" means no policy has been chosen, and will generate an alert if

@@ -89,43 +89,30 @@ func eventuallyDelete(t *testing.T, removeFinalizers bool, objs ...client.Object
 // using eventuallyDelete is inherently racy
 // this function compares if PV was recreated with a different UID
 // then PV must be deleted.
-func eventuallyDeletePV(t *testing.T, objs ...client.Object) {
+func eventuallyDeletePV(t *testing.T, pv *corev1.PersistentVolume) {
 	f := framework.Global
 	matcher := gomega.NewWithT(t)
-	for _, obj := range objs {
-		accessor, err := meta.Accessor(obj)
-		if err != nil {
-			t.Fatalf("deletion failed, cannot get accessor for object: %+v, obj: %+v", err, obj)
+	oldUID := pv.UID
+	matcher.Eventually(func() error {
+		t.Logf("deleting obj %q with kind %q in ns %q", pv.Name, pv.Kind, pv.Namespace)
+		err := f.Client.Get(context.TODO(), types.NamespacedName{Name: pv.Name, Namespace: pv.Namespace}, pv)
+		if errors.IsNotFound(err) || errors.IsGone(err) {
+			t.Logf("object already deleted: %s", err)
+			return nil
 		}
-		kind := obj.GetObjectKind().GroupVersionKind().Kind
-		name := accessor.GetName()
-		namespace := accessor.GetNamespace()
-		oldUID := accessor.GetUID()
-		matcher.Eventually(func() error {
-			t.Logf("deleting obj %q with kind %q in ns %q", name, kind, namespace)
-			err := f.Client.Get(context.TODO(), types.NamespacedName{Name: name, Namespace: namespace}, obj)
-			if errors.IsNotFound(err) || errors.IsGone(err) {
-				t.Logf("object already deleted: %s", err)
-				return nil
-			}
-			accessor, err = meta.Accessor(obj)
-			if err != nil {
-				t.Fatalf("deletion failed, cannot get accessor for object: %+v, obj: %+v", err, obj)
-			}
-			newUID := accessor.GetUID()
-			if newUID != oldUID {
-				t.Logf("object %s has been deleted and recreated", name)
-				return nil
-			}
+		newUID := pv.GetUID()
+		if newUID != oldUID {
+			t.Logf("object %s has been deleted and recreated", pv.Name)
+			return nil
+		}
 
-			err = f.Client.Delete(context.TODO(), obj)
-			if errors.IsNotFound(err) || errors.IsGone(err) {
-				t.Logf("object already deleted: %s", err)
-				return nil
-			}
-			return err
-		}, time.Minute*5, time.Second*5).ShouldNot(gomega.HaveOccurred(), "deleting %q", name)
-	}
+		err = f.Client.Delete(context.TODO(), pv)
+		if errors.IsNotFound(err) || errors.IsGone(err) {
+			t.Logf("object already deleted: %s", err)
+			return nil
+		}
+		return err
+	}, time.Minute*5, time.Second*5).ShouldNot(gomega.HaveOccurred(), "deleting %q", pv.Name)
 }
 
 func eventuallyFindPVs(t *testing.T, f *framework.Framework, storageClassName string, expectedPVs int) []corev1.PersistentVolume {
@@ -133,7 +120,7 @@ func eventuallyFindPVs(t *testing.T, f *framework.Framework, storageClassName st
 	matcher := gomega.NewWithT(t)
 	matcher.Eventually(func() []corev1.PersistentVolume {
 		pvList := &corev1.PersistentVolumeList{}
-		t.Log(fmt.Sprintf("waiting for %d PVs to be created with StorageClass: %q", expectedPVs, storageClassName))
+		t.Logf("waiting for %d PVs to be created with StorageClass: %q", expectedPVs, storageClassName)
 		matcher.Eventually(func() error {
 			return f.Client.List(context.TODO(), pvList)
 		}).ShouldNot(gomega.HaveOccurred())

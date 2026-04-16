@@ -44,7 +44,7 @@ spec:
             properties:
               nodeName:
                 description: |-
-                  nodeName is the name of the Openshift node on which this
+                  nodeName is the name of the OpenShift node on which this
                   LocalVolumeDeviceLink object exists
                 maxLength: 253
                 minLength: 1

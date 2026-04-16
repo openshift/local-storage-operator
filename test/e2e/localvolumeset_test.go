@@ -112,7 +112,6 @@ func LocalVolumeSetTest(ctx *framework.TestCtx, cleanupFuncs *[]cleanupFn) func(
 		thirtyGi := resource.MustParse("30G")
 		fiftyGi := resource.MustParse("50G")
 		hundredTi := resource.MustParse("100Ti")
-		one := int32(1)
 		two := int32(2)
 		three := int32(3)
 
@@ -172,7 +171,6 @@ func LocalVolumeSetTest(ctx *framework.TestCtx, cleanupFuncs *[]cleanupFn) func(
 			},
 			Spec: localv1alpha1.LocalVolumeSetSpec{
 				StorageClassName: "shared-byid-10g",
-				MaxDeviceCount:   &one,
 				VolumeMode:       localv1.PersistentVolumeBlock,
 				NodeSelector: &corev1.NodeSelector{NodeSelectorTerms: []corev1.NodeSelectorTerm{
 					{
@@ -209,7 +207,6 @@ func LocalVolumeSetTest(ctx *framework.TestCtx, cleanupFuncs *[]cleanupFn) func(
 			if err := f.Client.Get(context.TODO(), key, sharedLVSet); err != nil {
 				return err
 			}
-			sharedLVSet.Spec.MaxDeviceCount = &two
 			sharedLVSet.Spec.NodeSelector.NodeSelectorTerms[0].MatchExpressions[0].Values = append(
 				sharedLVSet.Spec.NodeSelector.NodeSelectorTerms[0].MatchExpressions[0].Values,
 				nodeEnv[1].node.ObjectMeta.Labels[corev1.LabelHostname],
