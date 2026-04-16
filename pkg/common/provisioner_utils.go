@@ -30,9 +30,8 @@ import (
 var ErrTryAgain = errors.New("retry provisioning")
 
 // GenerateMountMap is used to get a set of mountpoints that can be quickly looked up
-func GenerateMountMap(runtimeConfig *provCommon.RuntimeConfig) (sets.String, error) {
-	type empty struct{}
-	mountPointMap := sets.NewString()
+func GenerateMountMap(runtimeConfig *provCommon.RuntimeConfig) (sets.Set[string], error) {
+	mountPointMap := sets.New[string]()
 	// Retrieve list of mount points to iterate through discovered paths (aka files) below
 	mountPoints, err := runtimeConfig.Mounter.List()
 	if err != nil {
@@ -50,7 +49,7 @@ type CreateLocalPVArgs struct {
 	LocalVolumeLikeObject runtime.Object
 	RuntimeConfig         *provCommon.RuntimeConfig
 	StorageClass          storagev1.StorageClass
-	MountPointMap         sets.String
+	MountPointMap         sets.Set[string]
 	Client                client.Client
 	// symlinkPath points to path on /mnt/local-storage
 	SymLinkPath      string
@@ -60,10 +59,6 @@ type CreateLocalPVArgs struct {
 	// skipping cache
 	ClientReader client.Reader
 
-	// CurrentSymlink points to source to which SymLinkPath points to.
-	// it could be a path in /dev/disk/by-id or could be simply
-	// /dev/sda etc if nothing exists
-	CurrentSymlink string
 	// BlockDevice is the block device backing this PV.
 	BlockDevice internal.BlockDevice
 	// CacheWriter enables write-through updates to the LVDL in-memory cache.
@@ -139,7 +134,7 @@ func CreateLocalPV(ctx context.Context, args CreateLocalPVArgs) error {
 	effectiveCurrentSource, err := internal.Readlink(symLinkPath)
 	if err != nil {
 		currentPreferredLink, _ := args.BlockDevice.GetPathByID()
-		klog.ErrorS(err, "could not read symlink", "symlink", symLinkPath, "currentSymlink", args.CurrentSymlink, "preferredCurrent", currentPreferredLink)
+		klog.ErrorS(err, "could not read symlink", "symlink", symLinkPath, "preferredCurrent", currentPreferredLink)
 		return fmt.Errorf("unable to resolve symlink %s: %v", symLinkPath, err)
 	}
 
@@ -290,7 +285,7 @@ func CreateLocalPV(ctx context.Context, args CreateLocalPVArgs) error {
 	// ApplyStatus creates/updates the LVDL after the PV exists. Skip it when
 	// RecreateSymlinkIfNeeded already updated the LVDL status above.
 	if !requiresSymlinkRecreation {
-		if _, err := deviceHandler.ApplyStatus(ctx, pvName, namespace, args.BlockDevice, obj, args.CurrentSymlink); err != nil {
+		if _, err := deviceHandler.ApplyStatus(ctx, pvName, namespace, args.BlockDevice, obj, effectiveCurrentSource); err != nil {
 			return fmt.Errorf("error applying device link status: %w", err)
 		}
 	}

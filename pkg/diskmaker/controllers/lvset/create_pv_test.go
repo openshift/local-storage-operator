@@ -11,6 +11,7 @@ import (
 	localv1 "github.com/openshift/local-storage-operator/api/v1"
 	localv1alpha1 "github.com/openshift/local-storage-operator/api/v1alpha1"
 	"github.com/openshift/local-storage-operator/pkg/common"
+	"github.com/openshift/local-storage-operator/pkg/diskmaker/diskmakertest"
 	"github.com/openshift/local-storage-operator/pkg/internal"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
@@ -18,8 +19,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
-	utilexec "k8s.io/utils/exec"
-	testingexec "k8s.io/utils/exec/testing"
 	provCommon "sigs.k8s.io/sig-storage-local-static-provisioner/pkg/common"
 	provUtil "sigs.k8s.io/sig-storage-local-static-provisioner/pkg/util"
 )
@@ -38,7 +37,7 @@ func TestCreatePV(t *testing.T) {
 		desiredVolMode  string
 		deviceName      string
 		deviceCapacity  int64
-		mountPoints     sets.String
+		mountPoints     sets.Set[string]
 		extraDirEntries []*provUtil.FakeDirEntry
 	}{
 		{
@@ -65,7 +64,7 @@ func TestCreatePV(t *testing.T) {
 			},
 			actualVolMode:  string(localv1.PersistentVolumeBlock),
 			desiredVolMode: string(localv1.PersistentVolumeBlock),
-			mountPoints:    sets.NewString(),
+			mountPoints:    sets.New[string](),
 			symlinkpath:    "/mnt/local-storage/storageclass-a/device-a",
 			deviceCapacity: 10 * common.GiB,
 			deviceName:     "device-a",
@@ -96,7 +95,7 @@ func TestCreatePV(t *testing.T) {
 			},
 			actualVolMode:  string(localv1.PersistentVolumeFilesystem),
 			desiredVolMode: string(localv1.PersistentVolumeBlock),
-			mountPoints:    sets.NewString(),
+			mountPoints:    sets.New[string](),
 			symlinkpath:    "/mnt/local-storage/storageclass-a/device-a",
 			deviceCapacity: 10 * common.GiB,
 			deviceName:     "device-a",
@@ -126,7 +125,7 @@ func TestCreatePV(t *testing.T) {
 			},
 			actualVolMode:  string(localv1.PersistentVolumeBlock),
 			desiredVolMode: string(localv1.PersistentVolumeFilesystem),
-			mountPoints:    sets.NewString(),
+			mountPoints:    sets.New[string](),
 			symlinkpath:    "/mnt/local-storage/storageclass-a/device-a",
 			deviceCapacity: 10 * common.GiB,
 			deviceName:     "device-a",
@@ -156,7 +155,7 @@ func TestCreatePV(t *testing.T) {
 			},
 			actualVolMode:  string(localv1.PersistentVolumeFilesystem),
 			desiredVolMode: string(localv1.PersistentVolumeFilesystem),
-			mountPoints:    sets.NewString("/mnt/local-storage/storageclass-a/device-a"),
+			mountPoints:    sets.New[string]("/mnt/local-storage/storageclass-a/device-a"),
 			symlinkpath:    "/mnt/local-storage/storageclass-a/device-a",
 			deviceCapacity: 10 * common.GiB,
 			deviceName:     "device-a",
@@ -187,7 +186,7 @@ func TestCreatePV(t *testing.T) {
 			},
 			actualVolMode:  string(localv1.PersistentVolumeFilesystem),
 			desiredVolMode: string(localv1.PersistentVolumeFilesystem),
-			mountPoints:    sets.NewString("a", "b"), // device not present
+			mountPoints:    sets.New[string]("a", "b"), // device not present
 			symlinkpath:    "/mnt/local-storage/storageclass-b/device-b",
 			deviceCapacity: 10 * common.GiB,
 			deviceName:     "device-b",
@@ -210,13 +209,11 @@ func TestCreatePV(t *testing.T) {
 			testConfig.runtimeConfig.Name = common.GetProvisionedByValue(tc.node)
 			testConfig.runtimeConfig.DiscoveryMap[tc.sc.Name] = provCommon.MountConfig{VolumeMode: tc.desiredVolMode}
 
-			oldReadLink := internal.Readlink
-			defer func() {
-				internal.Readlink = oldReadLink
-			}()
-			internal.Readlink = func(symlinkPath string) (string, error) {
-				return "/dev/disk/by-id/wwn-null", nil
-			}
+			diskmakertest.WithInternalMocks(t, func() {
+				internal.Readlink = func(symlinkPath string) (string, error) {
+					return "/dev/disk/by-id/wwn-null", nil
+				}
+			})
 
 			fakeMap := map[string]string{
 				string(corev1.PersistentVolumeFilesystem): provUtil.FakeEntryFile,
@@ -349,46 +346,24 @@ func TestCreatePV_SetsLVDLOwnerRefToLocalVolumeSet(t *testing.T) {
 		},
 	})
 
-	origGlob := internal.FilePathGlob
-	origEval := internal.FilePathEvalSymLinks
-	origExec := internal.CmdExecutor
-	t.Cleanup(func() {
-		internal.FilePathGlob = origGlob
-		internal.FilePathEvalSymLinks = origEval
-		internal.CmdExecutor = origExec
-	})
-	internal.FilePathGlob = func(pattern string) ([]string, error) {
-		return []string{"/dev/disk/by-id/wwn-ownerref"}, nil
-	}
-	internal.FilePathEvalSymLinks = func(path string) (string, error) {
-		return "/dev/device-ownerref", nil
-	}
-	blkidAction := func(cmd string, args ...string) utilexec.Cmd {
-		return &testingexec.FakeCmd{
-			CombinedOutputScript: []testingexec.FakeAction{
-				func() ([]byte, []byte, error) {
-					return []byte("uuid-ownerref"), nil, nil
-				},
-			},
+	diskmakertest.WithInternalMocks(t, func() {
+		internal.FilePathGlob = func(pattern string) ([]string, error) {
+			return []string{"/dev/disk/by-id/wwn-ownerref"}, nil
 		}
-	}
-	internal.CmdExecutor = &testingexec.FakeExec{
-		CommandScript: []testingexec.FakeCommandAction{blkidAction},
-	}
-	oldReadLink := internal.Readlink
-	t.Cleanup(func() {
-		internal.Readlink = oldReadLink
+		internal.FilePathEvalSymLinks = func(path string) (string, error) {
+			return "/dev/device-ownerref", nil
+		}
+		internal.CmdExecutor = diskmakertest.BlkidAlwaysFakeExec("uuid-ownerref", nil)
+		internal.Readlink = func(symlinkPath string) (string, error) {
+			return "/dev/disk/by-id/wwn-null", nil
+		}
 	})
-
-	internal.Readlink = func(symlinkPath string) (string, error) {
-		return "/dev/disk/by-id/wwn-null", nil
-	}
 
 	err := common.CreateLocalPV(t.Context(), common.CreateLocalPVArgs{
 		LocalVolumeLikeObject: &lvset,
 		RuntimeConfig:         r.runtimeConfig,
 		StorageClass:          sc,
-		MountPointMap:         sets.NewString(),
+		MountPointMap:         sets.New[string](),
 		Client:                r.Client,
 		ClientReader:          r.ClientReader,
 		SymLinkPath:           symLinkPath,

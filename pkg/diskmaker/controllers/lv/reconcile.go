@@ -384,7 +384,7 @@ func (r *LocalVolumeReconciler) Reconcile(ctx context.Context, request ctrl.Requ
 	return ctrl.Result{Requeue: true, RequeueAfter: r.effectiveRequeueTime}, nil
 }
 
-func (r *LocalVolumeReconciler) processValidDevices(ctx context.Context, validDevices []internal.BlockDevice, diskConfig *DiskConfig, mountPointMap sets.String) {
+func (r *LocalVolumeReconciler) processValidDevices(ctx context.Context, validDevices []internal.BlockDevice, diskConfig *DiskConfig, mountPointMap sets.Set[string]) {
 	for storageClass, disks := range diskConfig.Disks {
 		var totalProvisionedPVs int
 		var blockDeviceList []internal.BlockDevice
@@ -480,7 +480,7 @@ func (r *LocalVolumeReconciler) resolveValidDeviceLocation(devicePath string, fo
 	return deviceLocation, true, nil
 }
 
-func (r *LocalVolumeReconciler) provisionValidDevice(ctx context.Context, storageClass, symLinkDirPath, devicePath string, deviceLocation *internal.DiskLocation, mountPointMap sets.String) bool {
+func (r *LocalVolumeReconciler) provisionValidDevice(ctx context.Context, storageClass, symLinkDirPath, devicePath string, deviceLocation *internal.DiskLocation, mountPointMap sets.Set[string]) bool {
 	existingSymlink, err := common.GetSymlinkedForCurrentSC(symLinkDirPath, deviceLocation.BlockDevice.KName)
 	if err != nil {
 		r.reportSymlinkLookupError(symLinkDirPath, devicePath, err)
@@ -538,7 +538,7 @@ func (r *LocalVolumeReconciler) reportProvisioningError(devicePath string, err e
 	klog.Error(msg)
 }
 
-func (r *LocalVolumeReconciler) processNewSymlink(ctx context.Context, scName string, diskLocation *internal.DiskLocation, mountPointMap sets.String) (bool, error) {
+func (r *LocalVolumeReconciler) processNewSymlink(ctx context.Context, scName string, diskLocation *internal.DiskLocation, mountPointMap sets.Set[string]) (bool, error) {
 	symLinkDirPath := path.Join(r.symlinkLocation, scName)
 	source, target, idExists, err := getSymlinkSourceAndTarget(diskLocation, symLinkDirPath)
 	if err != nil {
@@ -581,7 +581,7 @@ func (r *LocalVolumeReconciler) processExistingSymlink(
 	scName string,
 	symlinkPath string,
 	diskLocation *internal.DiskLocation,
-	mountPointMap sets.String) error {
+	mountPointMap sets.Set[string]) error {
 
 	klog.V(4).Infof("in processExistingSymlink symlink %s", symlinkPath)
 
@@ -596,7 +596,7 @@ func (r *LocalVolumeReconciler) processExistingSymlink(
 	return r.provisionPV(ctx, scName, diskLocation, mountPointMap)
 }
 
-func (r *LocalVolumeReconciler) provisionPV(ctx context.Context, scName string, deviceNameLocation *internal.DiskLocation, mountPointMap sets.String) error {
+func (r *LocalVolumeReconciler) provisionPV(ctx context.Context, scName string, deviceNameLocation *internal.DiskLocation, mountPointMap sets.Set[string]) error {
 	storageClass := &storagev1.StorageClass{}
 	err := r.Client.Get(ctx, types.NamespacedName{Name: scName}, storageClass)
 	if err != nil {
@@ -617,7 +617,6 @@ func (r *LocalVolumeReconciler) provisionPV(ctx context.Context, scName string, 
 		ClientReader:          r.ClientReader,
 		SymLinkPath:           deviceNameLocation.SymlinkPath,
 		ExtraLabelsForPV:      lvOwnerLabels,
-		CurrentSymlink:        deviceNameLocation.SymlinkSource,
 		BlockDevice:           deviceNameLocation.BlockDevice,
 		CacheWriter:           r.pvLinkCache,
 	}

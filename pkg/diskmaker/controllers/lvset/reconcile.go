@@ -34,7 +34,6 @@ import (
 const (
 	// ComponentName for lvset symlinker
 	ComponentName      = "localvolumeset-symlink-controller"
-	pvOwnerKey         = "pvOwner"
 	defaultRequeueTime = time.Minute
 	fastRequeueTime    = 5 * time.Second
 )
@@ -517,7 +516,7 @@ func (r *LocalVolumeSetReconciler) processNewSymlink(
 	blockDevice internal.BlockDevice,
 	blockDevices []internal.BlockDevice,
 	storageClass storagev1.StorageClass,
-	mountPointMap sets.String,
+	mountPointMap sets.Set[string],
 	symLinkDir string,
 ) (*processNewSymlinkResult, error) {
 	result := &processNewSymlinkResult{}
@@ -599,7 +598,7 @@ func (r *LocalVolumeSetReconciler) provisionPV(
 	obj *localv1alpha1.LocalVolumeSet,
 	dev internal.BlockDevice,
 	storageClass storagev1.StorageClass,
-	mountPointMap sets.String,
+	mountPointMap sets.Set[string],
 	symlinkSourcePath string,
 	symlinkPath string,
 ) error {
@@ -640,7 +639,6 @@ func (r *LocalVolumeSetReconciler) provisionPV(
 		ClientReader:          r.ClientReader,
 		SymLinkPath:           symlinkPath,
 		ExtraLabelsForPV:      map[string]string{},
-		CurrentSymlink:        symlinkSourcePath,
 		BlockDevice:           dev,
 		CacheWriter:           r.pvLinkCache,
 	}
@@ -692,14 +690,8 @@ func (r *LocalVolumeSetReconciler) provisionFromExistingPV(
 	obj *localv1alpha1.LocalVolumeSet,
 	blockDevice internal.BlockDevice,
 	storageClass storagev1.StorageClass,
-	mountPointMap sets.String,
+	mountPointMap sets.Set[string],
 	symlinkPath string) error {
-	// read the current source to which symlink in /mnt/local-storage points to
-	effectiveCurrentSource, err := internal.Readlink(symlinkPath)
-	if err != nil {
-		klog.ErrorS(err, "error evaluating symlink", "symlink", symlinkPath)
-	}
-
 	createLocalPVArgs := common.CreateLocalPVArgs{
 		LocalVolumeLikeObject: obj,
 		RuntimeConfig:         r.runtimeConfig,
@@ -709,7 +701,6 @@ func (r *LocalVolumeSetReconciler) provisionFromExistingPV(
 		ClientReader:          r.ClientReader,
 		SymLinkPath:           symlinkPath,
 		ExtraLabelsForPV:      map[string]string{},
-		CurrentSymlink:        effectiveCurrentSource,
 		BlockDevice:           blockDevice,
 		CacheWriter:           r.pvLinkCache,
 	}

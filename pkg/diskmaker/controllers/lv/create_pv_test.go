@@ -11,6 +11,7 @@ import (
 
 	localv1 "github.com/openshift/local-storage-operator/api/v1"
 	"github.com/openshift/local-storage-operator/pkg/common"
+	"github.com/openshift/local-storage-operator/pkg/diskmaker/diskmakertest"
 	"github.com/openshift/local-storage-operator/pkg/internal"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
@@ -19,37 +20,9 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
-	utilexec "k8s.io/utils/exec"
-	testingexec "k8s.io/utils/exec/testing"
 	provCommon "sigs.k8s.io/sig-storage-local-static-provisioner/pkg/common"
 	provUtil "sigs.k8s.io/sig-storage-local-static-provisioner/pkg/util"
 )
-
-// fakeBlkidExecutor returns a FakeExec where blkid emits uuid only when the
-// last argument matches devicePath. When any other path is passed the output is
-// empty, which is what the real blkid returns when it cannot find a UUID.
-func fakeBlkidExecutor(devicePath, uuid string) *testingexec.FakeExec {
-	blkidAction := func(cmd string, args ...string) utilexec.Cmd {
-		out := ""
-		if cmd == "blkid" && len(args) > 0 && args[len(args)-1] == devicePath {
-			out = uuid
-		}
-		return &testingexec.FakeCmd{
-			CombinedOutputScript: []testingexec.FakeAction{
-				func() ([]byte, []byte, error) {
-					return []byte(out), nil, nil
-				},
-			},
-		}
-	}
-	commandScript := make([]testingexec.FakeCommandAction, 0, 16)
-	for i := 0; i < 16; i++ {
-		commandScript = append(commandScript, blkidAction)
-	}
-	return &testingexec.FakeExec{
-		CommandScript: commandScript,
-	}
-}
 
 func TestCreatePV(t *testing.T) {
 	reclaimPolicyDelete := corev1.PersistentVolumeReclaimDelete
@@ -65,7 +38,7 @@ func TestCreatePV(t *testing.T) {
 		desiredVolMode  string
 		deviceName      string
 		deviceCapacity  int64
-		mountPoints     sets.String
+		mountPoints     sets.Set[string]
 		extraDirEntries []*provUtil.FakeDirEntry
 	}{
 		{
@@ -90,7 +63,7 @@ func TestCreatePV(t *testing.T) {
 			},
 			actualVolMode:  string(localv1.PersistentVolumeBlock),
 			desiredVolMode: string(localv1.PersistentVolumeBlock),
-			mountPoints:    sets.NewString(),
+			mountPoints:    sets.New[string](),
 			symlinkpath:    "/mnt/local-storage/storageclass-a/device-a",
 			deviceCapacity: 10 * common.GiB,
 			deviceName:     "device-a",
@@ -118,7 +91,7 @@ func TestCreatePV(t *testing.T) {
 			},
 			actualVolMode:  string(localv1.PersistentVolumeFilesystem),
 			desiredVolMode: string(localv1.PersistentVolumeBlock),
-			mountPoints:    sets.NewString(),
+			mountPoints:    sets.New[string](),
 			symlinkpath:    "/mnt/local-storage/storageclass-a/device-a",
 			deviceCapacity: 10 * common.GiB,
 			deviceName:     "device-a",
@@ -145,7 +118,7 @@ func TestCreatePV(t *testing.T) {
 			},
 			actualVolMode:  string(localv1.PersistentVolumeBlock),
 			desiredVolMode: string(localv1.PersistentVolumeFilesystem),
-			mountPoints:    sets.NewString(),
+			mountPoints:    sets.New[string](),
 			symlinkpath:    "/mnt/local-storage/storageclass-a/device-a",
 			deviceCapacity: 10 * common.GiB,
 			deviceName:     "device-a",
@@ -172,7 +145,7 @@ func TestCreatePV(t *testing.T) {
 			},
 			actualVolMode:  string(localv1.PersistentVolumeFilesystem),
 			desiredVolMode: string(localv1.PersistentVolumeFilesystem),
-			mountPoints:    sets.NewString("/mnt/local-storage/storageclass-a/device-a"),
+			mountPoints:    sets.New[string]("/mnt/local-storage/storageclass-a/device-a"),
 			symlinkpath:    "/mnt/local-storage/storageclass-a/device-a",
 			deviceCapacity: 10 * common.GiB,
 			deviceName:     "device-a",
@@ -200,7 +173,7 @@ func TestCreatePV(t *testing.T) {
 			},
 			actualVolMode:  string(localv1.PersistentVolumeFilesystem),
 			desiredVolMode: string(localv1.PersistentVolumeFilesystem),
-			mountPoints:    sets.NewString("a", "b"), // device not present
+			mountPoints:    sets.New[string]("a", "b"), // device not present
 			symlinkpath:    "/mnt/local-storage/storageclass-b/device-b",
 			deviceCapacity: 10 * common.GiB,
 			deviceName:     "device-b",
@@ -376,49 +349,26 @@ func TestCreateLocalPV_DeviceLinkArgOrder(t *testing.T) {
 		},
 	})
 
-	// Override package-level globals for the duration of this test.
-	origGlob := internal.FilePathGlob
-	origEval := internal.FilePathEvalSymLinks
-	origExec := internal.CmdExecutor
-	t.Cleanup(func() {
-		internal.FilePathGlob = origGlob
-		internal.FilePathEvalSymLinks = origEval
-		internal.CmdExecutor = origExec
-	})
-	oldReadLink := internal.Readlink
-	defer func() {
-		internal.Readlink = oldReadLink
-	}()
-	internal.Readlink = func(symlinkPath string) (string, error) {
-		return "/dev/disk/by-id/wwn-null", nil
-	}
-
-	// FilePathGlob returns our fake by-id link.
-	internal.FilePathGlob = func(pattern string) ([]string, error) {
-		return []string{fakeByIDLink}, nil
-	}
-
-	// FilePathEvalSymLinks resolves the by-id link to a path whose base is
-	// kName ("sda").  If KName and DevicePath were swapped the matcher would
-	// call this with a path that still resolves correctly (because
-	// filepath.Base("/dev/sda") == "sda"), so we record which target was
-	// actually resolved to make the test stricter.
 	var resolvedTarget string
-	internal.FilePathEvalSymLinks = func(path string) (string, error) {
-		resolvedTarget = path
-		// Return a path whose base is kName so the symlink appears valid.
-		return "/dev/" + kName, nil
-	}
-
-	// blkid returns fakeUUID only when called with devPath.
-	// If the caller passes kName instead, the UUID will be empty.
-	internal.CmdExecutor = fakeBlkidExecutor(devPath, fakeUUID)
+	diskmakertest.WithInternalMocks(t, func() {
+		internal.Readlink = func(symlinkPath string) (string, error) {
+			return "/dev/disk/by-id/wwn-null", nil
+		}
+		internal.FilePathGlob = func(pattern string) ([]string, error) {
+			return []string{fakeByIDLink}, nil
+		}
+		internal.FilePathEvalSymLinks = func(path string) (string, error) {
+			resolvedTarget = path
+			return "/dev/" + kName, nil
+		}
+		internal.CmdExecutor = diskmakertest.BlkidForDevicePathFakeExec(devPath, fakeUUID)
+	})
 
 	err := common.CreateLocalPV(t.Context(), common.CreateLocalPVArgs{
 		LocalVolumeLikeObject: &lv,
 		RuntimeConfig:         r.runtimeConfig,
 		StorageClass:          sc,
-		MountPointMap:         sets.NewString(),
+		MountPointMap:         sets.New[string](),
 		Client:                r.Client,
 		ClientReader:          r.ClientReader,
 		SymLinkPath:           symLinkPath,
@@ -507,9 +457,7 @@ func TestCreateLocalPV_DeviceLinkLifecycle(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			tmpDir, err := os.MkdirTemp("", "create-local-pv-lifecycle-")
-			assert.NoError(t, err)
-			defer os.RemoveAll(tmpDir)
+			tmpDir := diskmakertest.TempDir(t, "create-local-pv-lifecycle-")
 
 			lv := localv1.LocalVolume{
 				TypeMeta: metav1.TypeMeta{
@@ -543,14 +491,6 @@ func TestCreateLocalPV_DeviceLinkLifecycle(t *testing.T) {
 			assert.NoError(t, os.Symlink("/dev/null", currentTarget))
 			assert.NoError(t, os.Symlink("/dev/null", preferredTarget))
 
-			oldReadLink := internal.Readlink
-			defer func() {
-				internal.Readlink = oldReadLink
-			}()
-			internal.Readlink = func(symlinkPath string) (string, error) {
-				return "/dev/disk/by-id/wwn-null", nil
-			}
-
 			objs := []runtime.Object{&lv, &node, &sc}
 			if tc.existingLVDLFactory != nil {
 				objs = append(objs, tc.existingLVDLFactory(pvName, lv.Namespace, currentTarget, preferredTarget))
@@ -570,47 +510,43 @@ func TestCreateLocalPV_DeviceLinkLifecycle(t *testing.T) {
 			})
 
 			var expectedPreferredSymlink string
-			var expectedCurrentSymlink string
 
 			// triggerRelink case triggers change of symlink to new preferredLinkTarget.
 			// RecreateSymlinkIfNeeded uses blockDevice.GetPathByID() which returns
 			// fakeByIDLink, so both current and preferred become fakeByIDLink after relink.
 			if tc.triggerRelink {
 				assert.NoError(t, os.Symlink(currentTarget, symLinkPath))
-				expectedCurrentSymlink = fakeByIDLink
 				expectedPreferredSymlink = fakeByIDLink
-			} else {
-				expectedCurrentSymlink = currentTarget
 			}
 
-			origGlob := internal.FilePathGlob
-			origEval := internal.FilePathEvalSymLinks
-			origExec := internal.CmdExecutor
-			t.Cleanup(func() {
-				internal.FilePathGlob = origGlob
-				internal.FilePathEvalSymLinks = origEval
-				internal.CmdExecutor = origExec
+			// effectiveCurrentSource is always resolved via internal.Readlink inside
+			// CreateLocalPV, which the stub returns as fakeByIDLink.
+			expectedCurrentSymlink := fakeByIDLink
+
+			diskmakertest.WithInternalMocks(t, func() {
+				internal.Readlink = func(symlinkPath string) (string, error) {
+					return "/dev/disk/by-id/wwn-null", nil
+				}
+				internal.FilePathGlob = func(pattern string) ([]string, error) {
+					if pattern == filepath.Join(internal.DiskByIDDir, "*") {
+						return []string{fakeByIDLink}, nil
+					}
+					return filepath.Glob(pattern)
+				}
+				internal.FilePathEvalSymLinks = func(path string) (string, error) {
+					if path == fakeByIDLink {
+						return "/dev/null", nil
+					}
+					return filepath.EvalSymlinks(path)
+				}
+				internal.CmdExecutor = diskmakertest.BlkidForDevicePathFakeExec("/dev/null", "uuid-lifecycle")
 			})
 
-			internal.FilePathGlob = func(pattern string) ([]string, error) {
-				if pattern == filepath.Join(internal.DiskByIDDir, "*") {
-					return []string{fakeByIDLink}, nil
-				}
-				return filepath.Glob(pattern)
-			}
-			internal.FilePathEvalSymLinks = func(path string) (string, error) {
-				if path == fakeByIDLink {
-					return "/dev/null", nil
-				}
-				return filepath.EvalSymlinks(path)
-			}
-			internal.CmdExecutor = fakeBlkidExecutor("/dev/null", "uuid-lifecycle")
-
-			err = common.CreateLocalPV(t.Context(), common.CreateLocalPVArgs{
+			err := common.CreateLocalPV(t.Context(), common.CreateLocalPVArgs{
 				LocalVolumeLikeObject: &lv,
 				RuntimeConfig:         r.runtimeConfig,
 				StorageClass:          sc,
-				MountPointMap:         sets.NewString(),
+				MountPointMap:         sets.New[string](),
 				Client:                r.Client,
 				ClientReader:          r.ClientReader,
 				SymLinkPath:           symLinkPath,
@@ -621,7 +557,6 @@ func TestCreateLocalPV_DeviceLinkLifecycle(t *testing.T) {
 				},
 				CacheWriter:      r.pvLinkCache,
 				ExtraLabelsForPV: map[string]string{},
-				CurrentSymlink:   currentTarget,
 			})
 			assert.NoError(t, err)
 
