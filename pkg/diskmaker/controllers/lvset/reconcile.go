@@ -2,6 +2,7 @@ package lvset
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -341,7 +342,9 @@ func (r *LocalVolumeSetReconciler) processRejectedDevicesForDeviceLinks(ctx cont
 	for _, blockDevice := range rejectedDevices {
 		symlinkPath, err := common.HasExistingLocalVolumes(ctx, r.Client, symLinkDir, blockDevice, r.pvLinkCache)
 		if err != nil {
-			klog.ErrorS(err, "failed to check for existing symlink for device", "volume", blockDevice.Name)
+			if !errors.As(err, &internal.IDPathNotFoundError{}) {
+				klog.ErrorS(err, "failed to check for existing symlink for device", "volume", blockDevice.Name)
+			}
 			continue
 		}
 
@@ -353,7 +356,7 @@ func (r *LocalVolumeSetReconciler) processRejectedDevicesForDeviceLinks(ctx cont
 		targetBaseSymlinkName := filepath.Base(symlinkPath)
 
 		lvdlName := common.GeneratePVName(targetBaseSymlinkName, r.runtimeConfig.Node.Name, storageClassName)
-		deviceHandler := common.NewDeviceLinkHandler(r.Client, r.ClientReader, r.runtimeConfig.Recorder, r.pvLinkCache)
+		deviceHandler := common.NewDeviceLinkHandler(r.Client, r.ClientReader, r.runtimeConfig.Recorder, r.pvLinkCache, r.runtimeConfig.Node.Name)
 
 		lvdl, err := deviceHandler.FindLVDL(ctx, lvdlName, r.runtimeConfig.Namespace)
 		if err != nil && !kerrors.IsNotFound(err) {

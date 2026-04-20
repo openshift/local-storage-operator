@@ -279,7 +279,7 @@ func verifyMultiStepPreferredLinkReconciliation(
 		t.Logf("step %d: deleting PV %q and verifying recreation", i+1, pv.Name)
 		oldPVUID := pv.UID
 		oldPVPath := pv.Spec.Local.Path
-		eventuallyDelete(t, false, &pv)
+		eventuallyDeletePV(t, &pv)
 
 		// After PV deletion + symlink cleanup + recreation, the symlink filename
 		// may change (the recreated symlink uses the current preferred by-id name).
@@ -350,7 +350,7 @@ func verifySymlinkFallbackOnDisappearingLink(
 	t.Logf("fallback test: deleting PV %q and verifying recreation with fallback target", pv.Name)
 	oldPVUID := pv.UID
 	oldPVPath := pv.Spec.Local.Path
-	eventuallyDelete(t, false, &pv)
+	eventuallyDeletePV(t, &pv)
 
 	pv = waitForRecreatedPVByName(t, f, pv.Name, oldPVUID)
 	matcher.Expect(pv.Spec.Local.Path).To(gomega.Equal(oldPVPath),

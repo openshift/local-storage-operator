@@ -29,7 +29,8 @@ type LocalVolumeDeviceLinkCache struct {
 	client client.Client
 	mgr    manager.Manager
 
-	synced chan struct{}
+	synced        chan struct{}
+	localNodeName string
 	// map of symlinkName in /dev/disk/byid and CurrentBlockDeviceInfo
 	localDeviceInfos map[string]CurrentBlockDeviceInfo
 }
@@ -113,11 +114,12 @@ func (c CurrentBlockDeviceInfo) getLVDLAndPV(ctx context.Context, client client.
 	return lvdl, pv, nil
 }
 
-func NewLocalVolumeDeviceLinkCache(client client.Client, mgr manager.Manager) *LocalVolumeDeviceLinkCache {
+func NewLocalVolumeDeviceLinkCache(client client.Client, mgr manager.Manager, localNodeName string) *LocalVolumeDeviceLinkCache {
 	return &LocalVolumeDeviceLinkCache{
 		client:           client,
 		mgr:              mgr,
 		synced:           make(chan struct{}),
+		localNodeName:    localNodeName,
 		localDeviceInfos: map[string]CurrentBlockDeviceInfo{},
 	}
 }
@@ -138,6 +140,10 @@ func (l *LocalVolumeDeviceLinkCache) IsSynced() bool {
 // caches are started, but we still need to wait for the LVDL informer
 // (which may have been dynamically added) to complete its initial sync.
 func (l *LocalVolumeDeviceLinkCache) Start(ctx context.Context) error {
+	if l.localNodeName == "" {
+		return fmt.Errorf("LocalVolumeDeviceLink cache requires a local node name")
+	}
+
 	informer, err := l.mgr.GetCache().GetInformer(ctx, &v1.LocalVolumeDeviceLink{})
 	if err != nil {
 		return err
@@ -250,6 +256,10 @@ func (l *LocalVolumeDeviceLinkCache) MarkSyncedForTests() {
 }
 
 func (l *LocalVolumeDeviceLinkCache) addOrUpdateLVDL(lvdl *v1.LocalVolumeDeviceLink) {
+	if !l.shouldIndexLVDL(lvdl) {
+		return
+	}
+
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
@@ -287,6 +297,13 @@ func (l *LocalVolumeDeviceLinkCache) addOrUpdateLVDL(lvdl *v1.LocalVolumeDeviceL
 		deviceInfo.lvdls[lvdl.Name] = lvdl
 		l.localDeviceInfos[linkTarget] = deviceInfo
 	}
+}
+
+func (l *LocalVolumeDeviceLinkCache) shouldIndexLVDL(lvdl *v1.LocalVolumeDeviceLink) bool {
+	if lvdl == nil {
+		return false
+	}
+	return lvdl.Spec.NodeName == l.localNodeName
 }
 
 func (l *LocalVolumeDeviceLinkCache) removeLVDL(lvdl *v1.LocalVolumeDeviceLink) {

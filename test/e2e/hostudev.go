@@ -2,6 +2,7 @@ package e2e
 
 import (
 	"fmt"
+	"path/filepath"
 	"testing"
 
 	"github.com/onsi/gomega"
@@ -9,6 +10,13 @@ import (
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 )
+
+const sharedScsi8Link = "/dev/disk/by-id/scsi-8-local-storage-e2e-shared"
+
+type sharedByIDSymlinkTarget struct {
+	nodeHostname string
+	currentLink  string
+}
 
 // addNewUdevSymlink adds a new udev symlink on the node. The link will point to the same device as the currentLink.
 func addNewUdevSymlink(t *testing.T, ctx *framework.TestCtx, nodeHostname string, currentLink, newLink string) {
@@ -26,6 +34,16 @@ func addNewUdevSymlink(t *testing.T, ctx *framework.TestCtx, nodeHostname string
 	symlinkJob.TypeMeta.Kind = "Job"
 	eventuallyDelete(t, false, symlinkJob)
 	t.Logf("added udev symlink %s -> %s on node %s", currentLink, newLink, nodeHostname)
+}
+
+func addSharedUdevSymlink(t *testing.T, ctx *framework.TestCtx, cleanupFuncs *[]cleanupFn, targets []sharedByIDSymlinkTarget, newLink string) {
+	for _, target := range targets {
+		addNewUdevSymlink(t, ctx, target.nodeHostname, target.currentLink, newLink)
+		addToCleanupFuncs(cleanupFuncs, fmt.Sprintf("removeUdevSymlink-%s-%s", target.nodeHostname, filepath.Base(newLink)), func(t *testing.T) error {
+			removeUdevSymlink(t, ctx, target.nodeHostname, newLink)
+			return nil
+		})
+	}
 }
 
 // removeUdevSymlink removes a udev symlink on the node. It literally calls `rm -f $linkPattern` (in the root directory),

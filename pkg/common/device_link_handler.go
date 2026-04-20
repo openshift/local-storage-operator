@@ -37,14 +37,16 @@ type DeviceLinkHandler struct {
 	clientReader client.Reader
 	recorder     record.EventRecorder
 	cacheWriter  *LocalVolumeDeviceLinkCache
+	nodeName     string
 }
 
-func NewDeviceLinkHandler(client client.Client, clientReader client.Reader, recorder record.EventRecorder, cacheWriter *LocalVolumeDeviceLinkCache) *DeviceLinkHandler {
+func NewDeviceLinkHandler(client client.Client, clientReader client.Reader, recorder record.EventRecorder, cacheWriter *LocalVolumeDeviceLinkCache, nodeName string) *DeviceLinkHandler {
 	return &DeviceLinkHandler{
 		client:       client,
 		clientReader: clientReader,
 		recorder:     recorder,
 		cacheWriter:  cacheWriter,
+		nodeName:     nodeName,
 	}
 }
 
@@ -65,6 +67,9 @@ func (dl *DeviceLinkHandler) generateLVDLObj(pvName, namespace string, ownerObj 
 	if err != nil {
 		return nil, err
 	}
+	if dl.nodeName == "" {
+		return nil, fmt.Errorf("node name is required for LocalVolumeDeviceLink %s", pvName)
+	}
 
 	requiredLocalDeviceLink := &v1.LocalVolumeDeviceLink{
 		ObjectMeta: metav1.ObjectMeta{
@@ -74,6 +79,7 @@ func (dl *DeviceLinkHandler) generateLVDLObj(pvName, namespace string, ownerObj 
 		},
 		Spec: v1.LocalVolumeDeviceLinkSpec{
 			PersistentVolumeName: pvName,
+			NodeName:             dl.nodeName,
 			Policy:               v1.DeviceLinkPolicyNone,
 		},
 	}

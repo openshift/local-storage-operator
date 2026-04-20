@@ -756,6 +756,7 @@ func TestProcessRejectedDevicesForDeviceLinks(t *testing.T) {
 					},
 					Spec: localv1.LocalVolumeDeviceLinkSpec{
 						PersistentVolumeName: pvName,
+						NodeName:             testNodeName,
 						Policy:               localv1.DeviceLinkPolicyNone,
 					},
 				})
@@ -880,6 +881,7 @@ func TestIgnoredDevicesProcessedWhenNoValidDevices(t *testing.T) {
 			},
 			Spec: localv1.LocalVolumeDeviceLinkSpec{
 				PersistentVolumeName: pvName,
+				NodeName:             testNodeName,
 				Policy:               localv1.DeviceLinkPolicyNone,
 			},
 		},
@@ -983,6 +985,7 @@ func TestProcessNewSymlink_SiblingFallback(t *testing.T) {
 
 			lvdl := fixture.LocalVolumeDeviceLink()
 			lvdl.Spec.Policy = tt.policy
+			lvdl.Spec.NodeName = cfg.TestNodeName
 
 			objs := []runtime.Object{lv, fixture.PersistentVolume(), lvdl, fixture.StorageClass()}
 			r, testCtx := getFakeDiskMaker(t, fixture.TmpRoot, objs...)
@@ -999,6 +1002,8 @@ func TestProcessNewSymlink_SiblingFallback(t *testing.T) {
 				VolumeMode: string(corev1.PersistentVolumeBlock),
 			}
 			r.fsInterface = FakeFileSystemInterface{}
+			r.pvLinkCache = common.NewLocalVolumeDeviceLinkCache(r.Client, nil, cfg.TestNodeName)
+			r.pvLinkCache.MarkSyncedForTests()
 
 			r.pvLinkCache.SeedForTests(lvdl)
 
@@ -1096,7 +1101,7 @@ func getFakeDiskMaker(t *testing.T, symlinkLocation string, objs ...runtime.Obje
 		fakeVolUtil:   fakeVolUtil,
 	}
 
-	pvLinkCache := common.NewLocalVolumeDeviceLinkCache(fakeClient, nil)
+	pvLinkCache := common.NewLocalVolumeDeviceLinkCache(fakeClient, nil, "test-node")
 	pvLinkCache.MarkSyncedForTests()
 
 	lvReconciler := NewLocalVolumeReconciler(

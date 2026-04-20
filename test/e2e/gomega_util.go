@@ -85,12 +85,42 @@ func eventuallyDelete(t *testing.T, removeFinalizers bool, objs ...client.Object
 
 }
 
+// PVs rapidly get deleted and recreated if diskmaker is running
+// using eventuallyDelete is inherently racy
+// this function compares if PV was recreated with a different UID
+// then PV must be deleted.
+func eventuallyDeletePV(t *testing.T, pv *corev1.PersistentVolume) {
+	f := framework.Global
+	matcher := gomega.NewWithT(t)
+	oldUID := pv.UID
+	matcher.Eventually(func() error {
+		t.Logf("deleting obj %q with kind %q in ns %q", pv.Name, pv.Kind, pv.Namespace)
+		err := f.Client.Get(context.TODO(), types.NamespacedName{Name: pv.Name, Namespace: pv.Namespace}, pv)
+		if errors.IsNotFound(err) || errors.IsGone(err) {
+			t.Logf("object already deleted: %s", err)
+			return nil
+		}
+		newUID := pv.GetUID()
+		if newUID != oldUID {
+			t.Logf("object %s has been deleted and recreated", pv.Name)
+			return nil
+		}
+
+		err = f.Client.Delete(context.TODO(), pv)
+		if errors.IsNotFound(err) || errors.IsGone(err) {
+			t.Logf("object already deleted: %s", err)
+			return nil
+		}
+		return err
+	}, time.Minute*5, time.Second*5).ShouldNot(gomega.HaveOccurred(), "deleting %q", pv.Name)
+}
+
 func eventuallyFindPVs(t *testing.T, f *framework.Framework, storageClassName string, expectedPVs int) []corev1.PersistentVolume {
 	var matchedPVs []corev1.PersistentVolume
 	matcher := gomega.NewWithT(t)
 	matcher.Eventually(func() []corev1.PersistentVolume {
 		pvList := &corev1.PersistentVolumeList{}
-		t.Log(fmt.Sprintf("waiting for %d PVs to be created with StorageClass: %q", expectedPVs, storageClassName))
+		t.Logf("waiting for %d PVs to be created with StorageClass: %q", expectedPVs, storageClassName)
 		matcher.Eventually(func() error {
 			return f.Client.List(context.TODO(), pvList)
 		}).ShouldNot(gomega.HaveOccurred())
@@ -305,4 +335,17 @@ func consumePV(t *testing.T, ctx *framework.Context, pv corev1.PersistentVolume)
 
 	matchingPod.TypeMeta.Kind = "Pod"
 	return pvc, job, &matchingPod
+}
+
+func assertLVDLsContainTargetAndNodes(t *testing.T, lvdls []localv1.LocalVolumeDeviceLink, expectedTarget string, expectedNodeNames []string) {
+	matcher := gomega.NewWithT(t)
+	foundNodeNames := sets.New[string]()
+	for _, lvdl := range lvdls {
+		matcher.Expect(lvdl.Status.ValidLinkTargets).To(gomega.ContainElement(expectedTarget),
+			"expected ValidLinkTargets for LVDL %q to contain %q", lvdl.Name, expectedTarget)
+		matcher.Expect(lvdl.Spec.NodeName).ToNot(gomega.BeEmpty(), "expected NodeName for LVDL %q", lvdl.Name)
+		foundNodeNames.Insert(lvdl.Spec.NodeName)
+	}
+	matcher.Expect(foundNodeNames.UnsortedList()).To(gomega.ConsistOf(expectedNodeNames),
+		"expected LVDL node names for target %q", expectedTarget)
 }

@@ -169,6 +169,7 @@ func (f *SiblingFallbackFixture) LocalVolumeDeviceLink() *localv1.LocalVolumeDev
 		},
 		Spec: localv1.LocalVolumeDeviceLinkSpec{
 			PersistentVolumeName: f.ExpectedPVName,
+			NodeName:             f.Config.TestNodeName,
 			Policy:               localv1.DeviceLinkPolicyPreferredLinkTarget,
 		},
 		Status: localv1.LocalVolumeDeviceLinkStatus{

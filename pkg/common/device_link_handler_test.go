@@ -22,6 +22,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
+const testNodeName = "worker-a"
+
 // createTempFile creates an empty regular file at path (for use as a fake device).
 func createTempFile(t *testing.T, path string) error {
 	t.Helper()
@@ -71,6 +73,7 @@ func newLVDL(name, namespace, pvName string) *v1.LocalVolumeDeviceLink {
 		},
 		Spec: v1.LocalVolumeDeviceLinkSpec{
 			PersistentVolumeName: pvName,
+			NodeName:             testNodeName,
 			Policy:               v1.DeviceLinkPolicyNone,
 		},
 	}
@@ -151,7 +154,7 @@ func TestDeviceLinkHandler_UpdateStatusAndPV(t *testing.T) {
 			filesystemUUID: "550e8400-e29b-41d4-a716-446655440000",
 			expectedLVDL: &v1.LocalVolumeDeviceLink{
 				ObjectMeta: metav1.ObjectMeta{Name: "local-pv-statustest", Namespace: "default"},
-				Spec:       v1.LocalVolumeDeviceLinkSpec{PersistentVolumeName: "local-pv-statustest"},
+				Spec:       v1.LocalVolumeDeviceLinkSpec{PersistentVolumeName: "local-pv-statustest", NodeName: testNodeName},
 				Status: v1.LocalVolumeDeviceLinkStatus{
 					CurrentLinkTarget:   "/dev/disk/by-id/wwn-current",
 					PreferredLinkTarget: "/dev/disk/by-id/wwn-preferred",
@@ -171,7 +174,7 @@ func TestDeviceLinkHandler_UpdateStatusAndPV(t *testing.T) {
 			existingPV:     newPV("local-pv-nolinks"),
 			expectedLVDL: &v1.LocalVolumeDeviceLink{
 				ObjectMeta: metav1.ObjectMeta{Name: "local-pv-nolinks", Namespace: "default"},
-				Spec:       v1.LocalVolumeDeviceLinkSpec{PersistentVolumeName: "local-pv-nolinks"},
+				Spec:       v1.LocalVolumeDeviceLinkSpec{PersistentVolumeName: "local-pv-nolinks", NodeName: testNodeName},
 				Status: v1.LocalVolumeDeviceLinkStatus{
 					CurrentLinkTarget:   "/dev/sdb",
 					PreferredLinkTarget: "",
@@ -192,7 +195,7 @@ func TestDeviceLinkHandler_UpdateStatusAndPV(t *testing.T) {
 			globLinks:      []string{"/dev/disk/by-id/wwn-preferred"},
 			expectedLVDL: &v1.LocalVolumeDeviceLink{
 				ObjectMeta: metav1.ObjectMeta{Name: "local-pv-fullflow", Namespace: "openshift-local-storage"},
-				Spec:       v1.LocalVolumeDeviceLinkSpec{PersistentVolumeName: "local-pv-fullflow"},
+				Spec:       v1.LocalVolumeDeviceLinkSpec{PersistentVolumeName: "local-pv-fullflow", NodeName: testNodeName},
 				Status: v1.LocalVolumeDeviceLinkStatus{
 					CurrentLinkTarget:   "/dev/disk/by-id/scsi-current",
 					PreferredLinkTarget: "/dev/disk/by-id/wwn-preferred",
@@ -222,6 +225,7 @@ func TestDeviceLinkHandler_UpdateStatusAndPV(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{Name: "local-pv-lvdl-missing", Namespace: "default"},
 				Spec: v1.LocalVolumeDeviceLinkSpec{
 					PersistentVolumeName: "local-pv-lvdl-missing",
+					NodeName:             testNodeName,
 					Policy:               v1.DeviceLinkPolicyNone,
 				},
 				Status: v1.LocalVolumeDeviceLinkStatus{
@@ -246,8 +250,8 @@ func TestDeviceLinkHandler_UpdateStatusAndPV(t *testing.T) {
 			}
 
 			fakeClient := newFakeDeviceLinkClient(t, runtimeObjects...).Build()
-			pvCache := NewLocalVolumeDeviceLinkCache(nil, nil)
-			handler := NewDeviceLinkHandler(fakeClient, fakeClient, record.NewFakeRecorder(10), pvCache)
+			pvCache := NewLocalVolumeDeviceLinkCache(nil, nil, testNodeName)
+			handler := NewDeviceLinkHandler(fakeClient, fakeClient, record.NewFakeRecorder(10), pvCache, testNodeName)
 
 			origGlob := internal.FilePathGlob
 			origEval := internal.FilePathEvalSymLinks
@@ -283,6 +287,7 @@ func TestDeviceLinkHandler_UpdateStatusAndPV(t *testing.T) {
 			assert.Equal(t, tc.expectedLVDL.Name, updated.Name)
 			assert.Equal(t, tc.expectedLVDL.Namespace, updated.Namespace)
 			assert.Equal(t, tc.expectedLVDL.Spec.PersistentVolumeName, updated.Spec.PersistentVolumeName)
+			assert.Equal(t, tc.expectedLVDL.Spec.NodeName, updated.Spec.NodeName)
 			assert.Equal(t, tc.expectedLVDL.Status.CurrentLinkTarget, updated.Status.CurrentLinkTarget)
 			assert.Equal(t, tc.expectedLVDL.Status.PreferredLinkTarget, updated.Status.PreferredLinkTarget)
 			assert.Equal(t, tc.expectedLVDL.Status.FilesystemUUID, updated.Status.FilesystemUUID)
@@ -295,6 +300,7 @@ func TestDeviceLinkHandler_UpdateStatusAndPV(t *testing.T) {
 			assert.Equal(t, tc.expectedLVDL.Name, fetched.Name)
 			assert.Equal(t, tc.expectedLVDL.Namespace, fetched.Namespace)
 			assert.Equal(t, tc.expectedLVDL.Spec.PersistentVolumeName, fetched.Spec.PersistentVolumeName)
+			assert.Equal(t, tc.expectedLVDL.Spec.NodeName, fetched.Spec.NodeName)
 			assert.Equal(t, tc.expectedLVDL.Status.CurrentLinkTarget, fetched.Status.CurrentLinkTarget)
 			assert.Equal(t, tc.expectedLVDL.Status.PreferredLinkTarget, fetched.Status.PreferredLinkTarget)
 			assert.Equal(t, tc.expectedLVDL.Status.FilesystemUUID, fetched.Status.FilesystemUUID)
@@ -332,6 +338,7 @@ func newLVDLWithPolicy(name, namespace string, policy v1.DeviceLinkPolicy, curre
 		},
 		Spec: v1.LocalVolumeDeviceLinkSpec{
 			PersistentVolumeName: name,
+			NodeName:             testNodeName,
 			Policy:               policy,
 		},
 		Status: v1.LocalVolumeDeviceLinkStatus{
@@ -696,9 +703,9 @@ func TestRecreateSymlinkIfNeeded(t *testing.T) {
 			}
 
 			fakeClient := newFakeDeviceLinkClient(t, lvdl).Build()
-			pvCache := NewLocalVolumeDeviceLinkCache(nil, nil)
+			pvCache := NewLocalVolumeDeviceLinkCache(nil, nil, testNodeName)
 			pvCache.MarkSyncedForTests()
-			handler := NewDeviceLinkHandler(fakeClient, fakeClient, record.NewFakeRecorder(10), pvCache)
+			handler := NewDeviceLinkHandler(fakeClient, fakeClient, record.NewFakeRecorder(10), pvCache, testNodeName)
 
 			if tc.configureEval != nil {
 				internal.FilePathEvalSymLinks = tc.configureEval(env)
