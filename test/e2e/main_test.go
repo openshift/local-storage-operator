@@ -1,6 +1,7 @@
 package e2e
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/signal"
@@ -14,6 +15,7 @@ import (
 	framework "github.com/openshift/local-storage-operator/test/framework"
 	"github.com/openshift/local-storage-operator/test/framework/e2eutil"
 	"github.com/stretchr/testify/assert"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 var (
@@ -109,6 +111,10 @@ func TestLocalStorage(t *testing.T) {
 			return nil
 		})
 
+		err = enableNamespaceMetrics(t, context)
+		if err != nil {
+			t.Fatalf("error enabling namespace metrics : %v", err)
+		}
 		// deploy the local-storage-operator
 		err = waitForOperatorToBeReady(t, context)
 		if err != nil {
@@ -144,5 +150,37 @@ func waitForOperatorToBeReady(t *testing.T, ctx *framework.TestCtx) error {
 	if err != nil {
 		return err
 	}
+	return nil
+}
+
+// The namespace created by the e2e job often doesn't have it enabled.
+// Enable it now.
+func enableNamespaceMetrics(t *testing.T, ctx *framework.TestCtx) error {
+	namespace, err := ctx.GetOperatorNamespace()
+	if err != nil {
+		return err
+	}
+	f := framework.Global
+
+	ns, err := f.KubeClient.CoreV1().Namespaces().Get(context.TODO(), namespace, metav1.GetOptions{})
+	if err != nil {
+		return err
+	}
+
+	if ns.Labels == nil {
+		ns.Labels = make(map[string]string)
+	}
+	if ns.Labels["openshift.io/cluster-monitoring"] == "true" {
+		t.Logf("Namespace %s already has cluster-monitoring enabled", namespace)
+		return nil
+	}
+
+	t.Logf("Enabling cluster-monitoring for namespace %s", namespace)
+	ns.Labels["openshift.io/cluster-monitoring"] = "true"
+	_, err = f.KubeClient.CoreV1().Namespaces().Update(context.TODO(), ns, metav1.UpdateOptions{})
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
