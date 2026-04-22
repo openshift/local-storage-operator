@@ -143,7 +143,7 @@ func startManager(cmd *cobra.Command, args []string) error {
 
 	// Create the LVDL custom collector. mgr.GetClient() is already backed by
 	// the controller-runtime informer cache and does not hit the API server.
-	deviceLinkCollector := localmetrics.NewDeviceLinkCollector(mgr.GetClient(), namespace)
+	deviceLinkCollector := localmetrics.NewDeviceLinkCollector(mgr.GetClient(), namespace, localNodeName)
 
 	// start local server to emit custom metrics
 	err = localmetrics.NewConfigBuilder().

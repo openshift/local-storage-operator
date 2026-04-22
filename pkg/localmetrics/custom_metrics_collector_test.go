@@ -81,7 +81,7 @@ func findFamily(mfs []*dto.MetricFamily, name string) *dto.MetricFamily {
 }
 
 func TestDescribe(t *testing.T) {
-	collector := NewDeviceLinkCollector(buildFakeClient(t), "test-ns")
+	collector := NewDeviceLinkCollector(buildFakeClient(t), "test-ns", "test-node")
 	ch := make(chan *prometheus.Desc, 10)
 	collector.Describe(ch)
 	close(ch)
@@ -96,7 +96,7 @@ func TestDescribe(t *testing.T) {
 }
 
 func TestCollect_NoObjects(t *testing.T) {
-	collector := NewDeviceLinkCollector(buildFakeClient(t), "test-ns")
+	collector := NewDeviceLinkCollector(buildFakeClient(t), "test-ns", "test-node")
 	metrics := collectMetrics(collector)
 	if len(metrics) != 0 {
 		t.Errorf("expected 0 metrics for empty client, got %d", len(metrics))
@@ -177,7 +177,7 @@ func TestCollect_SingleObject(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			collector := NewDeviceLinkCollector(buildFakeClient(t, tt.link), "openshift-local-storage")
+			collector := NewDeviceLinkCollector(buildFakeClient(t, tt.link), "openshift-local-storage", "test-node")
 
 			reg := prometheus.NewRegistry()
 			if err := reg.Register(collector); err != nil {
@@ -224,7 +224,7 @@ func TestCollect_MultipleObjects(t *testing.T) {
 		withLinkTargets("/dev/sdc", "/dev/sdc").
 		build()
 
-	collector := NewDeviceLinkCollector(buildFakeClient(t, link1, link2, link3), "openshift-local-storage")
+	collector := NewDeviceLinkCollector(buildFakeClient(t, link1, link2, link3), "openshift-local-storage", "test-node")
 	metrics := collectMetrics(collector)
 	// link1 → 1 mismatch, link2 → 0 (healthy), link3 → 1 no-by-id
 	if len(metrics) != 2 {
@@ -249,7 +249,7 @@ func TestCollect_MultipleNodes(t *testing.T) {
 		withLinkTargets("/dev/disk/by-id/old-c", "/dev/disk/by-id/new-c", "/dev/disk/by-id/new-c").
 		build()
 
-	collector := NewDeviceLinkCollector(buildFakeClient(t, link1, link2, link3), "openshift-local-storage")
+	collector := NewDeviceLinkCollector(buildFakeClient(t, link1, link2, link3), "openshift-local-storage", "test-nodea")
 	metrics := collectMetrics(collector)
 	// link1 → 1 mismatch, link2 + link3 are on different node (=ignored)
 	if len(metrics) != 1 {
@@ -269,7 +269,7 @@ func TestCollect_ListError(t *testing.T) {
 		},
 	})
 
-	collector := NewDeviceLinkCollector(errClient, "test-ns")
+	collector := NewDeviceLinkCollector(errClient, "test-ns", "test-node")
 	metrics := collectMetrics(collector)
 	// Two invalid metrics are emitted when List fails (one per descriptor).
 	if len(metrics) != 2 {
@@ -283,7 +283,7 @@ func TestCollect_EmptyPolicy(t *testing.T) {
 	link := (&lvdlBuilder{}).makeDeviceLink("pv-node1", "openshift-local-storage", "pv-node1", "test-node").
 		withLinkTargets("/dev/disk/by-id/scsi-old", "/dev/disk/by-id/scsi-new", "/dev/disk/by-id/scsi-old", "/dev/disk/by-id/scsi-new").
 		build()
-	collector := NewDeviceLinkCollector(buildFakeClient(t, link), "openshift-local-storage")
+	collector := NewDeviceLinkCollector(buildFakeClient(t, link), "openshift-local-storage", "test-node")
 
 	reg := prometheus.NewRegistry()
 	if err := reg.Register(collector); err != nil {
