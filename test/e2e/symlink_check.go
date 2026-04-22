@@ -228,6 +228,10 @@ func verifyMultiStepPreferredLinkReconciliation(
 	// pv name is same as LVDL name
 	selectedLVDL := eventuallyGetLVDL(t, f, namespace, pv.Name)
 
+	// Pre-check there is no pending alert for the volume
+	prometheusClient := newPrometheusClient(f)
+	waitForMetric(t, prometheusClient, fmt.Sprintf("ALERTS{alertname=\"LSODeviceLinkMismatch\", alertstate=\"pending\", persistent_volume=\"%s\"}", selectedLVDL.Name), 0)
+
 	// ---- Step 1: initial relink ----
 	t.Logf("multi-step relink step 1: adding %s symlink %s", steps[0].name, steps[0].target)
 	addNewUdevSymlink(t, ctx, nodeHostName, currentSymlink, steps[0].target)
@@ -243,6 +247,19 @@ func verifyMultiStepPreferredLinkReconciliation(
 	lvdl := waitForLVDLPreferredLinkTarget(t, f, selectedLVDL, steps[0].target)
 	matcher.Expect(lvdl.Status.CurrentLinkTarget).To(gomega.Equal(currentSymlink),
 		"step 1: current should still be original before policy change")
+
+	waitForMetric(t, prometheusClient, fmt.Sprintf("lso_device_link_mismatch{name=\"%s\", policy=\"None\"}", lvdl.Name), 1)
+	// Wait for alert to get Pending, that should be fast
+	// It would take ~15 minutes to get it Firing, don't bother with that
+	waitForMetric(t, prometheusClient, fmt.Sprintf("ALERTS{alertname=\"LSODeviceLinkMismatch\", alertstate=\"pending\", persistent_volume=\"%s\"}", lvdl.Name), 1)
+
+	// Update the policy to CurrentLinkTarget
+	lvdl = updateLVDLPolicy(t, f, lvdl, localv1.DeviceLinkPolicyCurrentLinkTarget)
+	// Wait for the metric with Node to disappear and CurrentLinkTarget to be set
+	waitForMetric(t, prometheusClient, fmt.Sprintf("lso_device_link_mismatch{name=\"%s\", policy=\"None\"}", lvdl.Name), 0)
+	waitForMetric(t, prometheusClient, fmt.Sprintf("lso_device_link_mismatch{name=\"%s\", policy=\"CurrentLinkTarget\"}", lvdl.Name), 1)
+	// Do not wait for the alert to disappear - it takes ~ 5 minutes.
+	// Let the other test pass and check for the alert at the end.
 
 	t.Log("step 1: setting LVDL policy to PreferredLinkTarget")
 	lvdl = updateLVDLPolicy(t, f, lvdl, localv1.DeviceLinkPolicyPreferredLinkTarget)
@@ -302,7 +319,14 @@ func verifyMultiStepPreferredLinkReconciliation(
 			"step %d: LVDL PreferredLinkTarget after PV recreation", i+1)
 		matcher.Expect(lvdl.Spec.Policy).To(gomega.Equal(localv1.DeviceLinkPolicyPreferredLinkTarget),
 			"step %d: LVDL policy must remain PreferredLinkTarget after PV recreation", i+1)
+		waitForMetric(t, prometheusClient, fmt.Sprintf("lso_device_link_mismatch{name=\"%s\", policy=\"None\"}", lvdl.Name), 0)
+		waitForMetric(t, prometheusClient, fmt.Sprintf("lso_device_link_mismatch{name=\"%s\", policy=\"CurrentLinkTarget\"}", lvdl.Name), 0)
 	}
+	// Wait for the initial alert to disappear, which takes 5 minutes.
+	// The policy is PreferredLinkTarget for quite a some time,
+	// so the alert from time when it was None should be cleared at this point
+	// (or in a near future).
+	waitForMetric(t, prometheusClient, fmt.Sprintf("ALERTS{alertname=\"LSODeviceLinkMismatch\", alertstate=\"pending\", persistent_volume=\"%s\"}", lvdl.Name), 0)
 
 	return pv, cleanups
 }
