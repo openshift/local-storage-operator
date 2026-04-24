@@ -309,7 +309,7 @@ func TestProcessNewSymlink(t *testing.T) {
 
 // TestProcessNewSymlink_SiblingFallback_LVSet mirrors the LocalVolume sibling-fallback
 // scenario: stale dangling symlink and LVDL valid targets include a sibling by-id path.
-// Exercises FindStalePVs → provisionFromExistingPV → CreateLocalPV with a LocalVolumeSet owner.
+// Exercises FindStalePVs → provisionFromExistingPV → PVAndLVDLSyncer with a LocalVolumeSet owner.
 func TestProcessNewSymlink_SiblingFallback_LVSet(t *testing.T) {
 	testCases := []struct {
 		name          string
@@ -395,6 +395,14 @@ func TestProcessNewSymlink_SiblingFallback_LVSet(t *testing.T) {
 			if !tc.expectUpdated {
 				assert.Equal(t, cfg.OldByID, gotLinkTarget,
 					"symlink should remain unchanged when sibling fallback is not allowed to repair it")
+
+				gotLVDL := &v1api.LocalVolumeDeviceLink{}
+				err = r.Client.Get(context.Background(), types.NamespacedName{Name: fixture.ExpectedPVName, Namespace: cfg.TestNamespace}, gotLVDL)
+				assert.NoError(t, err)
+				assert.Equal(t, cfg.NewByID, gotLVDL.Status.PreferredLinkTarget,
+					"PreferredLinkTarget should be updated even when policy prevents symlink recreation")
+				assert.ElementsMatch(t, []string{cfg.NewByID, cfg.SiblingByID}, gotLVDL.Status.ValidLinkTargets,
+					"ValidLinkTargets should reflect current device state")
 				return
 			}
 
@@ -608,6 +616,16 @@ func TestProcessRejectedDevicesForDeviceLinks(t *testing.T) {
 			expectCurrentLink:  "/dev/disk/by-id/wwn-null",
 			expectPreferLink:   "/dev/disk/by-id/wwn-null",
 			expectSymlinkPath:  "/dev/disk/by-id/wwn-null",
+		},
+		{
+			name:               "updates PreferredLinkTarget even when policy is None",
+			createSymlink:      false,
+			seedCacheFromLVDL:  true,
+			initialPolicy:      v1api.DeviceLinkPolicyNone,
+			initialCurrentLink: "/dev/disk/by-id/old-link",
+			initialPreferLink:  "/dev/disk/by-id/stale-preferred",
+			expectCurrentLink:  "/dev/disk/by-id/old-link",
+			expectPreferLink:   "/dev/disk/by-id/wwn-null",
 		},
 	}
 

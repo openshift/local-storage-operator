@@ -70,7 +70,7 @@ func TestCurrentBlockDeviceInfoGetSymlinkTargetPath(t *testing.T) {
 			apiObjects: []client.Object{
 				localPV("pv-none", "/mnt/local-storage/sc-a/current-none"),
 			},
-			wantErr: "found stale symlink link",
+			wantErr: "policy is not PreferredLinkTarget",
 		},
 		{
 			name: "errors when current link still resolves",

@@ -166,6 +166,33 @@ func (dl *DeviceLinkHandler) ApplyStatus(ctx context.Context, pvName, namespace 
 	if existing.Status.PreferredLinkTarget != copyToUpdate.Status.PreferredLinkTarget {
 		infoUpdate := fmt.Sprintf("PreferredLinkTarget has changed from %s to %s for device %s", existing.Status.PreferredLinkTarget, copyToUpdate.Status.PreferredLinkTarget, blockDevice.Name)
 		klog.Info(infoUpdate)
+		dl.recorder.Eventf(ownerObj, corev1.EventTypeNormal, "PreferredSymlinkChanged", infoUpdate)
+	}
+
+	err = dl.client.Status().Update(ctx, copyToUpdate)
+	if err == nil {
+		dl.cacheWriter.AddOrUpdateLVDL(copyToUpdate)
+	}
+
+	return copyToUpdate, err
+}
+
+func (dl *DeviceLinkHandler) UpdateDeviceLinks(ctx context.Context, existing *v1.LocalVolumeDeviceLink, blockDevice internal.BlockDevice, currentSymlink string) (*v1.LocalVolumeDeviceLink, error) {
+	copyToUpdate := existing.DeepCopy()
+	copyToUpdate, err := dl.setStatusSymlinks(copyToUpdate, blockDevice, "", currentSymlink)
+	if err != nil {
+		klog.ErrorS(err, "error setting status symlinks")
+		return existing, err
+	}
+
+	if equality.Semantic.DeepEqual(existing.Status, copyToUpdate.Status) {
+		klog.V(4).Infof("updating lvdl %s status is not required", existing.Name)
+		return existing, nil
+	}
+
+	if existing.Status.PreferredLinkTarget != copyToUpdate.Status.PreferredLinkTarget {
+		infoUpdate := fmt.Sprintf("PreferredLinkTarget has changed from %s to %s for device %s", existing.Status.PreferredLinkTarget, copyToUpdate.Status.PreferredLinkTarget, blockDevice.Name)
+		klog.Info(infoUpdate)
 		ownerObj, _ := dl.resolveOwnerObjectFromLVDL(ctx, copyToUpdate)
 		if ownerObj != nil {
 			dl.recorder.Eventf(ownerObj, corev1.EventTypeNormal, "PreferredSymlinkChanged", infoUpdate)

@@ -35,6 +35,16 @@ type LocalVolumeDeviceLinkCache struct {
 	localDeviceInfos map[string]CurrentBlockDeviceInfo
 }
 
+type PolicyNotPreferredError struct {
+	SymlinkSource string
+	SymlinkDir    string
+	LVDL          *v1.LocalVolumeDeviceLink
+}
+
+func (e PolicyNotPreferredError) Error() string {
+	return fmt.Sprintf("found stale symlink for %s in %s but policy is not PreferredLinkTarget", e.SymlinkSource, e.SymlinkDir)
+}
+
 type CurrentBlockDeviceInfo struct {
 	// map of lvdlname and LocalVolumeDeviceLink
 	lvdls map[string]*v1.LocalVolumeDeviceLink
@@ -84,7 +94,7 @@ func (c CurrentBlockDeviceInfo) GetSymlinkTargetPath(ctx context.Context, symlin
 	policy := lvdl.Spec.Policy
 
 	if policy != v1.DeviceLinkPolicyPreferredLinkTarget {
-		return "", fmt.Errorf("found stale symlink link for %s in %s", newSymlinkSourcePath, symlinkDir)
+		return "", PolicyNotPreferredError{SymlinkSource: newSymlinkSourcePath, SymlinkDir: symlinkDir, LVDL: lvdl}
 	}
 
 	// check if currentLinkTarget resolves to a valid device, if yes then no need to do anything

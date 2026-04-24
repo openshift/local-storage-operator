@@ -3,6 +3,7 @@ package lv
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -66,6 +67,8 @@ type LocalVolumeReconciler struct {
 	eventSync       *eventReporter
 	pvLinkCache     *common.LocalVolumeDeviceLinkCache
 	cacheSynced     bool
+
+	deviceLinkHandler *common.DeviceLinkHandler
 
 	// static-provisioner stuff
 	cleanupTracker *provDeleter.CleanupStatusTracker
@@ -570,6 +573,12 @@ func (r *LocalVolumeReconciler) processNewSymlink(ctx context.Context, scName st
 		klog.V(4).Infof("found a dangling symlink for device %s and target %s", source, target)
 		newSymlinkTarget, err := currentDevice.GetSymlinkTargetPath(ctx, symLinkDirPath, source, r.Client)
 		if err != nil {
+			var policyErr common.PolicyNotPreferredError
+			if errors.As(err, &policyErr) && policyErr.LVDL != nil {
+				if _, updateErr := r.deviceLinkHandler.UpdateDeviceLinks(ctx, policyErr.LVDL, diskLocation.BlockDevice, policyErr.LVDL.Status.CurrentLinkTarget); updateErr != nil {
+					klog.ErrorS(updateErr, "failed to update LVDL PreferredLinkTarget", "lvdl", policyErr.LVDL.Name)
+				}
+			}
 			return false, err
 		}
 		klog.V(4).Infof("found new symlink to be %s for %s", newSymlinkTarget, source)
@@ -622,7 +631,7 @@ func (r *LocalVolumeReconciler) provisionPV(ctx context.Context, scName string, 
 		common.LocalVolumeOwnerNameForPV:      r.localVolume.Name,
 		common.LocalVolumeOwnerNamespaceForPV: r.localVolume.Namespace,
 	}
-	createLocalPVArgs := common.CreateLocalPVArgs{
+	syncArgs := common.PVAndLVDLSyncArgs{
 		LocalVolumeLikeObject: r.localVolume,
 		RuntimeConfig:         r.runtimeConfig,
 		StorageClass:          *storageClass,
@@ -635,7 +644,7 @@ func (r *LocalVolumeReconciler) provisionPV(ctx context.Context, scName string, 
 		CacheWriter:           r.pvLinkCache,
 	}
 
-	return common.CreateLocalPV(ctx, createLocalPVArgs)
+	return common.NewPVAndLVDLSyncer(syncArgs).Sync(ctx)
 }
 
 // processRejectedDevicesForDeviceLinks reconciles devices which were rejected for PV creation
@@ -666,6 +675,12 @@ func (r *LocalVolumeReconciler) processRejectedDevicesForDeviceLinks(ctx context
 
 			symlinkPath, err := common.HasExistingLocalVolumes(ctx, r.Client, symLinkDirPath, blockDevice, r.pvLinkCache)
 			if err != nil {
+				var policyErr common.PolicyNotPreferredError
+				if errors.As(err, &policyErr) && policyErr.LVDL != nil {
+					if _, updateErr := r.deviceLinkHandler.UpdateDeviceLinks(ctx, policyErr.LVDL, blockDevice, policyErr.LVDL.Status.CurrentLinkTarget); updateErr != nil {
+						klog.ErrorS(updateErr, "failed to update LVDL PreferredLinkTarget", "lvdl", policyErr.LVDL.Name)
+					}
+				}
 				klog.ErrorS(err, "failed to check for existing symlink for device", "volume", blockDevice.Name)
 				continue
 			}
@@ -677,15 +692,13 @@ func (r *LocalVolumeReconciler) processRejectedDevicesForDeviceLinks(ctx context
 			existingSymlinkName := filepath.Base(symlinkPath)
 
 			lvdlName := common.GeneratePVName(existingSymlinkName, r.runtimeConfig.Node.Name, storageClassName)
-			deviceHandler := common.NewDeviceLinkHandler(r.Client, r.ClientReader, r.runtimeConfig.Recorder, r.pvLinkCache, r.runtimeConfig.Node.Name)
-
-			lvdl, err := deviceHandler.FindLVDL(ctx, lvdlName, r.runtimeConfig.Namespace)
+			lvdl, err := r.deviceLinkHandler.FindLVDL(ctx, lvdlName, r.runtimeConfig.Namespace)
 			if err != nil && !apierrors.IsNotFound(err) {
 				klog.ErrorS(err, "error finding lvdl", "lvdl", lvdlName)
 			}
 			var lvdlError error
 			if common.HasMismatchingSymlink(lvdl, blockDevice) {
-				_, lvdlError = deviceHandler.RecreateSymlinkIfNeeded(ctx, lvdl, symlinkPath, blockDevice)
+				_, lvdlError = r.deviceLinkHandler.RecreateSymlinkIfNeeded(ctx, lvdl, symlinkPath, blockDevice)
 			} else {
 				// it is possible that symlinkPath has become stale, in which case we must let RecreateSymlinkIfNeeded to fix it.
 				currentLinkTarget, err := internal.Readlink(symlinkPath)
@@ -693,7 +706,7 @@ func (r *LocalVolumeReconciler) processRejectedDevicesForDeviceLinks(ctx context
 					klog.ErrorS(err, "failed to read current symlink target", "devicePath", symlinkPath)
 					continue
 				}
-				_, lvdlError = deviceHandler.ApplyStatus(ctx, lvdlName, r.runtimeConfig.Namespace, blockDevice, r.localVolume, currentLinkTarget, symlinkPath)
+				_, lvdlError = r.deviceLinkHandler.ApplyStatus(ctx, lvdlName, r.runtimeConfig.Namespace, blockDevice, r.localVolume, currentLinkTarget, symlinkPath)
 			}
 			if lvdlError != nil {
 				msg := fmt.Errorf("failed to process lvdl %w", lvdlError)
@@ -759,16 +772,17 @@ func NewLocalVolumeReconciler(client client.Client, clientReader client.Reader, 
 	deleter := provDeleter.NewDeleter(rc, cleanupTracker)
 
 	lvReconciler := &LocalVolumeReconciler{
-		Client:          client,
-		ClientReader:    clientReader,
-		Scheme:          scheme,
-		symlinkLocation: symlinkLocation,
-		eventSync:       newEventReporter(rc.Recorder),
-		fsInterface:     NixFileSystemInterface{},
-		cleanupTracker:  cleanupTracker,
-		runtimeConfig:   rc,
-		deleter:         deleter,
-		pvLinkCache:     pvLinkCache,
+		Client:            client,
+		ClientReader:      clientReader,
+		Scheme:            scheme,
+		symlinkLocation:   symlinkLocation,
+		eventSync:         newEventReporter(rc.Recorder),
+		fsInterface:       NixFileSystemInterface{},
+		cleanupTracker:    cleanupTracker,
+		runtimeConfig:     rc,
+		deleter:           deleter,
+		pvLinkCache:       pvLinkCache,
+		deviceLinkHandler: common.NewDeviceLinkHandler(client, clientReader, rc.Recorder, pvLinkCache, rc.Node.Name),
 	}
 
 	return lvReconciler
