@@ -162,7 +162,7 @@ func enableNamespaceMetrics(t *testing.T, ctx *framework.TestCtx) error {
 	}
 	f := framework.Global
 
-	ns, err := f.KubeClient.CoreV1().Namespaces().Get(context.TODO(), namespace, metav1.GetOptions{})
+	ns, err := f.KubeClient.CoreV1().Namespaces().Get(t.Context(), namespace, metav1.GetOptions{})
 	if err != nil {
 		return err
 	}

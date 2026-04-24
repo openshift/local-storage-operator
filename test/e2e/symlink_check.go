@@ -319,8 +319,9 @@ func verifyMultiStepPreferredLinkReconciliation(
 			"step %d: LVDL PreferredLinkTarget after PV recreation", i+1)
 		matcher.Expect(lvdl.Spec.Policy).To(gomega.Equal(localv1.DeviceLinkPolicyPreferredLinkTarget),
 			"step %d: LVDL policy must remain PreferredLinkTarget after PV recreation", i+1)
-		waitForMetric(t, prometheusClient, fmt.Sprintf("lso_device_link_mismatch{name=\"%s\", policy=\"None\"}", lvdl.Name), 0)
-		waitForMetric(t, prometheusClient, fmt.Sprintf("lso_device_link_mismatch{name=\"%s\", policy=\"CurrentLinkTarget\"}", lvdl.Name), 0)
+		// The policy is PreferredLinkTarget + the symlink has been fixed.
+		// All LVDL metrics should be removed at this point.
+		waitForMetric(t, prometheusClient, fmt.Sprintf("lso_device_link_mismatch{name=\"%s\"}", lvdl.Name), 0)
 	}
 	// Wait for the initial alert to disappear, which takes 5 minutes.
 	// The policy is PreferredLinkTarget for quite a some time,
