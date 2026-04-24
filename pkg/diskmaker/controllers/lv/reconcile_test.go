@@ -661,10 +661,14 @@ func TestProcessRejectedDevicesForDeviceLinks(t *testing.T) {
 		createCurrentSymlink bool
 		createPV             bool
 		createLVDL           bool
+		seedCacheFromLVDL    bool
+		initialCurrentLink   string
+		initialPreferLink    string
 		useEmptyKName        bool
 		byIDGlobErr          error
 		execCommandErr       bool
 		expectStatusUpdated  bool
+		expectPreferUpdated  bool
 		expectLVDLNotFound   bool
 	}{
 		{
@@ -719,6 +723,16 @@ func TestProcessRejectedDevicesForDeviceLinks(t *testing.T) {
 			execCommandErr:       true,
 			expectStatusUpdated:  false,
 		},
+		{
+			name:                 "updates PreferredLinkTarget even when policy is None",
+			createCurrentSymlink: false,
+			createPV:             true,
+			createLVDL:           true,
+			seedCacheFromLVDL:    true,
+			initialCurrentLink:   "/dev/disk/by-id/wwn-old-current",
+			initialPreferLink:    "/dev/disk/by-id/wwn-stale",
+			expectPreferUpdated:  true,
+		},
 	}
 
 	for _, tc := range tests {
@@ -748,8 +762,9 @@ func TestProcessRejectedDevicesForDeviceLinks(t *testing.T) {
 					},
 				})
 			}
+			var lvdl *localv1.LocalVolumeDeviceLink
 			if tc.createLVDL {
-				objs = append(objs, &localv1.LocalVolumeDeviceLink{
+				lvdl = &localv1.LocalVolumeDeviceLink{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      pvName,
 						Namespace: testNamespace,
@@ -759,13 +774,25 @@ func TestProcessRejectedDevicesForDeviceLinks(t *testing.T) {
 						NodeName:             testNodeName,
 						Policy:               localv1.DeviceLinkPolicyNone,
 					},
-				})
+					Status: localv1.LocalVolumeDeviceLinkStatus{
+						CurrentLinkTarget:   tc.initialCurrentLink,
+						PreferredLinkTarget: tc.initialPreferLink,
+					},
+				}
+				objs = append(objs, lvdl)
 			}
 
 			r, tcCtx := getFakeDiskMaker(t, tmpRoot, objs...)
 			r.runtimeConfig.Node = &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: testNodeName}}
 			r.runtimeConfig.Namespace = testNamespace
 			r.fsInterface = FakeFileSystemInterface{}
+
+			if tc.seedCacheFromLVDL && lvdl != nil {
+				lvdl.Status.ValidLinkTargets = []string{preferredByID}
+				r.pvLinkCache = common.NewLocalVolumeDeviceLinkCache(r.Client, nil, testNodeName)
+				r.pvLinkCache.MarkSyncedForTests()
+				r.pvLinkCache.SeedForTests(lvdl)
+			}
 
 			diskmakertest.WithInternalMocks(t, func() {
 				internal.FilePathGlob = func(pattern string) ([]string, error) {
@@ -826,6 +853,16 @@ func TestProcessRejectedDevicesForDeviceLinks(t *testing.T) {
 			if tc.expectStatusUpdated {
 				assert.Equal(t, devicePath, gotLVDL.Status.CurrentLinkTarget)
 				assert.Equal(t, preferredByID, gotLVDL.Status.PreferredLinkTarget)
+				assert.Equal(t, filesystemUUID, gotLVDL.Status.FilesystemUUID)
+				assert.ElementsMatch(t, []string{preferredByID, secondaryByID}, gotLVDL.Status.ValidLinkTargets)
+				return
+			}
+
+			if tc.expectPreferUpdated {
+				assert.Equal(t, tc.initialCurrentLink, gotLVDL.Status.CurrentLinkTarget,
+					"CurrentLinkTarget should be passed through unchanged")
+				assert.Equal(t, preferredByID, gotLVDL.Status.PreferredLinkTarget,
+					"PreferredLinkTarget should be updated even when policy is not PreferredLinkTarget")
 				assert.Equal(t, filesystemUUID, gotLVDL.Status.FilesystemUUID)
 				assert.ElementsMatch(t, []string{preferredByID, secondaryByID}, gotLVDL.Status.ValidLinkTargets)
 				return
@@ -947,7 +984,7 @@ func TestIgnoredDevicesProcessedWhenNoValidDevices(t *testing.T) {
 //     calls processNewSymlink after resolving DiskID to wwn-new
 //  5. FindStalePVs falls back to sibling lookup, finds the LVDL via scsi-sibling
 //  6. With PreferredLinkTarget policy, GetSymlinkTargetPath warns (wwn-new not in
-//     ValidLinkTargets) but returns path; CreateLocalPV recreates the symlink and
+//     ValidLinkTargets) but returns path; PVAndLVDLSyncer recreates the symlink and
 //     updates the PV / LVDL. With policy None, GetSymlinkTargetPath returns an error
 //     and processNewSymlink surfaces it (no symlink fix).
 func TestProcessNewSymlink_SiblingFallback(t *testing.T) {
@@ -963,7 +1000,7 @@ func TestProcessNewSymlink_SiblingFallback(t *testing.T) {
 		{
 			name:      "policy None cannot fix stale symlink via sibling fallback",
 			policy:    localv1.DeviceLinkPolicyNone,
-			expectErr: "found stale symlink link",
+			expectErr: "policy is not PreferredLinkTarget",
 		},
 	}
 
@@ -1029,6 +1066,14 @@ func TestProcessNewSymlink_SiblingFallback(t *testing.T) {
 				gotLinkTarget, rerr := os.Readlink(fixture.SymlinkPath)
 				assert.NoError(t, rerr)
 				assert.Equal(t, cfg.OldByID, gotLinkTarget)
+
+				gotLVDL := &localv1.LocalVolumeDeviceLink{}
+				err = testCtx.fakeClient.Get(context.TODO(), types.NamespacedName{Name: fixture.ExpectedPVName, Namespace: cfg.TestNamespace}, gotLVDL)
+				assert.NoError(t, err)
+				assert.Equal(t, cfg.NewByID, gotLVDL.Status.PreferredLinkTarget,
+					"PreferredLinkTarget should be updated even when policy prevents symlink recreation")
+				assert.ElementsMatch(t, []string{cfg.NewByID, cfg.SiblingByID}, gotLVDL.Status.ValidLinkTargets,
+					"ValidLinkTargets should reflect current device state")
 				return
 			}
 
