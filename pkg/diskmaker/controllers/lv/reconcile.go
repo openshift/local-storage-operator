@@ -371,6 +371,8 @@ func (r *LocalVolumeReconciler) Reconcile(ctx context.Context, request ctrl.Requ
 		r.processRejectedDevicesForDeviceLinks(ctx, ignoredDevices, diskConfig)
 	}
 
+	r.updateMissingDevicePathMetrics(diskConfig)
+
 	mountPointMap, err := common.GenerateMountMap(r.runtimeConfig)
 	if err != nil {
 		klog.ErrorS(err, "failed to generate mountPointMap")
@@ -422,6 +424,18 @@ func (r *LocalVolumeReconciler) processValidDevices(ctx context.Context, validDe
 
 		// update metrics for orphaned symlink devices
 		localmetrics.SetLVOrphanedSymlinksMetric(nodeName, storageClass, len(orphanSymlinkDevices))
+	}
+}
+
+func (r *LocalVolumeReconciler) updateMissingDevicePathMetrics(diskConfig *DiskConfig) {
+	for storageClass, disks := range diskConfig.Disks {
+		missing := 0
+		for _, devicePath := range disks.DevicePaths {
+			if _, err := r.fsInterface.evalSymlink(devicePath); err != nil {
+				missing++
+			}
+		}
+		localmetrics.SetLVMissingDevicePathMetric(nodeName, storageClass, missing)
 	}
 }
 
