@@ -751,8 +751,12 @@ func fileExists(filename string) bool {
 	return true
 }
 
-func NewLocalVolumeReconciler(client client.Client, clientReader client.Reader, scheme *runtime.Scheme, symlinkLocation string, cleanupTracker *provDeleter.CleanupStatusTracker, rc *provCommon.RuntimeConfig, pvLinkCache *common.LocalVolumeDeviceLinkCache) *LocalVolumeReconciler {
+func NewLocalVolumeReconciler(client client.Client, clientReader client.Reader, scheme *runtime.Scheme, symlinkLocation string, cleanupTracker *provDeleter.CleanupStatusTracker, rc *provCommon.RuntimeConfig, pvLinkCache *common.LocalVolumeDeviceLinkCache) (*LocalVolumeReconciler, error) {
 	deleter := provDeleter.NewDeleter(rc, cleanupTracker)
+	deviceLinkHandler, err := common.NewDeviceLinkHandler(client, clientReader, rc.Recorder, pvLinkCache, nodeName)
+	if err != nil {
+		return nil, err
+	}
 
 	lvReconciler := &LocalVolumeReconciler{
 		Client:            client,
@@ -765,10 +769,10 @@ func NewLocalVolumeReconciler(client client.Client, clientReader client.Reader, 
 		runtimeConfig:     rc,
 		deleter:           deleter,
 		pvLinkCache:       pvLinkCache,
-		deviceLinkHandler: common.NewDeviceLinkHandler(client, clientReader, rc.Recorder, pvLinkCache, rc.Node.Name),
+		deviceLinkHandler: deviceLinkHandler,
 	}
 
-	return lvReconciler
+	return lvReconciler, nil
 }
 
 func (r *LocalVolumeReconciler) WithManager(mgr ctrl.Manager) error {

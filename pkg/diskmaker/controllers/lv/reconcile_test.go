@@ -1149,7 +1149,8 @@ func getFakeDiskMaker(t *testing.T, symlinkLocation string, objs ...runtime.Obje
 	pvLinkCache := common.NewLocalVolumeDeviceLinkCache(fakeClient, nil, "test-node")
 	pvLinkCache.MarkSyncedForTests()
 
-	lvReconciler := NewLocalVolumeReconciler(
+	nodeName = "test-node"
+	lvReconciler, err := NewLocalVolumeReconciler(
 		fakeClient,
 		fakeClient,
 		scheme,
@@ -1158,6 +1159,7 @@ func getFakeDiskMaker(t *testing.T, symlinkLocation string, objs ...runtime.Obje
 		runtimeConfig,
 		pvLinkCache,
 	)
+	assert.NoError(t, err)
 
 	return lvReconciler, tc
 }

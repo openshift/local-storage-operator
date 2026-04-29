@@ -40,14 +40,17 @@ type DeviceLinkHandler struct {
 	nodeName     string
 }
 
-func NewDeviceLinkHandler(client client.Client, clientReader client.Reader, recorder record.EventRecorder, cacheWriter *LocalVolumeDeviceLinkCache, nodeName string) *DeviceLinkHandler {
+func NewDeviceLinkHandler(client client.Client, clientReader client.Reader, recorder record.EventRecorder, cacheWriter *LocalVolumeDeviceLinkCache, nodeName string) (*DeviceLinkHandler, error) {
+	if nodeName == "" {
+		return nil, fmt.Errorf("node name is required for DeviceLinkHandler")
+	}
 	return &DeviceLinkHandler{
 		client:       client,
 		clientReader: clientReader,
 		recorder:     recorder,
 		cacheWriter:  cacheWriter,
 		nodeName:     nodeName,
-	}
+	}, nil
 }
 
 func (dl *DeviceLinkHandler) createLVDL(ctx context.Context, pvName, namespace string, ownerObj runtime.Object) (*v1.LocalVolumeDeviceLink, error) {

@@ -102,7 +102,8 @@ func newFakeLocalVolumeSetReconciler(t *testing.T, objs ...runtime.Object) (*Loc
 	pvLinkCache := common.NewLocalVolumeDeviceLinkCache(fakeClient, nil, "test-node")
 	pvLinkCache.MarkSyncedForTests()
 
-	lvsReconciler := NewLocalVolumeSetReconciler(
+	nodeName = "test-node"
+	lvsReconciler, err := NewLocalVolumeSetReconciler(
 		fakeClient,
 		fakeClient,
 		scheme,
@@ -111,6 +112,7 @@ func newFakeLocalVolumeSetReconciler(t *testing.T, objs ...runtime.Object) (*Loc
 		runtimeConfig,
 		pvLinkCache,
 	)
+	assert.NoError(t, err)
 
 	return lvsReconciler, tc
 }
