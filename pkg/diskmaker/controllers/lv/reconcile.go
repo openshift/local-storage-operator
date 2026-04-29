@@ -3,7 +3,6 @@ package lv
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -559,10 +558,9 @@ func (r *LocalVolumeReconciler) processNewSymlink(ctx context.Context, scName st
 		klog.V(4).Infof("found a dangling symlink for device %s and target %s", source, target)
 		newSymlinkTarget, err := currentDevice.GetSymlinkTargetPath(ctx, symLinkDirPath, source, r.Client)
 		if err != nil {
-			var policyErr common.PolicyNotPreferredError
-			if errors.As(err, &policyErr) && policyErr.LVDL != nil {
-				if _, updateErr := r.deviceLinkHandler.UpdateDeviceLinks(ctx, policyErr.LVDL, diskLocation.BlockDevice, policyErr.LVDL.Status.CurrentLinkTarget); updateErr != nil {
-					klog.ErrorS(updateErr, "failed to update LVDL PreferredLinkTarget", "lvdl", policyErr.LVDL.Name)
+			if lvdl, ok := common.PolicyNotPreferredLVDL(err); ok {
+				if _, updateErr := r.deviceLinkHandler.UpdateDeviceLinks(ctx, lvdl, diskLocation.BlockDevice, lvdl.Status.CurrentLinkTarget); updateErr != nil {
+					klog.ErrorS(updateErr, "failed to update LVDL PreferredLinkTarget", "lvdl", lvdl.Name)
 				}
 			}
 			return false, err
@@ -580,7 +578,7 @@ func (r *LocalVolumeReconciler) processNewSymlink(ctx context.Context, scName st
 
 	shouldCreatePV := r.createSymlink(diskLocation, source, target, idExists)
 	if shouldCreatePV {
-		return true, r.provisionPV(ctx, scName, diskLocation, mountPointMap)
+		return true, r.syncPVAndLVDL(ctx, scName, diskLocation, mountPointMap)
 	}
 	return false, nil
 }
@@ -602,10 +600,10 @@ func (r *LocalVolumeReconciler) processExistingSymlink(
 
 	diskLocation.SymlinkSource = effectiveCurrentSource
 	diskLocation.SymlinkPath = symlinkPath
-	return r.provisionPV(ctx, scName, diskLocation, mountPointMap)
+	return r.syncPVAndLVDL(ctx, scName, diskLocation, mountPointMap)
 }
 
-func (r *LocalVolumeReconciler) provisionPV(ctx context.Context, scName string, deviceNameLocation *internal.DiskLocation, mountPointMap sets.Set[string]) error {
+func (r *LocalVolumeReconciler) syncPVAndLVDL(ctx context.Context, scName string, deviceNameLocation *internal.DiskLocation, mountPointMap sets.Set[string]) error {
 	storageClass := &storagev1.StorageClass{}
 	err := r.Client.Get(ctx, types.NamespacedName{Name: scName}, storageClass)
 	if err != nil {
@@ -661,10 +659,9 @@ func (r *LocalVolumeReconciler) processRejectedDevicesForDeviceLinks(ctx context
 
 			symlinkPath, err := common.HasExistingLocalVolumes(ctx, r.Client, symLinkDirPath, blockDevice, r.pvLinkCache)
 			if err != nil {
-				var policyErr common.PolicyNotPreferredError
-				if errors.As(err, &policyErr) && policyErr.LVDL != nil {
-					if _, updateErr := r.deviceLinkHandler.UpdateDeviceLinks(ctx, policyErr.LVDL, blockDevice, policyErr.LVDL.Status.CurrentLinkTarget); updateErr != nil {
-						klog.ErrorS(updateErr, "failed to update LVDL PreferredLinkTarget", "lvdl", policyErr.LVDL.Name)
+				if lvdl, ok := common.PolicyNotPreferredLVDL(err); ok {
+					if _, updateErr := r.deviceLinkHandler.UpdateDeviceLinks(ctx, lvdl, blockDevice, lvdl.Status.CurrentLinkTarget); updateErr != nil {
+						klog.ErrorS(updateErr, "failed to update LVDL PreferredLinkTarget", "lvdl", lvdl.Name)
 					}
 				}
 				klog.ErrorS(err, "failed to check for existing symlink for device", "volume", blockDevice.Name)

@@ -309,7 +309,7 @@ func TestProcessNewSymlink(t *testing.T) {
 
 // TestProcessNewSymlink_SiblingFallback_LVSet mirrors the LocalVolume sibling-fallback
 // scenario: stale dangling symlink and LVDL valid targets include a sibling by-id path.
-// Exercises FindStalePVs → provisionFromExistingPV → PVAndLVDLSyncer with a LocalVolumeSet owner.
+// Exercises FindStalePVs → syncExistingPVAndLVDL → PVAndLVDLSyncer with a LocalVolumeSet owner.
 func TestProcessNewSymlink_SiblingFallback_LVSet(t *testing.T) {
 	testCases := []struct {
 		name          string
@@ -426,7 +426,7 @@ func TestProcessNewSymlink_SiblingFallback_LVSet(t *testing.T) {
 	}
 }
 
-func TestProvisionFromExistingPV(t *testing.T) {
+func TestSyncExistingPVAndLVDL(t *testing.T) {
 	reclaimPolicyDelete := corev1.PersistentVolumeReclaimDelete
 
 	testCases := []struct {
@@ -522,7 +522,7 @@ func TestProvisionFromExistingPV(t *testing.T) {
 				}
 			})
 
-			err := r.provisionFromExistingPV(
+			err := r.syncExistingPVAndLVDL(
 				t.Context(),
 				lvset,
 				internal.BlockDevice{Name: "null", KName: "null"},

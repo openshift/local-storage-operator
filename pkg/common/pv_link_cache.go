@@ -2,6 +2,7 @@ package common
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"maps"
 	"path/filepath"
@@ -43,6 +44,14 @@ type PolicyNotPreferredError struct {
 
 func (e PolicyNotPreferredError) Error() string {
 	return fmt.Sprintf("found stale symlink for %s in %s but policy is not PreferredLinkTarget", e.SymlinkSource, e.SymlinkDir)
+}
+
+func PolicyNotPreferredLVDL(err error) (*v1.LocalVolumeDeviceLink, bool) {
+	var policyErr PolicyNotPreferredError
+	if errors.As(err, &policyErr) && policyErr.LVDL != nil {
+		return policyErr.LVDL, true
+	}
+	return nil, false
 }
 
 type CurrentBlockDeviceInfo struct {
