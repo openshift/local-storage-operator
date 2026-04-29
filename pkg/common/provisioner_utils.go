@@ -123,7 +123,10 @@ func (s *PVAndLVDLSyncer) Sync(ctx context.Context) error {
 		return fmt.Errorf("name: %q, namespace: %q, or  kind: %q is empty for obj: %+v", name, namespace, kind, obj)
 	}
 
-	deviceHandler := NewDeviceLinkHandler(client, args.ClientReader, args.RuntimeConfig.Recorder, args.CacheWriter, args.RuntimeConfig.Node.Name)
+	deviceHandler, err := NewDeviceLinkHandler(client, args.ClientReader, args.RuntimeConfig.Recorder, args.CacheWriter, args.RuntimeConfig.Node.Name)
+	if err != nil {
+		return err
+	}
 	klog.V(4).Infof("finding lvdl %s %s", pvName, namespace)
 	lvdl, err := deviceHandler.FindLVDL(ctx, pvName, namespace)
 	if err != nil && !apierrors.IsNotFound(err) {

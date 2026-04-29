@@ -70,10 +70,13 @@ type LocalVolumeSetReconciler struct {
 	deleter        *provDeleter.Deleter
 }
 
-func NewLocalVolumeSetReconciler(client client.Client, clientReader client.Reader, scheme *runtime.Scheme, time timeInterface, cleanupTracker *provDeleter.CleanupStatusTracker, rc *provCommon.RuntimeConfig, pvLinkCache *common.LocalVolumeDeviceLinkCache) *LocalVolumeSetReconciler {
+func NewLocalVolumeSetReconciler(client client.Client, clientReader client.Reader, scheme *runtime.Scheme, time timeInterface, cleanupTracker *provDeleter.CleanupStatusTracker, rc *provCommon.RuntimeConfig, pvLinkCache *common.LocalVolumeDeviceLinkCache) (*LocalVolumeSetReconciler, error) {
 	deleter := provDeleter.NewDeleter(rc, cleanupTracker)
 	eventReporter := newEventReporter(rc.Recorder)
-	deviceLinkHandler := common.NewDeviceLinkHandler(client, clientReader, rc.Recorder, pvLinkCache, rc.Node.Name)
+	deviceLinkHandler, err := common.NewDeviceLinkHandler(client, clientReader, rc.Recorder, pvLinkCache, nodeName)
+	if err != nil {
+		return nil, err
+	}
 	lvsReconciler := &LocalVolumeSetReconciler{
 		Client:            client,
 		ClientReader:      clientReader,
@@ -88,7 +91,7 @@ func NewLocalVolumeSetReconciler(client client.Client, clientReader client.Reade
 		deleter:           deleter,
 	}
 
-	return lvsReconciler
+	return lvsReconciler, nil
 }
 
 func (r *LocalVolumeSetReconciler) WithManager(mgr ctrl.Manager) error {

@@ -24,6 +24,12 @@ import (
 
 const testNodeName = "worker-a"
 
+func TestNewDeviceLinkHandlerRequiresNodeName(t *testing.T) {
+	fakeClient := newFakeDeviceLinkClient(t).Build()
+	_, err := NewDeviceLinkHandler(fakeClient, fakeClient, record.NewFakeRecorder(10), nil, "")
+	assert.ErrorContains(t, err, "node name is required")
+}
+
 // createTempFile creates an empty regular file at path (for use as a fake device).
 func createTempFile(t *testing.T, path string) error {
 	t.Helper()
@@ -292,7 +298,8 @@ func TestDeviceLinkHandler_UpdateStatusAndPV(t *testing.T) {
 
 			fakeClient := newFakeDeviceLinkClient(t, runtimeObjects...).Build()
 			pvCache := NewLocalVolumeDeviceLinkCache(nil, nil, testNodeName)
-			handler := NewDeviceLinkHandler(fakeClient, fakeClient, record.NewFakeRecorder(10), pvCache, testNodeName)
+			handler, err := NewDeviceLinkHandler(fakeClient, fakeClient, record.NewFakeRecorder(10), pvCache, testNodeName)
+			assert.NoError(t, err)
 
 			origGlob := internal.FilePathGlob
 			origEval := internal.FilePathEvalSymLinks
@@ -748,7 +755,8 @@ func TestRecreateSymlinkIfNeeded(t *testing.T) {
 			fakeClient := newFakeDeviceLinkClient(t, lvdl).Build()
 			pvCache := NewLocalVolumeDeviceLinkCache(nil, nil, testNodeName)
 			pvCache.MarkSyncedForTests()
-			handler := NewDeviceLinkHandler(fakeClient, fakeClient, record.NewFakeRecorder(10), pvCache, testNodeName)
+			handler, err := NewDeviceLinkHandler(fakeClient, fakeClient, record.NewFakeRecorder(10), pvCache, testNodeName)
+			assert.NoError(t, err)
 
 			if tc.configureEval != nil {
 				internal.FilePathEvalSymLinks = tc.configureEval(env)
