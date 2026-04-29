@@ -200,6 +200,7 @@ func LocalVolumeSetTest(ctx *framework.TestCtx, cleanupFuncs *[]cleanupFn) func(
 		sharedPVNames := []string{sharedPVs[0].Name}
 		sharedLVDLs := eventuallyFindLVDLsForPVs(t, f, namespace, sharedPVNames)
 		assertLVDLsContainTargetAndNodes(t, sharedLVDLs, sharedScsi8Link, []string{nodeEnv[0].node.Name})
+		assertLVDLSymlinkPathMatchesPVs(t, sharedLVDLs, sharedPVs)
 
 		matcher.Eventually(func() error {
 			t.Log("expanding shared localvolumeset reproducer to a second node")
@@ -222,6 +223,7 @@ func LocalVolumeSetTest(ctx *framework.TestCtx, cleanupFuncs *[]cleanupFn) func(
 		}
 		sharedLVDLs = eventuallyFindLVDLsForPVs(t, f, namespace, sharedPVNames)
 		assertLVDLsContainTargetAndNodes(t, sharedLVDLs, sharedScsi8Link, []string{nodeEnv[0].node.Name, nodeEnv[1].node.Name})
+		assertLVDLSymlinkPathMatchesPVs(t, sharedLVDLs, sharedPVs)
 
 		t.Log("cleaning up LocalVolumeSet duplicate by-id reproducer before continuing with standard test flow")
 		eventuallyDelete(t, false, sharedLVSet)
@@ -449,6 +451,7 @@ func LocalVolumeSetTest(ctx *framework.TestCtx, cleanupFuncs *[]cleanupFn) func(
 			matcher.Expect(lvdl.Status.PreferredLinkTarget).ToNot(gomega.BeEmpty(), "expected PreferredLinkTarget for LVDL %q", lvdl.Name)
 			matcher.Expect(lvdl.Status.ValidLinkTargets).ToNot(gomega.BeEmpty(), "expected ValidLinkTargets for LVDL %q", lvdl.Name)
 		}
+		assertLVDLSymlinkPathMatchesPVs(t, fsLVDLs, fsPVs)
 
 		selectedFSPV := fsPVs[0]
 		currentSymlink := findCurrentSymlinkForPV(t, nodeEnv, &selectedFSPV)
