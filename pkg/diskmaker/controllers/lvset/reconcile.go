@@ -278,7 +278,7 @@ func (r *LocalVolumeSetReconciler) Reconcile(ctx context.Context, request ctrl.R
 
 		if existingSymlink != "" {
 			symlinkPath := filepath.Join(symLinkDir, existingSymlink)
-			err = r.provisionFromExistingPV(ctx, lvset, blockDevice, *storageClass, mountPointMap, symlinkPath)
+			err = r.syncExistingPVAndLVDL(ctx, lvset, blockDevice, *storageClass, mountPointMap, symlinkPath)
 			if err != nil {
 				klog.ErrorS(err, "error provisioning PV from existing symlink", "blockDevice", blockDevice.Name)
 			}
@@ -345,10 +345,9 @@ func (r *LocalVolumeSetReconciler) processRejectedDevicesForDeviceLinks(ctx cont
 	for _, blockDevice := range rejectedDevices {
 		symlinkPath, err := common.HasExistingLocalVolumes(ctx, r.Client, symLinkDir, blockDevice, r.pvLinkCache)
 		if err != nil {
-			var policyErr common.PolicyNotPreferredError
-			if errors.As(err, &policyErr) && policyErr.LVDL != nil {
-				if _, updateErr := r.deviceLinkHandler.UpdateDeviceLinks(ctx, policyErr.LVDL, blockDevice, policyErr.LVDL.Status.CurrentLinkTarget); updateErr != nil {
-					klog.ErrorS(updateErr, "failed to update LVDL PreferredLinkTarget", "lvdl", policyErr.LVDL.Name)
+			if lvdl, ok := common.PolicyNotPreferredLVDL(err); ok {
+				if _, updateErr := r.deviceLinkHandler.UpdateDeviceLinks(ctx, lvdl, blockDevice, lvdl.Status.CurrentLinkTarget); updateErr != nil {
+					klog.ErrorS(updateErr, "failed to update LVDL PreferredLinkTarget", "lvdl", lvdl.Name)
 				}
 			}
 			if !errors.As(err, &internal.IDPathNotFoundError{}) {
@@ -584,16 +583,15 @@ func (r *LocalVolumeSetReconciler) processNewSymlink(
 	if found {
 		symlinkPath, err = currentDevice.GetSymlinkTargetPath(ctx, symLinkDir, symlinkSourcePath, r.Client)
 		if err != nil {
-			var policyErr common.PolicyNotPreferredError
-			if errors.As(err, &policyErr) && policyErr.LVDL != nil {
-				if _, updateErr := r.deviceLinkHandler.UpdateDeviceLinks(ctx, policyErr.LVDL, blockDevice, policyErr.LVDL.Status.CurrentLinkTarget); updateErr != nil {
-					klog.ErrorS(updateErr, "failed to update LVDL PreferredLinkTarget", "lvdl", policyErr.LVDL.Name)
+			if lvdl, ok := common.PolicyNotPreferredLVDL(err); ok {
+				if _, updateErr := r.deviceLinkHandler.UpdateDeviceLinks(ctx, lvdl, blockDevice, lvdl.Status.CurrentLinkTarget); updateErr != nil {
+					klog.ErrorS(updateErr, "failed to update LVDL PreferredLinkTarget", "lvdl", lvdl.Name)
 				}
 			}
 			r.reportProvisioningFailure(lvset, blockDevice.KName, err)
 			return result, nil
 		}
-		err = r.provisionFromExistingPV(ctx, lvset, blockDevice, storageClass, mountPointMap, symlinkPath)
+		err = r.syncExistingPVAndLVDL(ctx, lvset, blockDevice, storageClass, mountPointMap, symlinkPath)
 		if err == common.ErrTryAgain {
 			result.fastRequeue = true
 		} else if err != nil {
@@ -604,7 +602,7 @@ func (r *LocalVolumeSetReconciler) processNewSymlink(
 
 	klog.InfoS("provisioning PV", "blockDevice", blockDevice.Name, "withkname", blockDevice.KName)
 	r.eventReporter.Report(lvset, newDiskEvent(diskmaker.FoundMatchingDisk, "provisioning matching disk", blockDevice.KName, corev1.EventTypeNormal))
-	err = r.provisionPV(ctx, lvset, blockDevice, storageClass, mountPointMap, symlinkSourcePath, symlinkPath)
+	err = r.createSymlinkAndSyncPVAndLVDL(ctx, lvset, blockDevice, storageClass, mountPointMap, symlinkSourcePath, symlinkPath)
 	if err == common.ErrTryAgain {
 		result.fastRequeue = true
 	} else if err != nil {
@@ -624,7 +622,7 @@ func (r *LocalVolumeSetReconciler) reportProvisioningFailure(lvSet *localv1alpha
 	klog.Error(msg)
 }
 
-func (r *LocalVolumeSetReconciler) provisionPV(
+func (r *LocalVolumeSetReconciler) createSymlinkAndSyncPVAndLVDL(
 	ctx context.Context,
 	obj *localv1alpha1.LocalVolumeSet,
 	dev internal.BlockDevice,
@@ -716,7 +714,7 @@ func (r *LocalVolumeSetReconciler) provisionPV(
 	return common.NewPVAndLVDLSyncer(syncArgs).Sync(ctx)
 }
 
-func (r *LocalVolumeSetReconciler) provisionFromExistingPV(
+func (r *LocalVolumeSetReconciler) syncExistingPVAndLVDL(
 	ctx context.Context,
 	obj *localv1alpha1.LocalVolumeSet,
 	blockDevice internal.BlockDevice,
