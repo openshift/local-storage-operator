@@ -2,6 +2,7 @@ package lvset
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	localv1alpha1 "github.com/openshift/local-storage-operator/api/v1alpha1"
@@ -29,6 +30,9 @@ const (
 	inMechanicalPropertyList = "inMechanicalPropertyList"
 	inVendorList             = "inVendorList"
 	inModelList              = "inModelList"
+
+	// exclusion matcher names:
+	notInDeviceNameFilter = "notInDeviceNameFilter"
 )
 
 var defaultMinSize = resource.MustParse("1Gi")
@@ -195,5 +199,24 @@ var matcherMap = map[string]func(internal.BlockDevice, *localv1alpha1.DeviceIncl
 			}
 		}
 		return matched, nil
+	},
+}
+
+// functions that exclude devices by *localv1alpha1.DeviceExclusionSpec
+var exclusionMap = map[string]func(internal.BlockDevice, *localv1alpha1.DeviceExclusionSpec) (bool, error){
+	notInDeviceNameFilter: func(dev internal.BlockDevice, spec *localv1alpha1.DeviceExclusionSpec) (bool, error) {
+		if spec == nil || len(spec.DeviceNameFilter) == 0 {
+			return true, nil
+		}
+		for _, pattern := range spec.DeviceNameFilter {
+			matched, err := filepath.Match(pattern, dev.KName)
+			if err != nil {
+				return false, fmt.Errorf("invalid device name filter pattern %q: %w", pattern, err)
+			}
+			if matched {
+				return false, nil
+			}
+		}
+		return true, nil
 	},
 }
