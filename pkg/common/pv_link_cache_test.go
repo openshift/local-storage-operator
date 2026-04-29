@@ -32,6 +32,7 @@ func TestCurrentBlockDeviceInfoGetSymlinkTargetPath(t *testing.T) {
 		name            string
 		setup           func(t *testing.T, c *LocalVolumeDeviceLinkCache) (CurrentBlockDeviceInfo, string)
 		symlinkEvalFunc func(path string) (string, error)
+		apiObjects      []client.Object
 		wantPath        string
 		wantErr         string
 	}{
@@ -66,6 +67,9 @@ func TestCurrentBlockDeviceInfoGetSymlinkTargetPath(t *testing.T) {
 				info := c.localDeviceInfos[sourcePath]
 				return info, sourcePath
 			},
+			apiObjects: []client.Object{
+				localPV("pv-none", "/mnt/local-storage/sc-a/current-none"),
+			},
 			wantErr: "found stale symlink link",
 		},
 		{
@@ -82,6 +86,9 @@ func TestCurrentBlockDeviceInfoGetSymlinkTargetPath(t *testing.T) {
 				}
 				return "", os.ErrNotExist
 			},
+			apiObjects: []client.Object{
+				localPV("pv-resolves", "/mnt/local-storage/sc-a/current-resolves"),
+			},
 			wantErr: "currentSymlink /tmp/current-resolves still resolves",
 		},
 		{
@@ -94,6 +101,9 @@ func TestCurrentBlockDeviceInfoGetSymlinkTargetPath(t *testing.T) {
 			},
 			symlinkEvalFunc: func(path string) (string, error) {
 				return "", os.ErrNotExist
+			},
+			apiObjects: []client.Object{
+				localPV("pv-success", "/mnt/local-storage/sc-a/xxx"),
 			},
 			// old behavior derived basename from currentLinkTarget ("yyy"), but we must derive
 			// the final symlink name from the PV local path ("xxx").
@@ -109,7 +119,108 @@ func TestCurrentBlockDeviceInfoGetSymlinkTargetPath(t *testing.T) {
 			symlinkEvalFunc: func(path string) (string, error) {
 				return "", os.ErrNotExist
 			},
+			apiObjects: []client.Object{
+				localPV("pv-invalid-target", "/mnt/local-storage/sc-a/current-invalid"),
+			},
 			wantPath: filepath.Join(symlinkDir, "current-invalid"),
+		},
+		{
+			name: "uses symlinkPath from LVDL status when available",
+			setup: func(t *testing.T, c *LocalVolumeDeviceLinkCache) (CurrentBlockDeviceInfo, string) {
+				lvdl := newCacheLVDL("pv-status-symlink", cacheLocalNode, "/tmp/current-status", v1api.DeviceLinkPolicyPreferredLinkTarget, sourcePath)
+				lvdl.Status.PersistentVolumeSymlinkPath = "/mnt/local-storage/sc-a/from-lvdl-status"
+				c.addOrUpdateLVDL(lvdl)
+				return c.localDeviceInfos[sourcePath], sourcePath
+			},
+			symlinkEvalFunc: func(path string) (string, error) {
+				return "", os.ErrNotExist
+			},
+			// pvObjectsForInfo would imply basename "current-status"; status SymlinkPath basename wins in getLVDLAndSymlinkPath.
+			wantPath: filepath.Join(symlinkDir, "from-lvdl-status"),
+		},
+		{
+			name: "uses symlinkPath from PV when LVDL has none",
+			setup: func(t *testing.T, c *LocalVolumeDeviceLinkCache) (CurrentBlockDeviceInfo, string) {
+				lvdl := newCacheLVDL("pv-local", cacheLocalNode, "/tmp/current-status", v1api.DeviceLinkPolicyPreferredLinkTarget, sourcePath)
+				lvdl.Status.PersistentVolumeSymlinkPath = ""
+				c.addOrUpdateLVDL(lvdl)
+				return c.localDeviceInfos[sourcePath], sourcePath
+			},
+			symlinkEvalFunc: func(path string) (string, error) {
+				return "", os.ErrNotExist
+			},
+			apiObjects: []client.Object{
+				&corev1.PersistentVolume{
+					ObjectMeta: metav1.ObjectMeta{Name: "pv-local"},
+					Spec: corev1.PersistentVolumeSpec{
+						PersistentVolumeSource: corev1.PersistentVolumeSource{
+							Local: &corev1.LocalVolumeSource{Path: "/mnt/local-storage/sc/from-pv-local"},
+						},
+					},
+				},
+			},
+			wantPath: filepath.Join(symlinkDir, "from-pv-local"),
+		},
+		{
+			name: "prefers symlinkPath from LVDL when both LVDL and PV have one",
+			setup: func(t *testing.T, c *LocalVolumeDeviceLinkCache) (CurrentBlockDeviceInfo, string) {
+				lvdl := newCacheLVDL("pv-local", cacheLocalNode, "/tmp/current-status", v1api.DeviceLinkPolicyPreferredLinkTarget, sourcePath)
+				lvdl.Status.PersistentVolumeSymlinkPath = "/mnt/local-storage/sc/from-lvdl-status"
+				c.addOrUpdateLVDL(lvdl)
+				return c.localDeviceInfos[sourcePath], sourcePath
+			},
+			symlinkEvalFunc: func(path string) (string, error) {
+				return "", os.ErrNotExist
+			},
+			apiObjects: []client.Object{
+				localPV("pv-local", "/mnt/local-storage/sc/from-pv-local"),
+			},
+			wantPath: filepath.Join(symlinkDir, "from-lvdl-status"),
+		},
+		{
+			name: "errors when LVDL symlinkPath is empty and associated PV is missing",
+			setup: func(t *testing.T, c *LocalVolumeDeviceLinkCache) (CurrentBlockDeviceInfo, string) {
+				lvdl := newCacheLVDL("pv-missing", cacheLocalNode, "/tmp/missing", v1api.DeviceLinkPolicyPreferredLinkTarget, sourcePath)
+				lvdl.Status.PersistentVolumeSymlinkPath = ""
+				c.addOrUpdateLVDL(lvdl)
+				return c.localDeviceInfos[sourcePath], sourcePath
+			},
+			symlinkEvalFunc: func(path string) (string, error) {
+				return "", os.ErrNotExist
+			},
+			wantErr: "error getting associated pv object pv-missing",
+		},
+		{
+			name: "errors when LVDL symlinkPath is empty and PV has empty local path",
+			setup: func(t *testing.T, c *LocalVolumeDeviceLinkCache) (CurrentBlockDeviceInfo, string) {
+				lvdl := newCacheLVDL("pv-empty-local", cacheLocalNode, "/tmp/empty-local", v1api.DeviceLinkPolicyPreferredLinkTarget, sourcePath)
+				lvdl.Status.PersistentVolumeSymlinkPath = ""
+				c.addOrUpdateLVDL(lvdl)
+				return c.localDeviceInfos[sourcePath], sourcePath
+			},
+			symlinkEvalFunc: func(path string) (string, error) {
+				return "", os.ErrNotExist
+			},
+			apiObjects: []client.Object{
+				localPV("pv-empty-local", ""),
+			},
+			wantErr: "pv pv-empty-local has empty local path",
+		},
+		{
+			name: "errors when LVDL symlinkPath is empty and PV has no Local volume source",
+			setup: func(t *testing.T, c *LocalVolumeDeviceLinkCache) (CurrentBlockDeviceInfo, string) {
+				lvdl := newCacheLVDL("pv-csi", cacheLocalNode, "/tmp/nil-local", v1api.DeviceLinkPolicyPreferredLinkTarget, sourcePath)
+				lvdl.Status.PersistentVolumeSymlinkPath = ""
+				c.addOrUpdateLVDL(lvdl)
+				return c.localDeviceInfos[sourcePath], sourcePath
+			},
+			symlinkEvalFunc: func(path string) (string, error) {
+				return "", os.ErrNotExist
+			},
+			apiObjects: []client.Object{
+				csiPV("pv-csi", "example.com/csi", "volume-handle"),
+			},
+			wantErr: "pv pv-csi has empty local path",
 		},
 	}
 
@@ -130,7 +241,7 @@ func TestCurrentBlockDeviceInfoGetSymlinkTargetPath(t *testing.T) {
 
 			cache := NewLocalVolumeDeviceLinkCache(nil, nil, cacheLocalNode)
 			info, source := tc.setup(t, cache)
-			fakeClient := fakeClientForInfo(t, info)
+			fakeClient := fakeClientForObjects(t, tc.apiObjects...)
 
 			gotPath, err := info.GetSymlinkTargetPath(context.TODO(), symlinkDir, source, fakeClient)
 
@@ -382,25 +493,32 @@ func newCacheLVDL(name, nodeName, current string, policy v1api.DeviceLinkPolicy,
 	}
 }
 
-func fakeClientForInfo(t *testing.T, info CurrentBlockDeviceInfo) client.Client {
+// fakeClientWithObjects builds a fake client from an explicit object list.
+func fakeClientForObjects(t *testing.T, objects ...client.Object) client.Client {
 	t.Helper()
 	scheme := runtime.NewScheme()
 	assert.NoError(t, corev1.AddToScheme(scheme))
-
-	objects := make([]client.Object, 0, len(info.lvdls))
-	for name, lvdl := range info.lvdls {
-		localPath := filepath.Join("/mnt/local-storage/sc-a", filepath.Base(lvdl.Status.CurrentLinkTarget))
-		if name == "pv-success" {
-			localPath = "/mnt/local-storage/sc-a/xxx"
-		}
-		objects = append(objects, &corev1.PersistentVolume{
-			ObjectMeta: metav1.ObjectMeta{Name: name},
-			Spec: corev1.PersistentVolumeSpec{
-				PersistentVolumeSource: corev1.PersistentVolumeSource{
-					Local: &corev1.LocalVolumeSource{Path: localPath},
-				},
-			},
-		})
-	}
 	return fake.NewClientBuilder().WithScheme(scheme).WithObjects(objects...).Build()
+}
+
+func localPV(name, localPath string) *corev1.PersistentVolume {
+	return &corev1.PersistentVolume{
+		ObjectMeta: metav1.ObjectMeta{Name: name},
+		Spec: corev1.PersistentVolumeSpec{
+			PersistentVolumeSource: corev1.PersistentVolumeSource{
+				Local: &corev1.LocalVolumeSource{Path: localPath},
+			},
+		},
+	}
+}
+
+func csiPV(name, driver, handle string) *corev1.PersistentVolume {
+	return &corev1.PersistentVolume{
+		ObjectMeta: metav1.ObjectMeta{Name: name},
+		Spec: corev1.PersistentVolumeSpec{
+			PersistentVolumeSource: corev1.PersistentVolumeSource{
+				CSI: &corev1.CSIPersistentVolumeSource{Driver: driver, VolumeHandle: handle},
+			},
+		},
+	}
 }

@@ -346,6 +346,7 @@ func TestDeviceLinkHandler_UpdateStatusAndPV(t *testing.T) {
 			assert.Equal(t, tc.expectedLVDL.Status.CurrentLinkTarget, fetched.Status.CurrentLinkTarget)
 			assert.Equal(t, tc.expectedLVDL.Status.PreferredLinkTarget, fetched.Status.PreferredLinkTarget)
 			assert.Equal(t, tc.expectedLVDL.Status.FilesystemUUID, fetched.Status.FilesystemUUID)
+			assert.Equal(t, tc.expectedLVDL.Status.PersistentVolumeSymlinkPath, fetched.Status.PersistentVolumeSymlinkPath)
 			assert.ElementsMatch(t, tc.expectedLVDL.Status.ValidLinkTargets, fetched.Status.ValidLinkTargets)
 			// Verify write-through cache was updated with the correct LVDL.
 			for _, target := range tc.expectedLVDL.Status.ValidLinkTargets {

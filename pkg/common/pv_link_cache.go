@@ -70,7 +70,7 @@ func (c CurrentBlockDeviceInfo) GetSymlinkTargetPath(ctx context.Context, symlin
 		return "", fmt.Errorf("unexpected empty lvdl set for symlink %s", newSymlinkSourcePath)
 	}
 
-	lvdl, pv, err := c.getLVDLAndPV(ctx, client)
+	lvdl, symlinkPath, err := c.getLVDLAndSymlinkPath(ctx, client)
 	if err != nil {
 		return "", err
 	}
@@ -88,11 +88,7 @@ func (c CurrentBlockDeviceInfo) GetSymlinkTargetPath(ctx context.Context, symlin
 		return "", fmt.Errorf("currentSymlink %s still resolves to %s for %s", currentLinkTarget, resolvedCurrent, newSymlinkSourcePath)
 	}
 
-	if pv.Spec.Local == nil || pv.Spec.Local.Path == "" {
-		return "", fmt.Errorf("pv %s has empty local path", pv.Name)
-	}
-	currentTargetPath := pv.Spec.Local.Path
-	symlinkBaseName := filepath.Base(currentTargetPath)
+	symlinkBaseName := filepath.Base(symlinkPath)
 
 	if slices.Contains(validLinkTargets, newSymlinkSourcePath) {
 		return filepath.Join(symlinkDir, symlinkBaseName), nil
@@ -101,17 +97,39 @@ func (c CurrentBlockDeviceInfo) GetSymlinkTargetPath(ctx context.Context, symlin
 	return filepath.Join(symlinkDir, symlinkBaseName), nil
 }
 
-func (c CurrentBlockDeviceInfo) getLVDLAndPV(ctx context.Context, client client.Client) (*v1.LocalVolumeDeviceLink, *corev1.PersistentVolume, error) {
+// getLVDLAndSymlinkPath returns the LVDL and the symlink path for the current device.
+// The symlink path is either:
+// 1. The symlink path from LVDL status, if available.
+// 2. The symlink path from the PV, if not available in LVDL status.
+func (c CurrentBlockDeviceInfo) getLVDLAndSymlinkPath(ctx context.Context, client client.Client) (*v1.LocalVolumeDeviceLink, string, error) {
 	var lvdl *v1.LocalVolumeDeviceLink
 	for _, v := range c.lvdls {
 		lvdl = v
 		break
 	}
-	pv := &corev1.PersistentVolume{}
-	if err := client.Get(ctx, types.NamespacedName{Name: lvdl.Name}, pv); err != nil {
-		return lvdl, nil, fmt.Errorf("error getting associated pv object %s: %v", lvdl.Name, err)
+	if lvdl == nil {
+		// this should never happen, because the cache is populated with at least one LVDL.
+		return nil, "", fmt.Errorf("unexpected empty lvdl set for symlink")
 	}
-	return lvdl, pv, nil
+	// Prefer the symlinkPath from LVDL, it is available right away from the cache.
+	// It's set together with the path in PV when the PV is created and it's immutable afterwards.
+	// (Unless the LVDL was created before the symlinkPath field was added to LVDL and then it's set at the earliest opportunity).
+	if lvdl.Status.PersistentVolumeSymlinkPath != "" {
+		klog.V(4).Infof("found persistentVolumeSymlinkPath path %s from LVDL %s status", lvdl.Status.PersistentVolumeSymlinkPath, lvdl.Name)
+		return lvdl, lvdl.Status.PersistentVolumeSymlinkPath, nil
+	}
+	// if the symlink path is not set in LVDL, we need to read it from the PV.
+	pv := &corev1.PersistentVolume{}
+	if err := client.Get(ctx, types.NamespacedName{Name: lvdl.Spec.PersistentVolumeName}, pv); err != nil {
+		return lvdl, "", fmt.Errorf("error getting associated pv object %s: %v", lvdl.Name, err)
+	}
+	if pv.Spec.Local == nil || pv.Spec.Local.Path == "" {
+		return lvdl, "", fmt.Errorf("pv %s has empty local path", pv.Name)
+	}
+
+	symlinkPath := pv.Spec.Local.Path
+	klog.V(4).Infof("found symlink path %s from PV %s", symlinkPath, pv.Name)
+	return lvdl, symlinkPath, nil
 }
 
 func NewLocalVolumeDeviceLinkCache(client client.Client, mgr manager.Manager, localNodeName string) *LocalVolumeDeviceLinkCache {
