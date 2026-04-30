@@ -219,7 +219,7 @@ func TestCreatePV(t *testing.T) {
 				return "/dev/disk/by-id/wwn-null", nil
 			}
 
-			err := common.NewPVAndLVDLSyncer(common.PVAndLVDLSyncArgs{
+			err := common.SyncLVAndLVDL(t.Context(), common.SyncLVAndLVDLArgs{
 				LocalVolumeLikeObject: &tc.lv,
 				RuntimeConfig:         r.runtimeConfig,
 				StorageClass:          tc.sc,
@@ -230,7 +230,7 @@ func TestCreatePV(t *testing.T) {
 				BlockDevice:           internal.BlockDevice{KName: filepath.Base(tc.deviceName)},
 				CacheWriter:           r.pvLinkCache,
 				ExtraLabelsForPV:      map[string]string{},
-			}).Sync(t.Context())
+			})
 			if tc.shouldErr {
 				assert.NotNil(t, err)
 			} else {
@@ -269,7 +269,7 @@ func TestCreatePV(t *testing.T) {
 			assert.Equal(t, *tc.sc.ReclaimPolicy, pv.Spec.PersistentVolumeReclaimPolicy)
 
 			// test idempotency by running again
-			err = common.NewPVAndLVDLSyncer(common.PVAndLVDLSyncArgs{
+			err = common.SyncLVAndLVDL(t.Context(), common.SyncLVAndLVDLArgs{
 				LocalVolumeLikeObject: &tc.lv,
 				RuntimeConfig:         r.runtimeConfig,
 				StorageClass:          tc.sc,
@@ -280,7 +280,7 @@ func TestCreatePV(t *testing.T) {
 				BlockDevice:           internal.BlockDevice{KName: filepath.Base(tc.deviceName)},
 				CacheWriter:           r.pvLinkCache,
 				ExtraLabelsForPV:      map[string]string{},
-			}).Sync(t.Context())
+			})
 			assert.Nil(t, err)
 
 		})
@@ -288,10 +288,10 @@ func TestCreatePV(t *testing.T) {
 
 }
 
-// TestPVAndLVDLSyncer_DeviceLinkArgOrder verifies that PVAndLVDLSyncer passes KName
+// TestSyncLVAndLVDL_DeviceLinkArgOrder verifies that SyncLVAndLVDL passes KName
 // to the by-id symlink matcher and DevicePath to blkid — and not the other way
 // around.  A previous bug had these two arguments swapped in the
-// ApplyStatus call inside PVAndLVDLSyncer.
+// ApplyStatus call inside SyncLVAndLVDL.
 //
 // The test uses deliberately distinct values for KName and DevicePath so that
 // swapping them would produce wrong results:
@@ -308,7 +308,7 @@ func TestCreatePV(t *testing.T) {
 //   - The symlink matcher would receive DevicePath and filepath.Base of that
 //     would still be "sda", so to make the test more robust the mock checks
 //     the exact string passed to FilePathEvalSymLinks as its target.
-func TestPVAndLVDLSyncer_DeviceLinkArgOrder(t *testing.T) {
+func TestSyncLVAndLVDL_DeviceLinkArgOrder(t *testing.T) {
 	reclaimPolicyDelete := corev1.PersistentVolumeReclaimDelete
 	kName := "sda"
 	devPath := "/dev/" + kName // deliberately different from kName
@@ -364,7 +364,7 @@ func TestPVAndLVDLSyncer_DeviceLinkArgOrder(t *testing.T) {
 		internal.CmdExecutor = diskmakertest.BlkidForDevicePathFakeExec(devPath, fakeUUID)
 	})
 
-	err := common.NewPVAndLVDLSyncer(common.PVAndLVDLSyncArgs{
+	err := common.SyncLVAndLVDL(t.Context(), common.SyncLVAndLVDLArgs{
 		LocalVolumeLikeObject: &lv,
 		RuntimeConfig:         r.runtimeConfig,
 		StorageClass:          sc,
@@ -375,13 +375,13 @@ func TestPVAndLVDLSyncer_DeviceLinkArgOrder(t *testing.T) {
 		BlockDevice:           internal.BlockDevice{KName: kName, PathByID: fakeByIDLink},
 		CacheWriter:           r.pvLinkCache,
 		ExtraLabelsForPV:      map[string]string{},
-	}).Sync(t.Context())
+	})
 	assert.NoError(t, err)
 
-	// Fetch the LocalVolumeDeviceLink that PVAndLVDLSyncer must have created.
+	// Fetch the LocalVolumeDeviceLink that SyncLVAndLVDL must have created.
 	lvdl := &localv1.LocalVolumeDeviceLink{}
 	err = r.Client.Get(context.TODO(), types.NamespacedName{Name: pvName, Namespace: lv.Namespace}, lvdl)
-	assert.NoError(t, err, "LVDL should have been created by PVAndLVDLSyncer")
+	assert.NoError(t, err, "LVDL should have been created by SyncLVAndLVDL")
 	if assert.Len(t, lvdl.OwnerReferences, 1, "LVDL should carry owner reference to LocalVolume") {
 		assert.Equal(t, localv1.GroupVersion.String(), lvdl.OwnerReferences[0].APIVersion)
 		assert.Equal(t, localv1.LocalVolumeKind, lvdl.OwnerReferences[0].Kind)
@@ -406,7 +406,7 @@ func TestPVAndLVDLSyncer_DeviceLinkArgOrder(t *testing.T) {
 		"FilePathEvalSymLinks should have been called with the by-id link")
 }
 
-func TestPVAndLVDLSyncer_DeviceLinkLifecycle(t *testing.T) {
+func TestSyncLVAndLVDL_DeviceLinkLifecycle(t *testing.T) {
 	reclaimPolicyDelete := corev1.PersistentVolumeReclaimDelete
 	fakeByIDLink := "/dev/disk/by-id/wwn-null"
 
@@ -520,7 +520,7 @@ func TestPVAndLVDLSyncer_DeviceLinkLifecycle(t *testing.T) {
 			}
 
 			// effectiveCurrentSource is always resolved via internal.Readlink inside
-			// PVAndLVDLSyncer, which the stub returns as fakeByIDLink.
+			// SyncLVAndLVDL, which the stub returns as fakeByIDLink.
 			expectedCurrentSymlink := fakeByIDLink
 
 			diskmakertest.WithInternalMocks(t, func() {
@@ -542,7 +542,7 @@ func TestPVAndLVDLSyncer_DeviceLinkLifecycle(t *testing.T) {
 				internal.CmdExecutor = diskmakertest.BlkidForDevicePathFakeExec("/dev/null", "uuid-lifecycle")
 			})
 
-			err := common.NewPVAndLVDLSyncer(common.PVAndLVDLSyncArgs{
+			err := common.SyncLVAndLVDL(t.Context(), common.SyncLVAndLVDLArgs{
 				LocalVolumeLikeObject: &lv,
 				RuntimeConfig:         r.runtimeConfig,
 				StorageClass:          sc,
@@ -557,7 +557,7 @@ func TestPVAndLVDLSyncer_DeviceLinkLifecycle(t *testing.T) {
 				},
 				CacheWriter:      r.pvLinkCache,
 				ExtraLabelsForPV: map[string]string{},
-			}).Sync(t.Context())
+			})
 			assert.NoError(t, err)
 
 			pv := &corev1.PersistentVolume{}

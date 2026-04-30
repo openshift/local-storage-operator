@@ -311,7 +311,7 @@ func TestProcessNewSymlink(t *testing.T) {
 
 // TestProcessNewSymlink_SiblingFallback_LVSet mirrors the LocalVolume sibling-fallback
 // scenario: stale dangling symlink and LVDL valid targets include a sibling by-id path.
-// Exercises FindStalePVs → syncExistingPVAndLVDL → PVAndLVDLSyncer with a LocalVolumeSet owner.
+// Exercises FindStalePVs → syncExistingPVAndLVDL → SyncLVAndLVDL with a LocalVolumeSet owner.
 func TestProcessNewSymlink_SiblingFallback_LVSet(t *testing.T) {
 	testCases := []struct {
 		name          string
