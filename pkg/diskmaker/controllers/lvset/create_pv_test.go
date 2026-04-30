@@ -233,7 +233,7 @@ func TestCreatePV(t *testing.T) {
 			}
 			testConfig.fakeVolUtil.AddNewDirEntries("/mnt/local-storage/", dirFiles)
 
-			err := common.NewPVAndLVDLSyncer(common.PVAndLVDLSyncArgs{
+			err := common.SyncLVAndLVDL(t.Context(), common.SyncLVAndLVDLArgs{
 				LocalVolumeLikeObject: &tc.lvset,
 				RuntimeConfig:         r.runtimeConfig,
 				StorageClass:          tc.sc,
@@ -244,7 +244,7 @@ func TestCreatePV(t *testing.T) {
 				BlockDevice:           internal.BlockDevice{KName: filepath.Base(tc.deviceName)},
 				CacheWriter:           r.pvLinkCache,
 				ExtraLabelsForPV:      map[string]string{},
-			}).Sync(t.Context())
+			})
 			if tc.shouldErr {
 				assert.NotNil(t, err)
 			} else {
@@ -283,7 +283,7 @@ func TestCreatePV(t *testing.T) {
 			assert.Equal(t, *tc.sc.ReclaimPolicy, pv.Spec.PersistentVolumeReclaimPolicy)
 
 			// test idempotency by running again
-			err = common.NewPVAndLVDLSyncer(common.PVAndLVDLSyncArgs{
+			err = common.SyncLVAndLVDL(t.Context(), common.SyncLVAndLVDLArgs{
 				LocalVolumeLikeObject: &tc.lvset,
 				RuntimeConfig:         r.runtimeConfig,
 				StorageClass:          tc.sc,
@@ -294,7 +294,7 @@ func TestCreatePV(t *testing.T) {
 				BlockDevice:           internal.BlockDevice{KName: filepath.Base(tc.deviceName)},
 				CacheWriter:           r.pvLinkCache,
 				ExtraLabelsForPV:      map[string]string{},
-			}).Sync(t.Context())
+			})
 			assert.Nil(t, err)
 		})
 
@@ -359,7 +359,7 @@ func TestCreatePV_SetsLVDLOwnerRefToLocalVolumeSet(t *testing.T) {
 		}
 	})
 
-	err := common.NewPVAndLVDLSyncer(common.PVAndLVDLSyncArgs{
+	err := common.SyncLVAndLVDL(t.Context(), common.SyncLVAndLVDLArgs{
 		LocalVolumeLikeObject: &lvset,
 		RuntimeConfig:         r.runtimeConfig,
 		StorageClass:          sc,
@@ -370,7 +370,7 @@ func TestCreatePV_SetsLVDLOwnerRefToLocalVolumeSet(t *testing.T) {
 		BlockDevice:           internal.BlockDevice{KName: "device-ownerref"},
 		CacheWriter:           r.pvLinkCache,
 		ExtraLabelsForPV:      map[string]string{},
-	}).Sync(t.Context())
+	})
 	assert.NoError(t, err)
 
 	lvdl := &localv1.LocalVolumeDeviceLink{}

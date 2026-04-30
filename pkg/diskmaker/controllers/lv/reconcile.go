@@ -615,7 +615,7 @@ func (r *LocalVolumeReconciler) syncPVAndLVDL(ctx context.Context, scName string
 		common.LocalVolumeOwnerNameForPV:      r.localVolume.Name,
 		common.LocalVolumeOwnerNamespaceForPV: r.localVolume.Namespace,
 	}
-	syncArgs := common.PVAndLVDLSyncArgs{
+	syncArgs := common.SyncLVAndLVDLArgs{
 		LocalVolumeLikeObject: r.localVolume,
 		RuntimeConfig:         r.runtimeConfig,
 		StorageClass:          *storageClass,
@@ -628,7 +628,7 @@ func (r *LocalVolumeReconciler) syncPVAndLVDL(ctx context.Context, scName string
 		CacheWriter:           r.pvLinkCache,
 	}
 
-	return common.NewPVAndLVDLSyncer(syncArgs).Sync(ctx)
+	return common.SyncLVAndLVDL(ctx, syncArgs)
 }
 
 // processRejectedDevicesForDeviceLinks reconciles devices which were rejected for PV creation

@@ -984,7 +984,7 @@ func TestIgnoredDevicesProcessedWhenNoValidDevices(t *testing.T) {
 //     calls processNewSymlink after resolving DiskID to wwn-new
 //  5. FindStalePVs falls back to sibling lookup, finds the LVDL via scsi-sibling
 //  6. With PreferredLinkTarget policy, GetSymlinkTargetPath warns (wwn-new not in
-//     ValidLinkTargets) but returns path; PVAndLVDLSyncer recreates the symlink and
+//     ValidLinkTargets) but returns path; SyncLVAndLVDL recreates the symlink and
 //     updates the PV / LVDL. With policy None, GetSymlinkTargetPath returns an error
 //     and processNewSymlink surfaces it (no symlink fix).
 func TestProcessNewSymlink_SiblingFallback(t *testing.T) {
