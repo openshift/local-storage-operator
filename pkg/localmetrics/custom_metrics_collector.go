@@ -36,14 +36,16 @@ var deviceLinkWithoutStablePathDesc = prometheus.NewDesc(
 type DeviceLinkCollector struct {
 	client    client.Client
 	namespace string
+	nodeName  string
 }
 
 // NewDeviceLinkCollector returns a collector scoped to the given namespace.
 // Pass an empty string to collect across all namespaces.
-func NewDeviceLinkCollector(c client.Client, namespace string) *DeviceLinkCollector {
+func NewDeviceLinkCollector(c client.Client, namespace string, nodeName string) *DeviceLinkCollector {
 	return &DeviceLinkCollector{
 		client:    c,
 		namespace: namespace,
+		nodeName:  nodeName,
 	}
 }
 
@@ -76,6 +78,10 @@ func (c *DeviceLinkCollector) Collect(ch chan<- prometheus.Metric) {
 
 	for i := range list.Items {
 		link := &list.Items[i]
+
+		if link.Spec.NodeName != c.nodeName {
+			continue
+		}
 
 		mismatch := link.Status.CurrentLinkTarget != link.Status.PreferredLinkTarget
 		noStablePath := len(link.Status.ValidLinkTargets) == 0

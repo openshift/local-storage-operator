@@ -28,7 +28,7 @@ type lvdlBuilder struct {
 	lvdl *localv1.LocalVolumeDeviceLink
 }
 
-func (l *lvdlBuilder) makeDeviceLink(name, namespace, pvName string) *lvdlBuilder {
+func (l *lvdlBuilder) makeDeviceLink(name, namespace, pvName, nodeName string) *lvdlBuilder {
 	l.lvdl = &localv1.LocalVolumeDeviceLink{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
@@ -36,6 +36,7 @@ func (l *lvdlBuilder) makeDeviceLink(name, namespace, pvName string) *lvdlBuilde
 		},
 		Spec: localv1.LocalVolumeDeviceLinkSpec{
 			PersistentVolumeName: pvName,
+			NodeName:             nodeName,
 		},
 	}
 	return l
@@ -80,7 +81,7 @@ func findFamily(mfs []*dto.MetricFamily, name string) *dto.MetricFamily {
 }
 
 func TestDescribe(t *testing.T) {
-	collector := NewDeviceLinkCollector(buildFakeClient(t), "test-ns")
+	collector := NewDeviceLinkCollector(buildFakeClient(t), "test-ns", "test-node")
 	ch := make(chan *prometheus.Desc, 10)
 	collector.Describe(ch)
 	close(ch)
@@ -95,7 +96,7 @@ func TestDescribe(t *testing.T) {
 }
 
 func TestCollect_NoObjects(t *testing.T) {
-	collector := NewDeviceLinkCollector(buildFakeClient(t), "test-ns")
+	collector := NewDeviceLinkCollector(buildFakeClient(t), "test-ns", "test-node")
 	metrics := collectMetrics(collector)
 	if len(metrics) != 0 {
 		t.Errorf("expected 0 metrics for empty client, got %d", len(metrics))
@@ -111,7 +112,7 @@ func TestCollect_SingleObject(t *testing.T) {
 	}{
 		{
 			name: "healthy object skipped",
-			link: (&lvdlBuilder{}).makeDeviceLink("pv-node1", "openshift-local-storage", "pv-node1").
+			link: (&lvdlBuilder{}).makeDeviceLink("pv-node1", "openshift-local-storage", "pv-node1", "test-node").
 				withPolicy(localv1.DeviceLinkPolicyNone).
 				withLinkTargets("/dev/disk/by-id/scsi-old", "/dev/disk/by-id/scsi-old", "/dev/disk/by-id/scsi-old").
 				build(),
@@ -120,7 +121,7 @@ func TestCollect_SingleObject(t *testing.T) {
 		},
 		{
 			name: "no mismatch with explicit policy",
-			link: (&lvdlBuilder{}).makeDeviceLink("pv-node1", "openshift-local-storage", "pv-node1").
+			link: (&lvdlBuilder{}).makeDeviceLink("pv-node1", "openshift-local-storage", "pv-node1", "test-node").
 				withPolicy(localv1.DeviceLinkPolicyCurrentLinkTarget).
 				withLinkTargets("/dev/disk/by-id/scsi-stable", "/dev/disk/by-id/scsi-stable", "/dev/disk/by-id/scsi-stable").
 				build(),
@@ -129,7 +130,7 @@ func TestCollect_SingleObject(t *testing.T) {
 		},
 		{
 			name: "mismatch only",
-			link: (&lvdlBuilder{}).makeDeviceLink("pv-node1", "openshift-local-storage", "pv-node1").
+			link: (&lvdlBuilder{}).makeDeviceLink("pv-node1", "openshift-local-storage", "pv-node1", "test-node").
 				withPolicy(localv1.DeviceLinkPolicyNone).
 				withLinkTargets("/dev/disk/by-id/scsi-old", "/dev/disk/by-id/scsi-new", "/dev/disk/by-id/scsi-old", "/dev/disk/by-id/scsi-new").
 				build(),
@@ -138,7 +139,7 @@ func TestCollect_SingleObject(t *testing.T) {
 		},
 		{
 			name: "mismatch with one target empty",
-			link: (&lvdlBuilder{}).makeDeviceLink("pv-node1", "openshift-local-storage", "pv-node1").
+			link: (&lvdlBuilder{}).makeDeviceLink("pv-node1", "openshift-local-storage", "pv-node1", "test-node").
 				withPolicy(localv1.DeviceLinkPolicyNone).
 				withLinkTargets("/dev/disk/by-id/scsi-old", "").
 				build(),
@@ -147,7 +148,7 @@ func TestCollect_SingleObject(t *testing.T) {
 		},
 		{
 			name: "both targets empty, no valid links",
-			link: (&lvdlBuilder{}).makeDeviceLink("pv-node1", "openshift-local-storage", "pv-node1").
+			link: (&lvdlBuilder{}).makeDeviceLink("pv-node1", "openshift-local-storage", "pv-node1", "test-node").
 				withPolicy(localv1.DeviceLinkPolicyNone).
 				withLinkTargets("", "").
 				build(),
@@ -156,7 +157,7 @@ func TestCollect_SingleObject(t *testing.T) {
 		},
 		{
 			name: "no by-id only",
-			link: (&lvdlBuilder{}).makeDeviceLink("pv-node1", "openshift-local-storage", "pv-node1").
+			link: (&lvdlBuilder{}).makeDeviceLink("pv-node1", "openshift-local-storage", "pv-node1", "test-node").
 				withPolicy(localv1.DeviceLinkPolicyNone).
 				withLinkTargets("/dev/sda", "/dev/sda").
 				build(),
@@ -165,7 +166,7 @@ func TestCollect_SingleObject(t *testing.T) {
 		},
 		{
 			name: "mismatch and no by-id",
-			link: (&lvdlBuilder{}).makeDeviceLink("pv-node1", "openshift-local-storage", "pv-node1").
+			link: (&lvdlBuilder{}).makeDeviceLink("pv-node1", "openshift-local-storage", "pv-node1", "test-node").
 				withPolicy(localv1.DeviceLinkPolicyNone).
 				withLinkTargets("/dev/sda", "/dev/sdb").
 				build(),
@@ -176,7 +177,7 @@ func TestCollect_SingleObject(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			collector := NewDeviceLinkCollector(buildFakeClient(t, tt.link), "openshift-local-storage")
+			collector := NewDeviceLinkCollector(buildFakeClient(t, tt.link), "openshift-local-storage", "test-node")
 
 			reg := prometheus.NewRegistry()
 			if err := reg.Register(collector); err != nil {
@@ -208,26 +209,51 @@ func TestCollect_SingleObject(t *testing.T) {
 
 func TestCollect_MultipleObjects(t *testing.T) {
 	// link1: mismatch + valid targets → 1 mismatch metric
-	link1 := (&lvdlBuilder{}).makeDeviceLink("pv-a", "openshift-local-storage", "pv-a").
+	link1 := (&lvdlBuilder{}).makeDeviceLink("pv-a", "openshift-local-storage", "pv-a", "test-node").
 		withPolicy(localv1.DeviceLinkPolicyNone).
 		withLinkTargets("/dev/disk/by-id/old-a", "/dev/disk/by-id/new-a", "/dev/disk/by-id/old-a", "/dev/disk/by-id/new-a").
 		build()
 	// link2: healthy → skipped
-	link2 := (&lvdlBuilder{}).makeDeviceLink("pv-b", "openshift-local-storage", "pv-b").
+	link2 := (&lvdlBuilder{}).makeDeviceLink("pv-b", "openshift-local-storage", "pv-b", "test-node").
 		withPolicy(localv1.DeviceLinkPolicyPreferredLinkTarget).
 		withLinkTargets("/dev/disk/by-id/stable", "/dev/disk/by-id/stable", "/dev/disk/by-id/stable").
 		build()
 	// link3: no mismatch + no valid targets → 1 no-by-id metric
-	link3 := (&lvdlBuilder{}).makeDeviceLink("pv-c", "openshift-local-storage", "pv-c").
+	link3 := (&lvdlBuilder{}).makeDeviceLink("pv-c", "openshift-local-storage", "pv-c", "test-node").
 		withPolicy(localv1.DeviceLinkPolicyNone).
 		withLinkTargets("/dev/sdc", "/dev/sdc").
 		build()
 
-	collector := NewDeviceLinkCollector(buildFakeClient(t, link1, link2, link3), "openshift-local-storage")
+	collector := NewDeviceLinkCollector(buildFakeClient(t, link1, link2, link3), "openshift-local-storage", "test-node")
 	metrics := collectMetrics(collector)
 	// link1 → 1 mismatch, link2 → 0 (healthy), link3 → 1 no-by-id
 	if len(metrics) != 2 {
 		t.Errorf("expected 2 metrics (1 mismatch + 1 no-by-id), got %d", len(metrics))
+	}
+}
+
+func TestCollect_MultipleNodes(t *testing.T) {
+	// link1: mismatch + valid targets → 1 mismatch metric
+	link1 := (&lvdlBuilder{}).makeDeviceLink("pv-a", "openshift-local-storage", "pv-a", "test-nodea").
+		withPolicy(localv1.DeviceLinkPolicyNone).
+		withLinkTargets("/dev/disk/by-id/old-a", "/dev/disk/by-id/new-a", "/dev/disk/by-id/new-a").
+		build()
+	// link2: mismatch, but on another node
+	link2 := (&lvdlBuilder{}).makeDeviceLink("pv-b", "openshift-local-storage", "pv-b", "test-nodeb").
+		withPolicy(localv1.DeviceLinkPolicyPreferredLinkTarget).
+		withLinkTargets("/dev/disk/by-id/old-b", "/dev/disk/by-id/new-b", "/dev/disk/by-id/new-b").
+		build()
+		// link3: mismatch, but on another node
+	link3 := (&lvdlBuilder{}).makeDeviceLink("pv-c", "openshift-local-storage", "pv-c", "test-nodec").
+		withPolicy(localv1.DeviceLinkPolicyNone).
+		withLinkTargets("/dev/disk/by-id/old-c", "/dev/disk/by-id/new-c", "/dev/disk/by-id/new-c").
+		build()
+
+	collector := NewDeviceLinkCollector(buildFakeClient(t, link1, link2, link3), "openshift-local-storage", "test-nodea")
+	metrics := collectMetrics(collector)
+	// link1 → 1 mismatch, link2 + link3 are on different node (=ignored)
+	if len(metrics) != 1 {
+		t.Errorf("expected 1 metrics, got %d", len(metrics))
 	}
 }
 
@@ -243,7 +269,7 @@ func TestCollect_ListError(t *testing.T) {
 		},
 	})
 
-	collector := NewDeviceLinkCollector(errClient, "test-ns")
+	collector := NewDeviceLinkCollector(errClient, "test-ns", "test-node")
 	metrics := collectMetrics(collector)
 	// Two invalid metrics are emitted when List fails (one per descriptor).
 	if len(metrics) != 2 {
@@ -254,10 +280,10 @@ func TestCollect_ListError(t *testing.T) {
 func TestCollect_EmptyPolicy(t *testing.T) {
 	// Empty policy must be normalised to "None" — need a mismatch to
 	// trigger metric emission so we can verify the label.
-	link := (&lvdlBuilder{}).makeDeviceLink("pv-node1", "openshift-local-storage", "pv-node1").
+	link := (&lvdlBuilder{}).makeDeviceLink("pv-node1", "openshift-local-storage", "pv-node1", "test-node").
 		withLinkTargets("/dev/disk/by-id/scsi-old", "/dev/disk/by-id/scsi-new", "/dev/disk/by-id/scsi-old", "/dev/disk/by-id/scsi-new").
 		build()
-	collector := NewDeviceLinkCollector(buildFakeClient(t, link), "openshift-local-storage")
+	collector := NewDeviceLinkCollector(buildFakeClient(t, link), "openshift-local-storage", "test-node")
 
 	reg := prometheus.NewRegistry()
 	if err := reg.Register(collector); err != nil {
