@@ -154,7 +154,7 @@ func TestCurrentBlockDeviceInfoGetSymlinkTargetPath(t *testing.T) {
 					ObjectMeta: metav1.ObjectMeta{Name: "pv-local"},
 					Spec: corev1.PersistentVolumeSpec{
 						PersistentVolumeSource: corev1.PersistentVolumeSource{
-							Local: &corev1.LocalVolumeSource{Path: "/mnt/local-storage/sc/from-pv-local"},
+							Local: &corev1.LocalVolumeSource{Path: "/mnt/local-storage/sc-a/from-pv-local"},
 						},
 					},
 				},
@@ -165,7 +165,7 @@ func TestCurrentBlockDeviceInfoGetSymlinkTargetPath(t *testing.T) {
 			name: "prefers symlinkPath from LVDL when both LVDL and PV have one",
 			setup: func(t *testing.T, c *LocalVolumeDeviceLinkCache) (CurrentBlockDeviceInfo, string) {
 				lvdl := newCacheLVDL("pv-local", cacheLocalNode, "/tmp/current-status", v1api.DeviceLinkPolicyPreferredLinkTarget, sourcePath)
-				lvdl.Status.PersistentVolumeSymlinkPath = "/mnt/local-storage/sc/from-lvdl-status"
+				lvdl.Status.PersistentVolumeSymlinkPath = "/mnt/local-storage/sc-a/from-lvdl-status"
 				c.addOrUpdateLVDL(lvdl)
 				return c.localDeviceInfos[sourcePath], sourcePath
 			},
@@ -173,7 +173,7 @@ func TestCurrentBlockDeviceInfoGetSymlinkTargetPath(t *testing.T) {
 				return "", os.ErrNotExist
 			},
 			apiObjects: []client.Object{
-				localPV("pv-local", "/mnt/local-storage/sc/from-pv-local"),
+				localPV("pv-local", "/mnt/local-storage/sc-a/from-pv-local"),
 			},
 			wantPath: filepath.Join(symlinkDir, "from-lvdl-status"),
 		},
@@ -221,6 +221,20 @@ func TestCurrentBlockDeviceInfoGetSymlinkTargetPath(t *testing.T) {
 				csiPV("pv-csi", "example.com/csi", "volume-handle"),
 			},
 			wantErr: "pv pv-csi has empty local path",
+		},
+		{
+			name: "errors when LVDL symlinkPath is for a different storage class",
+			setup: func(t *testing.T, c *LocalVolumeDeviceLinkCache) (CurrentBlockDeviceInfo, string) {
+				lvdl := newCacheLVDL("pv-empty-local", cacheLocalNode, "/tmp/empty-local", v1api.DeviceLinkPolicyPreferredLinkTarget, sourcePath)
+				lvdl.Status.PersistentVolumeSymlinkPath = "/mnt/local-storage/sc-b/from-lvdl-status"
+				c.addOrUpdateLVDL(lvdl)
+				return c.localDeviceInfos[sourcePath], sourcePath
+			},
+			symlinkEvalFunc: func(path string) (string, error) {
+				return "", os.ErrNotExist
+			},
+			apiObjects: []client.Object{},
+			wantErr:    "does not match expected symlink directory",
 		},
 	}
 

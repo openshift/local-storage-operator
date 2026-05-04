@@ -74,6 +74,11 @@ func (c CurrentBlockDeviceInfo) GetSymlinkTargetPath(ctx context.Context, symlin
 	if err != nil {
 		return "", err
 	}
+	discoveredSymlinkDir := filepath.Dir(symlinkPath)
+	if discoveredSymlinkDir != symlinkDir {
+		// A single device is used by multiple objects with different StorageClasses (= different symlinkDirs). That should never happen.
+		return "", fmt.Errorf("discovered symlink directory %s does not match expected symlink directory %s for device %s - is this device matched by multiple LocalVolumes / LocalVolumeSets?", discoveredSymlinkDir, symlinkDir, newSymlinkSourcePath)
+	}
 	currentLinkTarget := lvdl.Status.CurrentLinkTarget
 	validLinkTargets := lvdl.Status.ValidLinkTargets
 	policy := lvdl.Spec.Policy
@@ -88,13 +93,11 @@ func (c CurrentBlockDeviceInfo) GetSymlinkTargetPath(ctx context.Context, symlin
 		return "", fmt.Errorf("currentSymlink %s still resolves to %s for %s", currentLinkTarget, resolvedCurrent, newSymlinkSourcePath)
 	}
 
-	symlinkBaseName := filepath.Base(symlinkPath)
-
 	if slices.Contains(validLinkTargets, newSymlinkSourcePath) {
-		return filepath.Join(symlinkDir, symlinkBaseName), nil
+		return symlinkPath, nil
 	}
 	klog.Warningf("symlink source %s is not recorded in valid symlink target, but has stale PVs that use the device", newSymlinkSourcePath)
-	return filepath.Join(symlinkDir, symlinkBaseName), nil
+	return symlinkPath, nil
 }
 
 // getLVDLAndSymlinkPath returns the LVDL and the symlink path for the current device.
