@@ -133,6 +133,19 @@ spec:
                 maxLength: 4096
                 minLength: 1
                 type: string
+              persistentVolumeSymlinkPath:
+                description: |-
+                  persistentVolumeSymlinkPath is the symlink in /mnt/local-storage directory that points to
+                  the actual local device.
+                  This path is used by corresponding PersistentVolume (PV) object for all operations (e.g. mount).
+                  LSO creates and updates this symlink for the whole lifetime of the PV.
+                  This field is immutable once set, because the path in the corresponding
+                  PV object is immutable too.
+                maxLength: 4096
+                type: string
+                x-kubernetes-validations:
+                - message: persistentVolumeSymlinkPath is immutable once set
+                  rule: self == oldSelf || oldSelf == ''
               preferredLinkTarget:
                 description: |-
                   preferredLinkTarget is the /dev/disk/by-id symlink for the device that the local storage

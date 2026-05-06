@@ -374,7 +374,7 @@ func (r *LocalVolumeSetReconciler) processRejectedDevicesForDeviceLinks(ctx cont
 				klog.ErrorS(err, "failed to read current symlink target", "devicePath", symlinkPath)
 				continue
 			}
-			_, lvdlError = deviceHandler.ApplyStatus(ctx, lvdlName, r.runtimeConfig.Namespace, blockDevice, lvset, currentLinkTarget)
+			_, lvdlError = deviceHandler.ApplyStatus(ctx, lvdlName, r.runtimeConfig.Namespace, blockDevice, lvset, currentLinkTarget, symlinkPath)
 		}
 
 		if lvdlError != nil {

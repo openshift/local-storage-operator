@@ -151,7 +151,7 @@ func eventuallyFindLVDLsForPVs(t *testing.T, f *framework.Framework, namespace s
 		for _, lvdl := range lvdlList.Items {
 			if ok := pvNameSet.Has(lvdl.Spec.PersistentVolumeName); ok {
 				// Wait until status fields are populated by the status update
-				if lvdl.Status.CurrentLinkTarget == "" || lvdl.Status.PreferredLinkTarget == "" {
+				if lvdl.Status.CurrentLinkTarget == "" || lvdl.Status.PreferredLinkTarget == "" || lvdl.Status.PersistentVolumeSymlinkPath == "" {
 					return false
 				}
 				foundLVDLs = append(foundLVDLs, lvdl)
@@ -344,8 +344,29 @@ func assertLVDLsContainTargetAndNodes(t *testing.T, lvdls []localv1.LocalVolumeD
 		matcher.Expect(lvdl.Status.ValidLinkTargets).To(gomega.ContainElement(expectedTarget),
 			"expected ValidLinkTargets for LVDL %q to contain %q", lvdl.Name, expectedTarget)
 		matcher.Expect(lvdl.Spec.NodeName).ToNot(gomega.BeEmpty(), "expected NodeName for LVDL %q", lvdl.Name)
+		matcher.Expect(lvdl.Status.PersistentVolumeSymlinkPath).ToNot(gomega.BeEmpty(), "expected PersistentVolumeSymlinkPath for LVDL %q", lvdl.Name)
 		foundNodeNames.Insert(lvdl.Spec.NodeName)
 	}
 	matcher.Expect(foundNodeNames.UnsortedList()).To(gomega.ConsistOf(expectedNodeNames),
 		"expected LVDL node names for target %q", expectedTarget)
+}
+
+// assertLVDLSymlinkPathMatchesPVs checks that each LVDL's status.symlinkPath matches the
+// corresponding PersistentVolume's spec.local.path (same as the on-disk symlink under /mnt/local-storage).
+func assertLVDLSymlinkPathMatchesPVs(t *testing.T, lvdls []localv1.LocalVolumeDeviceLink, pvs []corev1.PersistentVolume) {
+	matcher := gomega.NewWithT(t)
+	byName := make(map[string]corev1.PersistentVolume, len(pvs))
+	for _, pv := range pvs {
+		byName[pv.Name] = pv
+	}
+	for i := range lvdls {
+		lvdl := &lvdls[i]
+		pv, ok := byName[lvdl.Spec.PersistentVolumeName]
+		matcher.Expect(ok).To(gomega.BeTrue(), "missing PV %q for LVDL %q", lvdl.Spec.PersistentVolumeName, lvdl.Name)
+		matcher.Expect(lvdl.Status.PersistentVolumeSymlinkPath).ToNot(gomega.BeEmpty(), "expected PersistentVolumeSymlinkPath for LVDL %q", lvdl.Name)
+		if pv.Spec.Local != nil && pv.Spec.Local.Path != "" {
+			matcher.Expect(lvdl.Status.PersistentVolumeSymlinkPath).To(gomega.Equal(pv.Spec.Local.Path),
+				"LVDL %q status.symlinkPath should match PV %q spec.local.path", lvdl.Name, pv.Name)
+		}
+	}
 }

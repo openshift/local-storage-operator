@@ -319,6 +319,8 @@ func verifyMultiStepPreferredLinkReconciliation(
 			"step %d: LVDL PreferredLinkTarget after PV recreation", i+1)
 		matcher.Expect(lvdl.Spec.Policy).To(gomega.Equal(localv1.DeviceLinkPolicyPreferredLinkTarget),
 			"step %d: LVDL policy must remain PreferredLinkTarget after PV recreation", i+1)
+		matcher.Expect(lvdl.Status.PersistentVolumeSymlinkPath).To(gomega.Equal(pv.Spec.Local.Path),
+			"step %d: LVDL SymlinkPath after PV recreation should match PV local path", i+1)
 		// The policy is PreferredLinkTarget + the symlink has been fixed.
 		// All LVDL metrics should be removed at this point.
 		waitForMetric(t, prometheusClient, fmt.Sprintf("lso_device_link_mismatch{name=\"%s\"}", lvdl.Name), 0)
@@ -391,6 +393,8 @@ func verifySymlinkFallbackOnDisappearingLink(
 		"LVDL PreferredLinkTarget after fallback and PV recreation")
 	matcher.Expect(lvdls[0].Spec.Policy).To(gomega.Equal(localv1.DeviceLinkPolicyPreferredLinkTarget),
 		"LVDL policy must remain PreferredLinkTarget after fallback")
+	matcher.Expect(lvdls[0].Status.PersistentVolumeSymlinkPath).To(gomega.Equal(pv.Spec.Local.Path),
+		"LVDL SymlinkPath after fallback and PV recreation should match PV local path")
 
 	return pv
 }

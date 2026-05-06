@@ -154,6 +154,7 @@ func LocalVolumeTest(ctx *framework.Context, cleanupFuncs *[]cleanupFn) func(*te
 		sharedPVNames := []string{sharedPVs[0].Name}
 		sharedLVDLs := eventuallyFindLVDLsForPVs(t, f, namespace, sharedPVNames)
 		assertLVDLsContainTargetAndNodes(t, sharedLVDLs, sharedScsi8Link, []string{nodeEnv[0].node.Name})
+		assertLVDLSymlinkPathMatchesPVs(t, sharedLVDLs, sharedPVs)
 
 		matcher.Eventually(func() error {
 			t.Log("expanding shared localvolume reproducer to a second node")
@@ -183,6 +184,7 @@ func LocalVolumeTest(ctx *framework.Context, cleanupFuncs *[]cleanupFn) func(*te
 		}
 		sharedLVDLs = eventuallyFindLVDLsForPVs(t, f, namespace, sharedPVNames)
 		assertLVDLsContainTargetAndNodes(t, sharedLVDLs, sharedScsi8Link, []string{nodeEnv[0].node.Name, nodeEnv[1].node.Name})
+		assertLVDLSymlinkPathMatchesPVs(t, sharedLVDLs, sharedPVs)
 
 		t.Log("cleaning up LocalVolume duplicate by-id reproducer before continuing with standard test flow")
 		cleanupLVAndWaitForOwnedPVsToDisappear(t, f, sharedLocalVolume)
@@ -250,6 +252,7 @@ func LocalVolumeTest(ctx *framework.Context, cleanupFuncs *[]cleanupFn) func(*te
 			matcher.Expect(lvdl.Status.PreferredLinkTarget).ToNot(gomega.BeEmpty(), "expected PreferredLinkTarget for LVDL %q", lvdl.Name)
 			matcher.Expect(lvdl.Status.ValidLinkTargets).ToNot(gomega.BeEmpty(), "expected ValidLinkTargets for LVDL %q", lvdl.Name)
 		}
+		assertLVDLSymlinkPathMatchesPVs(t, lvdls, pvs)
 
 		selectedPV := pvs[0]
 		currentSymlink := currentSymlinkForDisk(selectedDisk)
@@ -374,6 +377,10 @@ func verifyLVDLFilesystemUUIDForPVs(t *testing.T, f *framework.Framework, namesp
 			}
 			if lvdl.Status.FilesystemUUID == "" {
 				t.Logf("filesystemUUID not populated yet for LVDL %q / PV %q", lvdl.Name, lvdl.Spec.PersistentVolumeName)
+				return false
+			}
+			if lvdl.Status.PersistentVolumeSymlinkPath == "" {
+				t.Logf("SymlinkPath not populated yet for LVDL %q / PV %q", lvdl.Name, lvdl.Spec.PersistentVolumeName)
 				return false
 			}
 			uuidFoundCount++
