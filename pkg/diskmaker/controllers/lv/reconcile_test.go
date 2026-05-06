@@ -19,8 +19,10 @@ import (
 	"github.com/openshift/local-storage-operator/pkg/common"
 	"github.com/openshift/local-storage-operator/pkg/diskmaker/diskmakertest"
 	"github.com/openshift/local-storage-operator/pkg/internal"
+	"github.com/openshift/local-storage-operator/pkg/localmetrics"
 	test "github.com/openshift/local-storage-operator/test/framework"
 	"github.com/openshift/local-storage-operator/test/framework/util"
+	dto "github.com/prometheus/client_model/go"
 	"github.com/stretchr/testify/assert"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -1551,4 +1553,92 @@ func RemoveIndex(s []corev1.PersistentVolume, index int) []corev1.PersistentVolu
 	ret := make([]corev1.PersistentVolume, 0)
 	ret = append(ret, s[:index]...)
 	return append(ret, s[index+1:]...)
+}
+
+func TestUpdateMissingDevicePathMetrics(t *testing.T) {
+	const testNodeName = "node-missing-paths"
+
+	tests := []struct {
+		name            string
+		devicePaths     []string
+		evalSymlinkFn   func(string) (string, error)
+		priorMissing    int // pre-seed the gauge to verify it resets
+		expectedMissing float64
+	}{
+		{
+			// Verifies the gauge resets: seed a non-zero value then confirm it goes back to 0.
+			name:        "metric resets to zero when previously-missing path is recovered",
+			devicePaths: []string{"/dev/sda"},
+			evalSymlinkFn: func(path string) (string, error) {
+				return path, nil
+			},
+			priorMissing:    3,
+			expectedMissing: 0,
+		},
+		{
+			name:        "by-id symlink disappeared after OS upgrade",
+			devicePaths: []string{"/dev/disk/by-id/scsi-removed"},
+			evalSymlinkFn: func(path string) (string, error) {
+				return "", fmt.Errorf("lstat %s: no such file or directory", path)
+			},
+			expectedMissing: 1,
+		},
+		{
+			name:        "one path missing, one resolves",
+			devicePaths: []string{"/dev/sda", "/dev/disk/by-id/scsi-gone"},
+			evalSymlinkFn: func(path string) (string, error) {
+				if strings.HasSuffix(path, "scsi-gone") {
+					return "", fmt.Errorf("lstat %s: no such file or directory", path)
+				}
+				return path, nil
+			},
+			expectedMissing: 1,
+		},
+		{
+			name:        "all paths missing, metric matches count",
+			devicePaths: []string{"/dev/disk/by-id/scsi-gone-1", "/dev/disk/by-id/scsi-gone-2"},
+			evalSymlinkFn: func(path string) (string, error) {
+				return "", fmt.Errorf("lstat %s: no such file or directory", path)
+			},
+			expectedMissing: 2,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			tmpRoot := diskmakertest.TempDir(t, "missing-paths")
+
+			lv := &localv1.LocalVolume{
+				TypeMeta: metav1.TypeMeta{
+					Kind:       localv1.LocalVolumeKind,
+					APIVersion: localv1.GroupVersion.String(),
+				},
+				ObjectMeta: metav1.ObjectMeta{Name: "lv-missing", Namespace: "default"},
+			}
+
+			d, _ := getFakeDiskMaker(t, tmpRoot)
+			d.localVolume = lv
+			d.fsInterface = stubFileSystemInterface{evalFunc: tc.evalSymlinkFn}
+
+			diskConfig := &DiskConfig{
+				Disks: map[string]*Disks{
+					storageClassName: {DevicePaths: tc.devicePaths},
+				},
+			}
+
+			origNodeName := nodeName
+			nodeName = testNodeName
+			t.Cleanup(func() { nodeName = origNodeName })
+
+			if tc.priorMissing > 0 {
+				localmetrics.SetLVMissingDevicePathMetric(testNodeName, storageClassName, tc.priorMissing)
+			}
+
+			d.updateMissingDevicePathMetrics(diskConfig)
+
+			pb := &dto.Metric{}
+			assert.NoError(t, localmetrics.LVMissingDevicePathGauge(testNodeName, storageClassName).Write(pb))
+			assert.Equal(t, tc.expectedMissing, pb.GetGauge().GetValue())
+		})
+	}
 }

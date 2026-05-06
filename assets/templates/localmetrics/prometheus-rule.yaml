@@ -70,3 +70,19 @@ spec:
             Local Storage operator has observed that pv {{ $labels.persistent_volume }} is using a symlink
             that is not optimum for stability between reboots and OS upgrades. Consider updating
             LocalVolumeDeviceLink policy to preferredSymlink to allow LSO to manage the symlink.
+    - name: lso_lv_missing_device_path
+      rules:
+      - alert: LSOLocalVolumeMissingDevicePath
+        expr: min_over_time(lso_lv_missing_device_path_count[5m]) > 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "LocalVolume references a device path that does not exist on the node"
+          description: |
+            Local Storage Operator cannot find {{ $value }} device path(s) listed in a LocalVolume
+            for storage class {{ $labels.storageClass }} on node {{ $labels.nodeName }}.
+            This typically happens when a /dev/disk/by-id/ symlink is removed during an OS upgrade
+            (e.g. RHEL 9 to RHEL 10). The existing PersistentVolumes may still be usable, but LSO
+            cannot monitor or update their symlinks until the LocalVolume devicePaths are corrected.
+            Update the LocalVolume spec to reference a device path that currently exists on the node.

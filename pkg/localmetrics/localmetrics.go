@@ -43,6 +43,11 @@ var (
 		Help: "Total symlinks that became orphan after updating the devicePaths in LocalVolume CR",
 	}, []string{"nodeName", "storageClass"})
 
+	metricLocalVolumeMissingDevicePaths = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "lso_lv_missing_device_path_count",
+		Help: "Total device paths in LocalVolume spec that cannot be resolved on the node (e.g. symlink removed after OS upgrade)",
+	}, []string{"nodeName", "storageClass"})
+
 	LVDMetricsList = []prometheus.Collector{
 		metricDiscoveredDevicesByLocalVolumeDiscovery,
 	}
@@ -54,6 +59,7 @@ var (
 		metricLocalVolumeSetDeletionTimestamp,
 		metricLocalVolumeProvisionedPVs,
 		metricLocalVolumeOrphanedSymlinks,
+		metricLocalVolumeMissingDevicePaths,
 	}
 )
 
@@ -102,4 +108,16 @@ func SetLVOrphanedSymlinksMetric(nodeName, storageClassName string, count int) {
 	metricLocalVolumeOrphanedSymlinks.
 		With(prometheus.Labels{"nodeName": nodeName, "storageClass": storageClassName}).
 		Set(float64(count))
+}
+
+func SetLVMissingDevicePathMetric(nodeName, storageClassName string, count int) {
+	metricLocalVolumeMissingDevicePaths.
+		With(prometheus.Labels{"nodeName": nodeName, "storageClass": storageClassName}).
+		Set(float64(count))
+}
+
+func LVMissingDevicePathGauge(nodeName, storageClassName string) prometheus.Gauge {
+	return metricLocalVolumeMissingDevicePaths.With(prometheus.Labels{
+		"nodeName": nodeName, "storageClass": storageClassName,
+	})
 }
