@@ -241,7 +241,9 @@ func (l *LocalVolumeDeviceLinkCache) watchForEvents(informer cache.Informer) (k8
 	})
 }
 
-func (l *LocalVolumeDeviceLinkCache) FindStalePVs(symlink string, blockDevice internal.BlockDevice) (CurrentBlockDeviceInfo, bool, error) {
+// FindLSOManagedDeviceInfo finds LSO managed device information available about this block device. It checks if device was in-use or managed by LSO.
+// It currently uses LVDLs to determine that.
+func (l *LocalVolumeDeviceLinkCache) FindLSOManagedDeviceInfo(symlink string, blockDevice internal.BlockDevice) (CurrentBlockDeviceInfo, bool, error) {
 	l.mu.RLock()
 	defer l.mu.RUnlock()
 	info, ok := l.localDeviceInfos[symlink]

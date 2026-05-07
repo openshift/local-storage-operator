@@ -574,7 +574,7 @@ func (r *LocalVolumeSetReconciler) processNewSymlink(
 		return result, nil
 	}
 
-	currentDevice, found, err := r.pvLinkCache.FindStalePVs(symlinkSourcePath, blockDevice)
+	currentDeviceInfo, found, err := r.pvLinkCache.FindLSOManagedDeviceInfo(symlinkSourcePath, blockDevice)
 	if err != nil {
 		r.reportProvisioningFailure(lvset, blockDevice.KName, err)
 		return result, nil
@@ -584,7 +584,7 @@ func (r *LocalVolumeSetReconciler) processNewSymlink(
 	// if we are re-creating PV for an existing symlink in symlinkPath (usually /mnt/local-storage)
 	// then that symlink should be handled via processExistingSymlink() codepath
 	if found {
-		symlinkPath, err = currentDevice.GetSymlinkTargetPath(ctx, symLinkDir, symlinkSourcePath, r.Client)
+		symlinkPath, err = currentDeviceInfo.GetSymlinkTargetPath(ctx, symLinkDir, symlinkSourcePath, r.Client)
 		if err != nil {
 			if lvdl, pvSymlinkPath, ok := common.PolicyNotPreferredLVDL(err); ok {
 				if _, updateErr := r.deviceLinkHandler.UpdateDeviceLinks(ctx, lvdl, blockDevice, lvdl.Status.CurrentLinkTarget, pvSymlinkPath); updateErr != nil {

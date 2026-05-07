@@ -357,7 +357,7 @@ func TestDeviceLinkHandler_UpdateStatusAndPV(t *testing.T) {
 			assert.ElementsMatch(t, tc.expectedLVDL.Status.ValidLinkTargets, fetched.Status.ValidLinkTargets)
 			// Verify write-through cache was updated with the correct LVDL.
 			for _, target := range tc.expectedLVDL.Status.ValidLinkTargets {
-				info, found, err := pvCache.FindStalePVs(target, tc.blockDevice)
+				info, found, err := pvCache.FindLSOManagedDeviceInfo(target, tc.blockDevice)
 				assert.NoError(t, err)
 				if assert.True(t, found, "cache should contain entry for valid link target %s", target) {
 					cached := info.lvdls[tc.expectedLVDL.Name]
@@ -809,7 +809,7 @@ func TestRecreateSymlinkIfNeeded(t *testing.T) {
 			// Verify write-through cache was updated after successful symlink recreation.
 			assert.NotEmpty(t, pvCache.localDeviceInfos, "cache should be updated after successful symlink recreation")
 			// Find the LVDL in the cache by checking its preferred target entry.
-			info, found, err := pvCache.FindStalePVs(env.preferredTarget, blockDevice)
+			info, found, err := pvCache.FindLSOManagedDeviceInfo(env.preferredTarget, blockDevice)
 			if assert.NoError(t, err) && assert.True(t, found, "cache should contain entry for preferred target") {
 				cached := info.lvdls[tc.pvName]
 				if assert.NotNil(t, cached, "cache entry should contain LVDL %s", tc.pvName) {
