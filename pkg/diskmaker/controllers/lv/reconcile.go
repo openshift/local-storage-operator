@@ -558,8 +558,8 @@ func (r *LocalVolumeReconciler) processNewSymlink(ctx context.Context, scName st
 		klog.V(4).Infof("found a dangling symlink for device %s and target %s", source, target)
 		newSymlinkTarget, err := currentDevice.GetSymlinkTargetPath(ctx, symLinkDirPath, source, r.Client)
 		if err != nil {
-			if lvdl, ok := common.PolicyNotPreferredLVDL(err); ok {
-				if _, updateErr := r.deviceLinkHandler.UpdateDeviceLinks(ctx, lvdl, diskLocation.BlockDevice, lvdl.Status.CurrentLinkTarget); updateErr != nil {
+			if lvdl, pvSymlinkPath, ok := common.PolicyNotPreferredLVDL(err); ok {
+				if _, updateErr := r.deviceLinkHandler.UpdateDeviceLinks(ctx, lvdl, diskLocation.BlockDevice, lvdl.Status.CurrentLinkTarget, pvSymlinkPath); updateErr != nil {
 					klog.ErrorS(updateErr, "failed to update LVDL PreferredLinkTarget", "lvdl", lvdl.Name)
 				}
 			}
@@ -659,8 +659,8 @@ func (r *LocalVolumeReconciler) processRejectedDevicesForDeviceLinks(ctx context
 
 			symlinkPath, err := common.HasExistingLocalVolumes(ctx, r.Client, symLinkDirPath, blockDevice, r.pvLinkCache)
 			if err != nil {
-				if lvdl, ok := common.PolicyNotPreferredLVDL(err); ok {
-					if _, updateErr := r.deviceLinkHandler.UpdateDeviceLinks(ctx, lvdl, blockDevice, lvdl.Status.CurrentLinkTarget); updateErr != nil {
+				if lvdl, symlinkPath, ok := common.PolicyNotPreferredLVDL(err); ok {
+					if _, updateErr := r.deviceLinkHandler.UpdateDeviceLinks(ctx, lvdl, blockDevice, lvdl.Status.CurrentLinkTarget, symlinkPath); updateErr != nil {
 						klog.ErrorS(updateErr, "failed to update LVDL PreferredLinkTarget", "lvdl", lvdl.Name)
 					}
 				}

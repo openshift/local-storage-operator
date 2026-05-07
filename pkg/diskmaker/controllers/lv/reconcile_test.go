@@ -789,6 +789,7 @@ func TestProcessRejectedDevicesForDeviceLinks(t *testing.T) {
 
 			if tc.seedCacheFromLVDL && lvdl != nil {
 				lvdl.Status.ValidLinkTargets = []string{preferredByID}
+				lvdl.Status.PersistentVolumeSymlinkPath = filepath.Join(tmpRoot, storageClassName, currentLink)
 				r.pvLinkCache = common.NewLocalVolumeDeviceLinkCache(r.Client, nil, testNodeName)
 				r.pvLinkCache.MarkSyncedForTests()
 				r.pvLinkCache.SeedForTests(lvdl)

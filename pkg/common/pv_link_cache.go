@@ -39,6 +39,7 @@ type LocalVolumeDeviceLinkCache struct {
 type PolicyNotPreferredError struct {
 	SymlinkSource string
 	SymlinkDir    string
+	PVSymlinkPath string
 	LVDL          *v1.LocalVolumeDeviceLink
 }
 
@@ -46,12 +47,12 @@ func (e PolicyNotPreferredError) Error() string {
 	return fmt.Sprintf("found stale symlink for %s in %s but policy is not PreferredLinkTarget", e.SymlinkSource, e.SymlinkDir)
 }
 
-func PolicyNotPreferredLVDL(err error) (*v1.LocalVolumeDeviceLink, bool) {
+func PolicyNotPreferredLVDL(err error) (*v1.LocalVolumeDeviceLink, string, bool) {
 	var policyErr PolicyNotPreferredError
 	if errors.As(err, &policyErr) && policyErr.LVDL != nil {
-		return policyErr.LVDL, true
+		return policyErr.LVDL, policyErr.PVSymlinkPath, true
 	}
-	return nil, false
+	return nil, "", false
 }
 
 type CurrentBlockDeviceInfo struct {
@@ -103,7 +104,7 @@ func (c CurrentBlockDeviceInfo) GetSymlinkTargetPath(ctx context.Context, symlin
 	policy := lvdl.Spec.Policy
 
 	if policy != v1.DeviceLinkPolicyPreferredLinkTarget {
-		return "", PolicyNotPreferredError{SymlinkSource: newSymlinkSourcePath, SymlinkDir: symlinkDir, LVDL: lvdl}
+		return "", PolicyNotPreferredError{SymlinkSource: newSymlinkSourcePath, SymlinkDir: symlinkDir, LVDL: lvdl, PVSymlinkPath: symlinkPath}
 	}
 
 	// check if currentLinkTarget resolves to a valid device, if yes then no need to do anything
