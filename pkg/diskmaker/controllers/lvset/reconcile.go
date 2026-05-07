@@ -584,7 +584,7 @@ func (r *LocalVolumeSetReconciler) processNewSymlink(
 	// if we are re-creating PV for an existing symlink in symlinkPath (usually /mnt/local-storage)
 	// then that symlink should be handled via processExistingSymlink() codepath
 	if found {
-		symlinkPath, err = currentDeviceInfo.GetSymlinkTargetPath(ctx, symLinkDir, symlinkSourcePath, r.Client)
+		symlinkPath, err = currentDeviceInfo.GetPVSymlinkPath(ctx, symLinkDir, symlinkSourcePath, r.Client)
 		if err != nil {
 			if lvdl, pvSymlinkPath, ok := common.PolicyNotPreferredLVDL(err); ok {
 				if _, updateErr := r.deviceLinkHandler.UpdateDeviceLinks(ctx, lvdl, blockDevice, lvdl.Status.CurrentLinkTarget, pvSymlinkPath); updateErr != nil {

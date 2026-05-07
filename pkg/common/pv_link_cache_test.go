@@ -22,7 +22,7 @@ const (
 	cacheOtherNode = "worker-b"
 )
 
-func TestCurrentBlockDeviceInfoGetSymlinkTargetPath(t *testing.T) {
+func TestCurrentBlockDeviceInfoGetPVSymlinkPath(t *testing.T) {
 	const (
 		symlinkDir = "/mnt/local-storage/sc-a"
 		sourcePath = "/dev/disk/by-id/wwn-1234"
@@ -257,7 +257,7 @@ func TestCurrentBlockDeviceInfoGetSymlinkTargetPath(t *testing.T) {
 			info, source := tc.setup(t, cache)
 			fakeClient := fakeClientForObjects(t, tc.apiObjects...)
 
-			gotPath, err := info.GetSymlinkTargetPath(context.TODO(), symlinkDir, source, fakeClient)
+			gotPath, err := info.GetPVSymlinkPath(context.TODO(), symlinkDir, source, fakeClient)
 
 			if tc.wantErr != "" {
 				assert.ErrorContains(t, err, tc.wantErr)

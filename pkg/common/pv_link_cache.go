@@ -60,7 +60,7 @@ type CurrentBlockDeviceInfo struct {
 	lvdls map[string]*v1.LocalVolumeDeviceLink
 }
 
-// GetSymlinkTargetPath returns a symlinkPath in /mnt/local-storage for Local volumes.
+// GetPVSymlinkPath returns a symlinkPath in /mnt/local-storage for Local volumes.
 // The purpose of this function is to return a new path which may or may not match with
 // actual source specified by newSymlinkSourcePath for existing symlinks.
 // For example - /dev/disk/by-id/wwn-0x12232 newSymlinkSourcePath may generate a targetpath
@@ -79,7 +79,7 @@ type CurrentBlockDeviceInfo struct {
 // Assuming existing currentLinkTarget somehow doesn't resolve, we could be in this code path.
 // Only return valid new SymlinkPath if currentLinkTarget doesn't resolve and user has asked
 // for symlinks to be recreated.
-func (c CurrentBlockDeviceInfo) GetSymlinkTargetPath(ctx context.Context, symlinkDir, newSymlinkSourcePath string, client client.Client) (string, error) {
+func (c CurrentBlockDeviceInfo) GetPVSymlinkPath(ctx context.Context, symlinkDir, newSymlinkSourcePath string, client client.Client) (string, error) {
 	lvdls := c.lvdls
 	if len(lvdls) > 1 {
 		return "", fmt.Errorf("more than one LocalVolumeDevicelink found for %s path", newSymlinkSourcePath)
