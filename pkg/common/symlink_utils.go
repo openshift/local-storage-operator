@@ -212,12 +212,12 @@ func HasExistingLocalVolumes(ctx context.Context, client client.Client, symlinkD
 		return "", err
 	}
 
-	currentDevice, found, err := pvLinkCache.FindStalePVs(symlinkSource, blockDevice)
+	currentDeviceInfo, found, err := pvLinkCache.FindLSOManagedDeviceInfo(symlinkSource, blockDevice)
 	if err != nil {
 		return "", err
 	}
 	if found {
-		newSymlinkTarget, err := currentDevice.GetSymlinkTargetPath(ctx, symlinkDir, symlinkSource, client)
+		newSymlinkTarget, err := currentDeviceInfo.GetSymlinkTargetPath(ctx, symlinkDir, symlinkSource, client)
 		if err != nil {
 			return "", err
 		}

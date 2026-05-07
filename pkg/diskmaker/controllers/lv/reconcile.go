@@ -564,13 +564,13 @@ func (r *LocalVolumeReconciler) processNewSymlink(ctx context.Context, scName st
 	diskLocation.SymlinkSource = source
 	diskLocation.SymlinkPath = target
 
-	currentDevice, found, err := r.pvLinkCache.FindStalePVs(source, diskLocation.BlockDevice)
+	currentDeviceInfo, found, err := r.pvLinkCache.FindLSOManagedDeviceInfo(source, diskLocation.BlockDevice)
 	if err != nil {
 		return false, err
 	}
 	if found {
 		klog.V(4).Infof("found a dangling symlink for device %s and target %s", source, target)
-		newSymlinkTarget, err := currentDevice.GetSymlinkTargetPath(ctx, symLinkDirPath, source, r.Client)
+		newSymlinkTarget, err := currentDeviceInfo.GetSymlinkTargetPath(ctx, symLinkDirPath, source, r.Client)
 		if err != nil {
 			if lvdl, pvSymlinkPath, ok := common.PolicyNotPreferredLVDL(err); ok {
 				if _, updateErr := r.deviceLinkHandler.UpdateDeviceLinks(ctx, lvdl, diskLocation.BlockDevice, lvdl.Status.CurrentLinkTarget, pvSymlinkPath); updateErr != nil {

@@ -427,7 +427,7 @@ func TestFindStalePVs(t *testing.T) {
 				c.addOrUpdateLVDL(lvdl)
 			}
 
-			info, found, err := c.FindStalePVs(tc.symlink, tc.blockDevice)
+			info, found, err := c.FindLSOManagedDeviceInfo(tc.symlink, tc.blockDevice)
 
 			if tc.wantErr != "" {
 				assert.ErrorContains(t, err, tc.wantErr)
