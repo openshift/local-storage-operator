@@ -570,7 +570,7 @@ func (r *LocalVolumeReconciler) processNewSymlink(ctx context.Context, scName st
 	}
 	if found {
 		klog.V(4).Infof("found a dangling symlink for device %s and target %s", source, target)
-		newSymlinkTarget, err := currentDeviceInfo.GetSymlinkTargetPath(ctx, symLinkDirPath, source, r.Client)
+		pvSymlinkPath, err := currentDeviceInfo.GetPVSymlinkPath(ctx, symLinkDirPath, source, r.Client)
 		if err != nil {
 			if lvdl, pvSymlinkPath, ok := common.PolicyNotPreferredLVDL(err); ok {
 				if _, updateErr := r.deviceLinkHandler.UpdateDeviceLinks(ctx, lvdl, diskLocation.BlockDevice, lvdl.Status.CurrentLinkTarget, pvSymlinkPath); updateErr != nil {
@@ -579,11 +579,11 @@ func (r *LocalVolumeReconciler) processNewSymlink(ctx context.Context, scName st
 			}
 			return false, err
 		}
-		klog.V(4).Infof("found new symlink to be %s for %s", newSymlinkTarget, source)
-		// newSymlinkTarget indicates a symlink for the source which possibly is a dangling symlink
+		klog.V(4).Infof("found new symlink to be %s for %s", pvSymlinkPath, source)
+		// pvSymlinkPath indicates a symlink for the source which possibly is a dangling symlink
 		// processExistingSymlink should fix it
-		diskLocation.SymlinkPath = newSymlinkTarget
-		err = r.processExistingSymlink(ctx, scName, newSymlinkTarget, diskLocation, mountPointMap)
+		diskLocation.SymlinkPath = pvSymlinkPath
+		err = r.processExistingSymlink(ctx, scName, pvSymlinkPath, diskLocation, mountPointMap)
 		if err != nil {
 			return false, err
 		}
