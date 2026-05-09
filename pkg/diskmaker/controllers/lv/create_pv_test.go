@@ -219,7 +219,7 @@ func TestCreatePV(t *testing.T) {
 				return "/dev/disk/by-id/wwn-null", nil
 			}
 
-			err := common.SyncLVAndLVDL(t.Context(), common.SyncLVAndLVDLArgs{
+			err := common.SyncPVAndLVDL(t.Context(), common.SyncPVAndLVDLArgs{
 				LocalVolumeLikeObject: &tc.lv,
 				RuntimeConfig:         r.runtimeConfig,
 				StorageClass:          tc.sc,
@@ -269,7 +269,7 @@ func TestCreatePV(t *testing.T) {
 			assert.Equal(t, *tc.sc.ReclaimPolicy, pv.Spec.PersistentVolumeReclaimPolicy)
 
 			// test idempotency by running again
-			err = common.SyncLVAndLVDL(t.Context(), common.SyncLVAndLVDLArgs{
+			err = common.SyncPVAndLVDL(t.Context(), common.SyncPVAndLVDLArgs{
 				LocalVolumeLikeObject: &tc.lv,
 				RuntimeConfig:         r.runtimeConfig,
 				StorageClass:          tc.sc,
@@ -364,7 +364,7 @@ func TestSyncLVAndLVDL_DeviceLinkArgOrder(t *testing.T) {
 		internal.CmdExecutor = diskmakertest.BlkidForDevicePathFakeExec(devPath, fakeUUID)
 	})
 
-	err := common.SyncLVAndLVDL(t.Context(), common.SyncLVAndLVDLArgs{
+	err := common.SyncPVAndLVDL(t.Context(), common.SyncPVAndLVDLArgs{
 		LocalVolumeLikeObject: &lv,
 		RuntimeConfig:         r.runtimeConfig,
 		StorageClass:          sc,
@@ -542,7 +542,7 @@ func TestSyncLVAndLVDL_DeviceLinkLifecycle(t *testing.T) {
 				internal.CmdExecutor = diskmakertest.BlkidForDevicePathFakeExec("/dev/null", "uuid-lifecycle")
 			})
 
-			err := common.SyncLVAndLVDL(t.Context(), common.SyncLVAndLVDLArgs{
+			err := common.SyncPVAndLVDL(t.Context(), common.SyncPVAndLVDLArgs{
 				LocalVolumeLikeObject: &lv,
 				RuntimeConfig:         r.runtimeConfig,
 				StorageClass:          sc,
