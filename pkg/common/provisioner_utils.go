@@ -44,8 +44,8 @@ func GenerateMountMap(runtimeConfig *provCommon.RuntimeConfig) (sets.Set[string]
 	return mountPointMap, nil
 }
 
-// SyncLVAndLVDLArgs holds the arguments for LocalVolume and LocalVolumeDeviceLink synchronization.
-type SyncLVAndLVDLArgs struct {
+// SyncPVAndLVDLArgs holds the arguments for PV and LocalVolumeDeviceLink synchronization.
+type SyncPVAndLVDLArgs struct {
 	LocalVolumeLikeObject runtime.Object
 	RuntimeConfig         *provCommon.RuntimeConfig
 	StorageClass          storagev1.StorageClass
@@ -65,8 +65,8 @@ type SyncLVAndLVDLArgs struct {
 	CacheWriter *LocalVolumeDeviceLinkCache
 }
 
-// SyncLVAndLVDL ensures the PV exists for a symlinked device and keeps its LocalVolumeDeviceLink in sync.
-func SyncLVAndLVDL(ctx context.Context, args SyncLVAndLVDLArgs) error {
+// SyncPVAndLVDL ensures the PV exists for a symlinked device and keeps its LocalVolumeDeviceLink in sync.
+func SyncPVAndLVDL(ctx context.Context, args SyncPVAndLVDLArgs) error {
 	obj := args.LocalVolumeLikeObject
 	runtimeConfig := args.RuntimeConfig
 	storageClass := args.StorageClass

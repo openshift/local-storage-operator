@@ -233,7 +233,7 @@ func TestCreatePV(t *testing.T) {
 			}
 			testConfig.fakeVolUtil.AddNewDirEntries("/mnt/local-storage/", dirFiles)
 
-			err := common.SyncLVAndLVDL(t.Context(), common.SyncLVAndLVDLArgs{
+			err := common.SyncPVAndLVDL(t.Context(), common.SyncPVAndLVDLArgs{
 				LocalVolumeLikeObject: &tc.lvset,
 				RuntimeConfig:         r.runtimeConfig,
 				StorageClass:          tc.sc,
@@ -283,7 +283,7 @@ func TestCreatePV(t *testing.T) {
 			assert.Equal(t, *tc.sc.ReclaimPolicy, pv.Spec.PersistentVolumeReclaimPolicy)
 
 			// test idempotency by running again
-			err = common.SyncLVAndLVDL(t.Context(), common.SyncLVAndLVDLArgs{
+			err = common.SyncPVAndLVDL(t.Context(), common.SyncPVAndLVDLArgs{
 				LocalVolumeLikeObject: &tc.lvset,
 				RuntimeConfig:         r.runtimeConfig,
 				StorageClass:          tc.sc,
@@ -359,7 +359,7 @@ func TestCreatePV_SetsLVDLOwnerRefToLocalVolumeSet(t *testing.T) {
 		}
 	})
 
-	err := common.SyncLVAndLVDL(t.Context(), common.SyncLVAndLVDLArgs{
+	err := common.SyncPVAndLVDL(t.Context(), common.SyncPVAndLVDLArgs{
 		LocalVolumeLikeObject: &lvset,
 		RuntimeConfig:         r.runtimeConfig,
 		StorageClass:          sc,

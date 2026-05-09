@@ -662,7 +662,7 @@ func (r *LocalVolumeSetReconciler) createSymlinkAndSyncPVAndLVDL(
 		}
 	}
 
-	syncArgs := common.SyncLVAndLVDLArgs{
+	syncArgs := common.SyncPVAndLVDLArgs{
 		LocalVolumeLikeObject: obj,
 		RuntimeConfig:         r.runtimeConfig,
 		StorageClass:          storageClass,
@@ -679,7 +679,7 @@ func (r *LocalVolumeSetReconciler) createSymlinkAndSyncPVAndLVDL(
 	if len(existingSymlinks) > 0 { // already claimed
 		for _, path := range existingSymlinks {
 			if path == symlinkPath { // symlinked in this folder, ensure the PV exists
-				return common.SyncLVAndLVDL(ctx, syncArgs)
+				return common.SyncPVAndLVDL(ctx, syncArgs)
 			}
 		}
 		err := fmt.Errorf("found existing symlinks for device %s in %s", dev.KName, filepath.Dir(symLinkDir))
@@ -708,13 +708,13 @@ func (r *LocalVolumeSetReconciler) createSymlinkAndSyncPVAndLVDL(
 				// existing file evals to disk
 			} else if valid {
 				// if file exists and is accurate symlink, create pv
-				return common.SyncLVAndLVDL(ctx, syncArgs)
+				return common.SyncPVAndLVDL(ctx, syncArgs)
 			}
 		}
 	} else if err != nil {
 		return err
 	}
-	return common.SyncLVAndLVDL(ctx, syncArgs)
+	return common.SyncPVAndLVDL(ctx, syncArgs)
 }
 
 func (r *LocalVolumeSetReconciler) syncExistingPVAndLVDL(
@@ -724,7 +724,7 @@ func (r *LocalVolumeSetReconciler) syncExistingPVAndLVDL(
 	storageClass storagev1.StorageClass,
 	mountPointMap sets.Set[string],
 	symlinkPath string) error {
-	syncArgs := common.SyncLVAndLVDLArgs{
+	syncArgs := common.SyncPVAndLVDLArgs{
 		LocalVolumeLikeObject: obj,
 		RuntimeConfig:         r.runtimeConfig,
 		StorageClass:          storageClass,
@@ -736,5 +736,5 @@ func (r *LocalVolumeSetReconciler) syncExistingPVAndLVDL(
 		BlockDevice:           blockDevice,
 		CacheWriter:           r.pvLinkCache,
 	}
-	return common.SyncLVAndLVDL(ctx, syncArgs)
+	return common.SyncPVAndLVDL(ctx, syncArgs)
 }
