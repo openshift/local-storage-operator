@@ -1690,3 +1690,94 @@ func TestUpdateMissingDevicePathMetrics(t *testing.T) {
 		})
 	}
 }
+
+func TestUpdateOrphanedSymlinkMetrics(t *testing.T) {
+	const testNodeName = "node-orphan-test"
+
+	tests := []struct {
+		name            string
+		devicePaths     []string
+		allBlockDevices []internal.BlockDevice
+		// symlinks maps basename -> resolved device name (e.g. "sda")
+		symlinks        map[string]string
+		evalSymlinkFn   func(string) (string, error)
+		expectedOrphans float64
+	}{
+		{
+			name:        "in-use device with bind mounts is not counted as orphan",
+			devicePaths: []string{"/dev/sda"},
+			allBlockDevices: []internal.BlockDevice{
+				{KName: "sda", Name: "sda"},
+			},
+			symlinks: map[string]string{"sda": "sda"},
+			evalSymlinkFn: func(path string) (string, error) {
+				return "/dev/sda", nil
+			},
+			expectedOrphans: 0,
+		},
+		{
+			name:        "device removed from spec is counted as orphan",
+			devicePaths: []string{"/dev/sdb"},
+			allBlockDevices: []internal.BlockDevice{
+				{KName: "sda", Name: "sda"},
+				{KName: "sdb", Name: "sdb"},
+			},
+			symlinks: map[string]string{"sda": "sda", "sdb": "sdb"},
+			evalSymlinkFn: func(path string) (string, error) {
+				return path, nil
+			},
+			expectedOrphans: 1,
+		},
+		{
+			name:        "no orphans when all symlinks match spec",
+			devicePaths: []string{"/dev/sda", "/dev/sdb"},
+			allBlockDevices: []internal.BlockDevice{
+				{KName: "sda", Name: "sda"},
+				{KName: "sdb", Name: "sdb"},
+			},
+			symlinks: map[string]string{"sda": "sda", "sdb": "sdb"},
+			evalSymlinkFn: func(path string) (string, error) {
+				return path, nil
+			},
+			expectedOrphans: 0,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			tmpRoot := diskmakertest.TempDir(t, "orphan-metrics-")
+			scDir := filepath.Join(tmpRoot, storageClassName)
+			assert.NoError(t, os.MkdirAll(scDir, 0755))
+
+			for name, target := range tc.symlinks {
+				assert.NoError(t, os.Symlink("/dev/"+target, filepath.Join(scDir, name)))
+			}
+
+			d, _ := getFakeDiskMaker(t, tmpRoot)
+			d.fsInterface = stubFileSystemInterface{evalFunc: tc.evalSymlinkFn}
+
+			diskConfig := &DiskConfig{
+				Disks: map[string]*Disks{
+					storageClassName: {DevicePaths: tc.devicePaths},
+				},
+			}
+
+			origNodeName := nodeName
+			nodeName = testNodeName
+			t.Cleanup(func() { nodeName = origNodeName })
+
+			diskmakertest.WithInternalMocks(t, func() {
+				internal.FilePathEvalSymLinks = func(path string) (string, error) {
+					return filepath.EvalSymlinks(path)
+				}
+				internal.FilePathGlob = filepath.Glob
+			})
+
+			d.updateOrphanedSymlinkMetrics(tc.allBlockDevices, diskConfig)
+
+			pb := &dto.Metric{}
+			assert.NoError(t, localmetrics.LVOrphanedSymlinksGauge(testNodeName, storageClassName).Write(pb))
+			assert.Equal(t, tc.expectedOrphans, pb.GetGauge().GetValue())
+		})
+	}
+}

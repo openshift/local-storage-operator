@@ -385,13 +385,14 @@ func (r *LocalVolumeReconciler) Reconcile(ctx context.Context, request ctrl.Requ
 		r.processValidDevices(ctx, validBlockDevices, diskConfig, mountPointMap)
 	}
 
+	r.updateOrphanedSymlinkMetrics(blockDevices, diskConfig)
+
 	return ctrl.Result{Requeue: true, RequeueAfter: r.effectiveRequeueTime}, nil
 }
 
 func (r *LocalVolumeReconciler) processValidDevices(ctx context.Context, validDevices []internal.BlockDevice, diskConfig *DiskConfig, mountPointMap sets.Set[string]) {
 	for storageClass, disks := range diskConfig.Disks {
 		var totalProvisionedPVs int
-		var blockDeviceList []internal.BlockDevice
 
 		devicePaths := disks.DevicePaths
 		forceWipe := disks.ForceWipeDevicesAndDestroyAllData
@@ -408,13 +409,31 @@ func (r *LocalVolumeReconciler) processValidDevices(ctx context.Context, validDe
 				continue
 			}
 
-			blockDeviceList = append(blockDeviceList, deviceLocation.BlockDevice)
 			if r.provisionValidDevice(ctx, storageClass, symLinkDirPath, devicePath, deviceLocation, mountPointMap) {
 				totalProvisionedPVs += 1
 			}
 		}
 		localmetrics.SetLVProvisionedPVMetric(nodeName, storageClass, totalProvisionedPVs)
-		orphanSymlinkDevices, err := internal.GetOrphanedSymlinks(symLinkDirPath, blockDeviceList)
+	}
+}
+
+// updateOrphanedSymlinkMetrics resolves each spec devicePath against the full
+// (unfiltered) block device list so that in-use devices with bind mounts or
+// children are still recognised as spec-managed and not counted as orphaned.
+func (r *LocalVolumeReconciler) updateOrphanedSymlinkMetrics(allBlockDevices []internal.BlockDevice, diskConfig *DiskConfig) {
+	for storageClass, disks := range diskConfig.Disks {
+		var specDevices []internal.BlockDevice
+		symLinkDirPath := path.Join(r.symlinkLocation, storageClass)
+
+		for _, devicePath := range disks.DevicePaths {
+			deviceLocation, matched, err := r.resolveValidDeviceLocation(devicePath, false, allBlockDevices)
+			if err != nil || !matched {
+				continue
+			}
+			specDevices = append(specDevices, deviceLocation.BlockDevice)
+		}
+
+		orphanSymlinkDevices, err := internal.GetOrphanedSymlinks(symLinkDirPath, specDevices)
 		if err != nil {
 			klog.ErrorS(err, "failed to get orphaned symlink devices in current reconcile")
 		}
@@ -424,7 +443,6 @@ func (r *LocalVolumeReconciler) processValidDevices(ctx context.Context, validDe
 				"scName", storageClass, "orphanedDevices", orphanSymlinkDevices)
 		}
 
-		// update metrics for orphaned symlink devices
 		localmetrics.SetLVOrphanedSymlinksMetric(nodeName, storageClass, len(orphanSymlinkDevices))
 	}
 }

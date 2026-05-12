@@ -307,7 +307,8 @@ func (r *LocalVolumeSetReconciler) Reconcile(ctx context.Context, request ctrl.R
 	// update metrics for total persistent volumes provisioned
 	localmetrics.SetLVSProvisionedPVMetric(nodeName, storageClassName, totalProvisionedPVs)
 
-	orphanSymlinkDevices, err := internal.GetOrphanedSymlinks(symLinkDir, validDevices)
+	specMatchedDevices := getSpecMatchedDevices(lvset, blockDevices)
+	orphanSymlinkDevices, err := internal.GetOrphanedSymlinks(symLinkDir, specMatchedDevices)
 	if err != nil {
 		klog.ErrorS(err, "failed to get orphaned symlink devices in current reconcile")
 	}
@@ -500,6 +501,47 @@ DeviceLoop:
 
 	}
 	return validDevices, delayedDevices, rejectedDevices
+}
+
+// getSpecMatchedDevices returns devices that match the LVSet's inclusion and
+// exclusion spec criteria, ignoring provisioning-eligibility filters (such as
+// filesystem signature, exclusive access, bind mounts). This broader list is
+// used for orphan detection so that already-provisioned devices are not
+// incorrectly counted as orphaned.
+func getSpecMatchedDevices(
+	lvset *localv1alpha1.LocalVolumeSet,
+	blockDevices []internal.BlockDevice,
+) []internal.BlockDevice {
+	matched := make([]internal.BlockDevice, 0)
+DeviceLoop:
+	for _, blockDevice := range blockDevices {
+		for name, matcher := range matcherMap {
+			valid, err := matcher(blockDevice, lvset.Spec.DeviceInclusionSpec)
+			if err != nil {
+				klog.ErrorS(err, "spec match error", "device",
+					blockDevice.Name, "matcher", name)
+				continue DeviceLoop
+			}
+			if !valid {
+				continue DeviceLoop
+			}
+		}
+
+		for name, excluder := range exclusionMap {
+			valid, err := excluder(blockDevice, lvset.Spec.DeviceExclusionSpec)
+			if err != nil {
+				klog.ErrorS(err, "spec exclusion error", "device",
+					blockDevice.Name, "excluder", name)
+				continue DeviceLoop
+			}
+			if !valid {
+				continue DeviceLoop
+			}
+		}
+
+		matched = append(matched, blockDevice)
+	}
+	return matched
 }
 
 // getAlreadySymlinked returns:
