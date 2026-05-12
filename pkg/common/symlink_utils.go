@@ -217,7 +217,7 @@ func HasExistingLocalVolumes(ctx context.Context, client client.Client, symlinkD
 		return "", err
 	}
 	if found {
-		pvSymlinkPath, err := currentDeviceInfo.GetPVSymlinkPath(ctx, symlinkDir, symlinkSource, client)
+		pvSymlinkPath, err := currentDeviceInfo.RecoverPVSymlinkPath(ctx, symlinkDir, symlinkSource, client)
 		if err != nil {
 			return "", err
 		}
