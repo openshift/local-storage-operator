@@ -39,7 +39,11 @@ type CurrentBlockDeviceInfo struct {
 	lvdls map[string]*v1.LocalVolumeDeviceLink
 }
 
-// GetPVSymlinkPath returns a symlinkPath in /mnt/local-storage for Local volumes.
+// RecoverPVSymlinkPath finds a symlinkPath in /mnt/local-storage from
+// LVDL for a given newSymlinkSourcePath. If the symlinkPath needs
+// to change and the LVDL policy is not to update existing symlinks,
+// then PolicyNotPreferredError error is returned.
+//
 // The purpose of this function is to return a new path which may or may not match with
 // actual source specified by newSymlinkSourcePath for existing symlinks.
 // For example - /dev/disk/by-id/wwn-0x12232 newSymlinkSourcePath may generate a targetpath
@@ -55,10 +59,12 @@ type CurrentBlockDeviceInfo struct {
 //
 //	example - /dev/disk/by-id/wwn-0x123432
 //
-// Assuming existing currentLinkTarget somehow doesn't resolve, we could be in this code path.
+// This function MUST be called only when there is no valid symlinks for `newSymlinkSourcePath`
+// in `/mnt/local-storage/<sc>` and yet LSO MUST have created a PV for device pointed by `newSymlinkSourcePath`
+// in previously. So this function is our last resort to find a valid symlink path for PV.
 // Only return valid new SymlinkPath if currentLinkTarget doesn't resolve and user has asked
 // for symlinks to be recreated.
-func (c CurrentBlockDeviceInfo) GetPVSymlinkPath(ctx context.Context, symlinkDir, newSymlinkSourcePath string, client client.Client) (string, error) {
+func (c CurrentBlockDeviceInfo) RecoverPVSymlinkPath(ctx context.Context, symlinkDir, newSymlinkSourcePath string, client client.Client) (string, error) {
 	lvdls := c.lvdls
 	if len(lvdls) > 1 {
 		return "", fmt.Errorf("more than one LocalVolumeDevicelink found for %s path", newSymlinkSourcePath)
