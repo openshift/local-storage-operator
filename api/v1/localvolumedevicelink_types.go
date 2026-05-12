@@ -95,6 +95,16 @@ type LocalVolumeDeviceLinkStatus struct {
 	// +listType=set
 	// +kubebuilder:validation:MaxItems=256
 	ValidLinkTargets []string `json:"validLinkTargets,omitempty"`
+	// persistentVolumeSymlinkPath is the symlink in /mnt/local-storage directory that points to
+	// the actual local device.
+	// This path is used by corresponding PersistentVolume (PV) object for all operations (e.g. mount).
+	// LSO creates and updates this symlink for the whole lifetime of the PV.
+	// This field is immutable once set, because the path in the corresponding
+	// PV object is immutable too.
+	// +optional
+	// +kubebuilder:validation:MaxLength=4096
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf || oldSelf == ''",message="persistentVolumeSymlinkPath is immutable once set"
+	PersistentVolumeSymlinkPath string `json:"persistentVolumeSymlinkPath,omitempty"`
 	// filesystemUUID is the UUID of the filesystem found on the device (when available)
 	// +optional
 	// +kubebuilder:validation:MinLength=1

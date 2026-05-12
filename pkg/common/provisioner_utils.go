@@ -285,7 +285,7 @@ func CreateLocalPV(ctx context.Context, args CreateLocalPVArgs) error {
 	// ApplyStatus creates/updates the LVDL after the PV exists. Skip it when
 	// RecreateSymlinkIfNeeded already updated the LVDL status above.
 	if !requiresSymlinkRecreation {
-		if _, err := deviceHandler.ApplyStatus(ctx, pvName, namespace, args.BlockDevice, obj, effectiveCurrentSource); err != nil {
+		if _, err := deviceHandler.ApplyStatus(ctx, pvName, namespace, args.BlockDevice, obj, effectiveCurrentSource, symLinkPath); err != nil {
 			return fmt.Errorf("error applying device link status: %w", err)
 		}
 	}
