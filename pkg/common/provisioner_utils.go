@@ -44,8 +44,8 @@ func GenerateMountMap(runtimeConfig *provCommon.RuntimeConfig) (sets.Set[string]
 	return mountPointMap, nil
 }
 
-// CreateLocalPVArgs holds the arguments for CreateLocalPV.
-type CreateLocalPVArgs struct {
+// SyncPVAndLVDLArgs holds the arguments for PV and LocalVolumeDeviceLink synchronization.
+type SyncPVAndLVDLArgs struct {
 	LocalVolumeLikeObject runtime.Object
 	RuntimeConfig         *provCommon.RuntimeConfig
 	StorageClass          storagev1.StorageClass
@@ -65,9 +65,8 @@ type CreateLocalPVArgs struct {
 	CacheWriter *LocalVolumeDeviceLinkCache
 }
 
-// CreateLocalPV is used to create a local PV against a symlink
-// after passing the same validations against that symlink that local-static-provisioner uses
-func CreateLocalPV(ctx context.Context, args CreateLocalPVArgs) error {
+// SyncPVAndLVDL ensures the PV exists for a symlinked device and keeps its LocalVolumeDeviceLink in sync.
+func SyncPVAndLVDL(ctx context.Context, args SyncPVAndLVDLArgs) error {
 	obj := args.LocalVolumeLikeObject
 	runtimeConfig := args.RuntimeConfig
 	storageClass := args.StorageClass
@@ -113,7 +112,10 @@ func CreateLocalPV(ctx context.Context, args CreateLocalPVArgs) error {
 		return fmt.Errorf("name: %q, namespace: %q, or  kind: %q is empty for obj: %+v", name, namespace, kind, obj)
 	}
 
-	deviceHandler := NewDeviceLinkHandler(client, args.ClientReader, args.RuntimeConfig.Recorder, args.CacheWriter, args.RuntimeConfig.Node.Name)
+	deviceHandler, err := NewDeviceLinkHandler(client, args.ClientReader, args.RuntimeConfig.Recorder, args.CacheWriter, args.RuntimeConfig.Node.Name)
+	if err != nil {
+		return err
+	}
 	klog.V(4).Infof("finding lvdl %s %s", pvName, namespace)
 	lvdl, err := deviceHandler.FindLVDL(ctx, pvName, namespace)
 	if err != nil && !apierrors.IsNotFound(err) {

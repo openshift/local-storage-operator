@@ -4,14 +4,10 @@ import (
 	"context"
 	"fmt"
 	"maps"
-	"path/filepath"
-	"slices"
 	"sync"
 
 	v1 "github.com/openshift/local-storage-operator/api/v1"
 	"github.com/openshift/local-storage-operator/pkg/internal"
-	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/types"
 	k8scache "k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
@@ -33,106 +29,6 @@ type LocalVolumeDeviceLinkCache struct {
 	localNodeName string
 	// map of symlinkName in /dev/disk/byid and CurrentBlockDeviceInfo
 	localDeviceInfos map[string]CurrentBlockDeviceInfo
-}
-
-type CurrentBlockDeviceInfo struct {
-	// map of lvdlname and LocalVolumeDeviceLink
-	lvdls map[string]*v1.LocalVolumeDeviceLink
-}
-
-// GetSymlinkTargetPath returns a symlinkPath in /mnt/local-storage for Local volumes.
-// The purpose of this function is to return a new path which may or may not match with
-// actual source specified by newSymlinkSourcePath for existing symlinks.
-// For example - /dev/disk/by-id/wwn-0x12232 newSymlinkSourcePath may generate a targetpath
-// called /mnt/local-storage/foobar/scsi-23232 because scsi-xxx path is already being used
-// by existing volumes.
-//
-// Arguments:
-// symlinkDir is path in /mnt/local-storage with storageclass name:
-//
-//	example - /mnt/local-storage/foobar/
-//
-// newSymlinkSourcePath is path in /dev/disk/by-id which points to current device:
-//
-//	example - /dev/disk/by-id/wwn-0x123432
-//
-// Assuming existing currentLinkTarget somehow doesn't resolve, we could be in this code path.
-// Only return valid new SymlinkPath if currentLinkTarget doesn't resolve and user has asked
-// for symlinks to be recreated.
-func (c CurrentBlockDeviceInfo) GetSymlinkTargetPath(ctx context.Context, symlinkDir, newSymlinkSourcePath string, client client.Client) (string, error) {
-	lvdls := c.lvdls
-	if len(lvdls) > 1 {
-		return "", fmt.Errorf("more than one LocalVolumeDevicelink found for %s path", newSymlinkSourcePath)
-	}
-
-	// this should NEVER happen, because we always insert an lvdl objects
-	if len(lvdls) == 0 {
-		return "", fmt.Errorf("unexpected empty lvdl set for symlink %s", newSymlinkSourcePath)
-	}
-
-	lvdl, symlinkPath, err := c.getLVDLAndSymlinkPath(ctx, client)
-	if err != nil {
-		return "", err
-	}
-	discoveredSymlinkDir := filepath.Dir(symlinkPath)
-	if discoveredSymlinkDir != symlinkDir {
-		// A single device is used by multiple objects with different StorageClasses (= different symlinkDirs). That should never happen.
-		return "", fmt.Errorf("discovered symlink directory %s does not match expected symlink directory %s for device %s - is this device matched by multiple LocalVolumes / LocalVolumeSets?", discoveredSymlinkDir, symlinkDir, newSymlinkSourcePath)
-	}
-	currentLinkTarget := lvdl.Status.CurrentLinkTarget
-	validLinkTargets := lvdl.Status.ValidLinkTargets
-	policy := lvdl.Spec.Policy
-
-	if policy != v1.DeviceLinkPolicyPreferredLinkTarget {
-		return "", fmt.Errorf("found stale symlink link for %s in %s", newSymlinkSourcePath, symlinkDir)
-	}
-
-	// check if currentLinkTarget resolves to a valid device, if yes then no need to do anything
-	resolvedCurrent, err := internal.FilePathEvalSymLinks(currentLinkTarget)
-	if err == nil {
-		return "", fmt.Errorf("currentSymlink %s still resolves to %s for %s", currentLinkTarget, resolvedCurrent, newSymlinkSourcePath)
-	}
-
-	if slices.Contains(validLinkTargets, newSymlinkSourcePath) {
-		return symlinkPath, nil
-	}
-	klog.Warningf("symlink source %s is not recorded in valid symlink target, but has stale PVs that use the device", newSymlinkSourcePath)
-	return symlinkPath, nil
-}
-
-// getLVDLAndSymlinkPath returns the LVDL and the symlink path for the current device.
-// The symlink path is either:
-// 1. The symlink path from LVDL status, if available.
-// 2. The symlink path from the PV, if not available in LVDL status.
-func (c CurrentBlockDeviceInfo) getLVDLAndSymlinkPath(ctx context.Context, client client.Client) (*v1.LocalVolumeDeviceLink, string, error) {
-	var lvdl *v1.LocalVolumeDeviceLink
-	for _, v := range c.lvdls {
-		lvdl = v
-		break
-	}
-	if lvdl == nil {
-		// this should never happen, because the cache is populated with at least one LVDL.
-		return nil, "", fmt.Errorf("unexpected empty lvdl set for symlink")
-	}
-	// Prefer the symlinkPath from LVDL, it is available right away from the cache.
-	// It's set together with the path in PV when the PV is created and it's immutable afterwards.
-	// (Unless the LVDL was created before the symlinkPath field was added to LVDL and then it's set at the earliest opportunity).
-	if lvdl.Status.PersistentVolumeSymlinkPath != "" {
-		klog.V(4).Infof("found persistentVolumeSymlinkPath path %s from LVDL %s status", lvdl.Status.PersistentVolumeSymlinkPath, lvdl.Name)
-		return lvdl, lvdl.Status.PersistentVolumeSymlinkPath, nil
-	}
-	// if the symlink path is not set in LVDL, we need to read it from the PV.
-	pv := &corev1.PersistentVolume{}
-	if err := client.Get(ctx, types.NamespacedName{Name: lvdl.Spec.PersistentVolumeName}, pv); err != nil {
-		return lvdl, "", fmt.Errorf("error getting associated pv object %s: %v", lvdl.Name, err)
-	}
-	if pv.Spec.Local == nil || pv.Spec.Local.Path == "" {
-		return lvdl, "", fmt.Errorf("pv %s has empty local path", pv.Name)
-	}
-
-	symlinkPath := pv.Spec.Local.Path
-	klog.V(4).Infof("found symlink path %s from PV %s", symlinkPath, pv.Name)
-	return lvdl, symlinkPath, nil
 }
 
 func NewLocalVolumeDeviceLinkCache(client client.Client, mgr manager.Manager, localNodeName string) *LocalVolumeDeviceLinkCache {
@@ -221,7 +117,9 @@ func (l *LocalVolumeDeviceLinkCache) watchForEvents(informer cache.Informer) (k8
 	})
 }
 
-func (l *LocalVolumeDeviceLinkCache) FindStalePVs(symlink string, blockDevice internal.BlockDevice) (CurrentBlockDeviceInfo, bool, error) {
+// FindLSOManagedDeviceInfo finds LSO managed device information available about this block device. It checks if device was in-use or managed by LSO.
+// It currently uses LVDLs to determine that.
+func (l *LocalVolumeDeviceLinkCache) FindLSOManagedDeviceInfo(symlink string, blockDevice internal.BlockDevice) (CurrentBlockDeviceInfo, bool, error) {
 	l.mu.RLock()
 	defer l.mu.RUnlock()
 	info, ok := l.localDeviceInfos[symlink]
