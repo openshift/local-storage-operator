@@ -22,7 +22,7 @@ const (
 	cacheOtherNode = "worker-b"
 )
 
-func TestCurrentBlockDeviceInfoGetSymlinkTargetPath(t *testing.T) {
+func TestCurrentBlockDeviceInfoRecoverPVSymlinkPath(t *testing.T) {
 	const (
 		symlinkDir = "/mnt/local-storage/sc-a"
 		sourcePath = "/dev/disk/by-id/wwn-1234"
@@ -70,7 +70,7 @@ func TestCurrentBlockDeviceInfoGetSymlinkTargetPath(t *testing.T) {
 			apiObjects: []client.Object{
 				localPV("pv-none", "/mnt/local-storage/sc-a/current-none"),
 			},
-			wantErr: "found stale symlink link",
+			wantErr: "policy is not PreferredLinkTarget",
 		},
 		{
 			name: "errors when current link still resolves",
@@ -257,7 +257,7 @@ func TestCurrentBlockDeviceInfoGetSymlinkTargetPath(t *testing.T) {
 			info, source := tc.setup(t, cache)
 			fakeClient := fakeClientForObjects(t, tc.apiObjects...)
 
-			gotPath, err := info.GetSymlinkTargetPath(context.TODO(), symlinkDir, source, fakeClient)
+			gotPath, err := info.RecoverPVSymlinkPath(context.TODO(), symlinkDir, source, fakeClient)
 
 			if tc.wantErr != "" {
 				assert.ErrorContains(t, err, tc.wantErr)
@@ -427,7 +427,7 @@ func TestFindStalePVs(t *testing.T) {
 				c.addOrUpdateLVDL(lvdl)
 			}
 
-			info, found, err := c.FindStalePVs(tc.symlink, tc.blockDevice)
+			info, found, err := c.FindLSOManagedDeviceInfo(tc.symlink, tc.blockDevice)
 
 			if tc.wantErr != "" {
 				assert.ErrorContains(t, err, tc.wantErr)

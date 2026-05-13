@@ -40,14 +40,17 @@ type DeviceLinkHandler struct {
 	nodeName     string
 }
 
-func NewDeviceLinkHandler(client client.Client, clientReader client.Reader, recorder record.EventRecorder, cacheWriter *LocalVolumeDeviceLinkCache, nodeName string) *DeviceLinkHandler {
+func NewDeviceLinkHandler(client client.Client, clientReader client.Reader, recorder record.EventRecorder, cacheWriter *LocalVolumeDeviceLinkCache, nodeName string) (*DeviceLinkHandler, error) {
+	if nodeName == "" {
+		return nil, fmt.Errorf("node name is required for DeviceLinkHandler")
+	}
 	return &DeviceLinkHandler{
 		client:       client,
 		clientReader: clientReader,
 		recorder:     recorder,
 		cacheWriter:  cacheWriter,
 		nodeName:     nodeName,
-	}
+	}, nil
 }
 
 func (dl *DeviceLinkHandler) createLVDL(ctx context.Context, pvName, namespace string, ownerObj runtime.Object) (*v1.LocalVolumeDeviceLink, error) {
@@ -151,15 +154,19 @@ func (dl *DeviceLinkHandler) ApplyStatus(ctx context.Context, pvName, namespace 
 		return nil, err
 	}
 
+	return dl.UpdateDeviceLinks(ctx, existing, blockDevice, currentSymlink, symlinkPath)
+}
+
+func (dl *DeviceLinkHandler) UpdateDeviceLinks(ctx context.Context, existing *v1.LocalVolumeDeviceLink, blockDevice internal.BlockDevice, currentSymlink, symlinkPath string) (*v1.LocalVolumeDeviceLink, error) {
 	copyToUpdate := existing.DeepCopy()
-	copyToUpdate, err = dl.setStatusSymlinks(copyToUpdate, blockDevice, "", currentSymlink, symlinkPath)
+	copyToUpdate, err := dl.setStatusSymlinks(copyToUpdate, blockDevice, "", currentSymlink, symlinkPath)
 	if err != nil {
 		klog.ErrorS(err, "error setting status symlinks")
 		return existing, err
 	}
 
 	if equality.Semantic.DeepEqual(existing.Status, copyToUpdate.Status) {
-		klog.V(4).Infof("updating lvdl %s status is not required", pvName)
+		klog.V(4).Infof("updating lvdl %s status is not required", existing.Name)
 		return existing, nil
 	}
 

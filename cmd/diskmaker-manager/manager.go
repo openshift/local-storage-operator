@@ -115,7 +115,7 @@ func startManager(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	if err = diskmakerControllerLv.NewLocalVolumeReconciler(
+	lvReconciler, err := diskmakerControllerLv.NewLocalVolumeReconciler(
 		mgr.GetClient(),
 		mgr.GetAPIReader(),
 		mgr.GetScheme(),
@@ -123,12 +123,17 @@ func startManager(cmd *cobra.Command, args []string) error {
 		&provDeleter.CleanupStatusTracker{ProcTable: provDeleter.NewProcTable()},
 		getRuntimeConfig(diskmakerControllerLv.ComponentName, mgr),
 		pvLinkCache,
-	).WithManager(mgr); err != nil {
+	)
+	if err != nil {
+		klog.ErrorS(err, "unable to create LocalVolume diskmaker reconciler")
+		return err
+	}
+	if err = lvReconciler.WithManager(mgr); err != nil {
 		klog.ErrorS(err, "unable to create LocalVolume diskmaker controller")
 		return err
 	}
 
-	if err = diskmakerControllerLvSet.NewLocalVolumeSetReconciler(
+	lvSetReconciler, err := diskmakerControllerLvSet.NewLocalVolumeSetReconciler(
 		mgr.GetClient(),
 		mgr.GetAPIReader(),
 		mgr.GetScheme(),
@@ -136,7 +141,12 @@ func startManager(cmd *cobra.Command, args []string) error {
 		&provDeleter.CleanupStatusTracker{ProcTable: provDeleter.NewProcTable()},
 		getRuntimeConfig(diskmakerControllerLvSet.ComponentName, mgr),
 		pvLinkCache,
-	).WithManager(mgr); err != nil {
+	)
+	if err != nil {
+		klog.ErrorS(err, "unable to create LocalVolumeSet diskmaker reconciler")
+		return err
+	}
+	if err = lvSetReconciler.WithManager(mgr); err != nil {
 		klog.ErrorS(err, "unable to create LocalVolumeSet diskmaker controller")
 		return err
 	}
