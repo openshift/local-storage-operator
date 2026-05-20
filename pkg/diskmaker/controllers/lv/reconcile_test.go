@@ -1768,7 +1768,11 @@ func TestUpdateOrphanedSymlinkMetrics(t *testing.T) {
 
 			diskmakertest.WithInternalMocks(t, func() {
 				internal.FilePathEvalSymLinks = func(path string) (string, error) {
-					return filepath.EvalSymlinks(path)
+					target, err := os.Readlink(path)
+					if err != nil {
+						return filepath.EvalSymlinks(path)
+					}
+					return target, nil
 				}
 				internal.FilePathGlob = filepath.Glob
 			})
