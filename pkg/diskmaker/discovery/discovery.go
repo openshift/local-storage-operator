@@ -254,7 +254,7 @@ func getDeviceStatus(dev internal.BlockDevice) v1alpha1.DeviceStatus {
 		return status
 	}
 
-	noBiosBootInPartLabel, err := lvset.FilterMap["noBiosBootInPartLabel"](dev, nil)
+	noBiosBootInPartLabel, err := lvset.DefaultFilterMap["noBiosBootInPartLabel"](dev, nil)
 	if err != nil {
 		status.State = v1alpha1.Unknown
 		return status
@@ -265,7 +265,7 @@ func getDeviceStatus(dev internal.BlockDevice) v1alpha1.DeviceStatus {
 		return status
 	}
 
-	canOpen, err := lvset.FilterMap["canOpenExclusively"](dev, nil)
+	canOpen, err := lvset.DefaultFilterMap["canOpenExclusively"](dev, nil)
 	if err != nil {
 		status.State = v1alpha1.Unknown
 		return status

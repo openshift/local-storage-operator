@@ -309,6 +309,7 @@ func (r *LocalVolumeSetReconciler) Reconcile(ctx context.Context, request ctrl.R
 
 	specMatchedDevices := getSpecMatchedDevices(lvset, blockDevices)
 	orphanSymlinkDevices, err := internal.GetOrphanedSymlinks(symLinkDir, specMatchedDevices)
+
 	if err != nil {
 		klog.ErrorS(err, "failed to get orphaned symlink devices in current reconcile")
 	}
@@ -432,7 +433,7 @@ DeviceLoop:
 		// store device in deviceAgeMap
 		r.deviceAgeMap.storeDeviceAge(blockDevice.KName)
 
-		for name, filter := range FilterMap {
+		for name, filter := range DefaultFilterMap {
 			var valid bool
 			var err error
 			valid, err = filter(blockDevice, nil)

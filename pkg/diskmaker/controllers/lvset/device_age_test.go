@@ -20,8 +20,8 @@ func (f *fakeClock) getCurrentTime() time.Time {
 
 func TestDeviceAge(t *testing.T) {
 	// empty the filters and matchers
-	oldFilterMap := FilterMap
-	FilterMap = make(map[string]func(internal.BlockDevice, *localv1alpha1.DeviceInclusionSpec) (bool, error), 0)
+	oldFilterMap := DefaultFilterMap
+	DefaultFilterMap = make(map[string]func(internal.BlockDevice, *localv1alpha1.DeviceInclusionSpec) (bool, error), 0)
 
 	oldMatcherMap := matcherMap
 	matcherMap = make(map[string]func(internal.BlockDevice, *localv1alpha1.DeviceInclusionSpec) (bool, error), 0)
@@ -31,7 +31,7 @@ func TestDeviceAge(t *testing.T) {
 
 	// reset the filters and matchers
 	defer func() {
-		FilterMap = oldFilterMap
+		DefaultFilterMap = oldFilterMap
 		matcherMap = oldMatcherMap
 		exclusionMap = oldExclusionMap
 	}()
