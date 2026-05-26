@@ -36,6 +36,7 @@ func TestDeviceAge(t *testing.T) {
 		exclusionMap = oldExclusionMap
 	}()
 
+	lvset := &localv1alpha1.LocalVolumeSet{}
 	r, tc := newFakeLocalVolumeSetReconciler(t)
 
 	blockDevices := make([]internal.BlockDevice, 0)
@@ -70,7 +71,7 @@ func TestDeviceAge(t *testing.T) {
 			blockDevices = append(blockDevices, internal.BlockDevice{KName: fmt.Sprintf("dev-%d", len(blockDevices))})
 		}
 
-		validDevices, delayedDevices, _ := r.getValidDevices(nil, blockDevices)
+		validDevices, delayedDevices, _ := r.getValidDevices(lvset, blockDevices)
 		assert.Lenf(t, validDevices, expectedValid[run], "validDevices")
 		assert.Lenf(t, delayedDevices, len(blockDevices)-expectedValid[run], "delayedDevices")
 
