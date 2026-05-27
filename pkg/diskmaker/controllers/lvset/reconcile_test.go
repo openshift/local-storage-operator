@@ -18,6 +18,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -754,6 +755,61 @@ func TestProcessRejectedDevicesForDeviceLinks(t *testing.T) {
 				return
 			}
 			assert.Empty(t, fetched.Status.Conditions)
+		})
+	}
+}
+
+func TestMatchesDeviceSpec(t *testing.T) {
+	tenGi := "10737418240"
+	hundredGi := "107374182400"
+	minSize := resource.MustParse("5Gi")
+	maxSize := resource.MustParse("50Gi")
+
+	testCases := []struct {
+		name          string
+		blockDevice   internal.BlockDevice
+		inclusionSpec *v1alphav1api.DeviceInclusionSpec
+		exclusionSpec *v1alphav1api.DeviceExclusionSpec
+		expectMatch   bool
+	}{
+		{
+			name:          "matches device with filesystem (in-use) within size range",
+			blockDevice:   internal.BlockDevice{KName: "sda", Name: "sda", Size: tenGi, Type: "disk", FSType: "ext4"},
+			inclusionSpec: &v1alphav1api.DeviceInclusionSpec{MinSize: &minSize, MaxSize: &maxSize},
+			expectMatch:   true,
+		},
+		{
+			name:          "matches device without filesystem within size range",
+			blockDevice:   internal.BlockDevice{KName: "sdb", Name: "sdb", Size: tenGi, Type: "disk", FSType: ""},
+			inclusionSpec: &v1alphav1api.DeviceInclusionSpec{MinSize: &minSize, MaxSize: &maxSize},
+			expectMatch:   true,
+		},
+		{
+			name:          "rejects device outside size range",
+			blockDevice:   internal.BlockDevice{KName: "sdb", Name: "sdb", Size: hundredGi, Type: "disk", FSType: ""},
+			inclusionSpec: &v1alphav1api.DeviceInclusionSpec{MinSize: &minSize, MaxSize: &maxSize},
+			expectMatch:   false,
+		},
+		{
+			name:          "rejects device matching name exclusion filter",
+			blockDevice:   internal.BlockDevice{KName: "nvme0n1", Name: "nvme0n1", Size: tenGi, Type: "disk", FSType: ""},
+			inclusionSpec: &v1alphav1api.DeviceInclusionSpec{MinSize: &minSize, MaxSize: &maxSize},
+			exclusionSpec: &v1alphav1api.DeviceExclusionSpec{DeviceNameFilter: []string{"nvme*"}},
+			expectMatch:   false,
+		},
+		{
+			name:          "matches device not excluded by name filter",
+			blockDevice:   internal.BlockDevice{KName: "sda", Name: "sda", Size: tenGi, Type: "disk", FSType: ""},
+			inclusionSpec: &v1alphav1api.DeviceInclusionSpec{MinSize: &minSize, MaxSize: &maxSize},
+			exclusionSpec: &v1alphav1api.DeviceExclusionSpec{DeviceNameFilter: []string{"nvme*"}},
+			expectMatch:   true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := matchesDeviceSpec(tc.blockDevice, tc.inclusionSpec, tc.exclusionSpec)
+			assert.Equal(t, tc.expectMatch, got)
 		})
 	}
 }

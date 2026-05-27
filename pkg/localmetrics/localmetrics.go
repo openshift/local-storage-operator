@@ -121,3 +121,15 @@ func LVMissingDevicePathGauge(nodeName, storageClassName string) prometheus.Gaug
 		"nodeName": nodeName, "storageClass": storageClassName,
 	})
 }
+
+func LVOrphanedSymlinksGauge(nodeName, storageClassName string) prometheus.Gauge {
+	return metricLocalVolumeOrphanedSymlinks.With(prometheus.Labels{
+		"nodeName": nodeName, "storageClass": storageClassName,
+	})
+}
+
+func LVSOrphanedSymlinksGauge(nodeName, storageClassName string) prometheus.Gauge {
+	return metricLocalVolumeSetOrphanedSymlinks.With(prometheus.Labels{
+		"nodeName": nodeName, "storageClass": storageClassName,
+	})
+}

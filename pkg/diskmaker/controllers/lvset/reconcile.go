@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"time"
 
 	localv1 "github.com/openshift/local-storage-operator/api/v1"
@@ -259,7 +260,7 @@ func (r *LocalVolumeSetReconciler) Reconcile(ctx context.Context, request ctrl.R
 	}
 
 	// find disks that match lvset filters and matchers
-	validDevices, delayedDevices, rejectedDevices := r.getValidDevices(lvset, blockDevices)
+	validDevices, delayedDevices, rejectedButSpecMatchedDevices := r.getValidDevices(lvset, blockDevices)
 
 	// update metrics for unmatched disks
 	localmetrics.SetLVSUnmatchedDiskMetric(nodeName, storageClassName, len(blockDevices)-len(validDevices))
@@ -307,7 +308,9 @@ func (r *LocalVolumeSetReconciler) Reconcile(ctx context.Context, request ctrl.R
 	// update metrics for total persistent volumes provisioned
 	localmetrics.SetLVSProvisionedPVMetric(nodeName, storageClassName, totalProvisionedPVs)
 
-	orphanSymlinkDevices, err := internal.GetOrphanedSymlinks(symLinkDir, validDevices)
+	specMatchedDevices := slices.Concat(validDevices, delayedDevices, rejectedButSpecMatchedDevices)
+	orphanSymlinkDevices, err := internal.GetOrphanedSymlinks(symLinkDir, specMatchedDevices)
+
 	if err != nil {
 		klog.ErrorS(err, "failed to get orphaned symlink devices in current reconcile")
 	}
@@ -325,7 +328,7 @@ func (r *LocalVolumeSetReconciler) Reconcile(ctx context.Context, request ctrl.R
 			"paths", noMatch, "directory", symLinkDir)
 	}
 
-	r.processRejectedDevicesForDeviceLinks(ctx, lvset, rejectedDevices, symLinkDir, storageClassName)
+	r.processRejectedDevicesForDeviceLinks(ctx, lvset, rejectedButSpecMatchedDevices, symLinkDir, storageClassName)
 
 	// shorten the requeueTime if there are delayed devices
 	if len(delayedDevices) > 1 && requeueTime == defaultRequeueTime {
@@ -413,10 +416,50 @@ func (r *LocalVolumeSetReconciler) syncCaches() error {
 	return nil
 }
 
-// runs filters and matchers on the blockDeviceList and returns valid devices
-// and devices that are not considered old enough to be valid yet
-// i.e. if the device is younger than deviceMinAge
-// if the waitingDevices list is nonempty, the operator should requeueue
+func matchesDeviceSpec(
+	blockDevice internal.BlockDevice,
+	inclusionSpec *localv1alpha1.DeviceInclusionSpec,
+	exclusionSpec *localv1alpha1.DeviceExclusionSpec,
+) bool {
+	for name, matcher := range matcherMap {
+		valid, err := matcher(blockDevice, inclusionSpec)
+		if err != nil {
+			klog.ErrorS(err, "spec match error", "device",
+				blockDevice.Name, "matcher", name)
+			return false
+		}
+		if !valid {
+			klog.InfoS("spec match negative", "device",
+				blockDevice.Name, "matcher", name)
+			return false
+		}
+	}
+
+	for name, excluder := range exclusionMap {
+		valid, err := excluder(blockDevice, exclusionSpec)
+		if err != nil {
+			klog.ErrorS(err, "spec exclusion error", "device",
+				blockDevice.Name, "excluder", name)
+			return false
+		}
+		if !valid {
+			klog.InfoS("spec exclusion match", "device",
+				blockDevice.Name, "excluder", name)
+			return false
+		}
+	}
+	return true
+}
+
+// getValidDevices runs spec matchers/excluders, then provisioning-eligibility
+// filters on the blockDeviceList and returns three lists:
+//   - validDevices: devices that passed all checks and are ready to provision
+//   - delayedDevices: devices that matched spec and passed filters but are
+//     younger than deviceMinAge
+//   - rejectedDevices: devices that matched spec but failed provisioning filters
+//
+// The union of all three lists represents all spec-matched devices, which is
+// used for orphan detection.
 func (r *LocalVolumeSetReconciler) getValidDevices(
 	lvset *localv1alpha1.LocalVolumeSet,
 	blockDevices []internal.BlockDevice,
@@ -424,21 +467,27 @@ func (r *LocalVolumeSetReconciler) getValidDevices(
 	validDevices := make([]internal.BlockDevice, 0)
 	delayedDevices := make([]internal.BlockDevice, 0)
 	rejectedDevices := make([]internal.BlockDevice, 0)
-	// get valid devices
+
 DeviceLoop:
 	for _, blockDevice := range blockDevices {
+		if !matchesDeviceSpec(blockDevice, lvset.Spec.DeviceInclusionSpec, lvset.Spec.DeviceExclusionSpec) {
+			continue DeviceLoop
+		}
 
 		// store device in deviceAgeMap
 		r.deviceAgeMap.storeDeviceAge(blockDevice.KName)
 
-		for name, filter := range FilterMap {
+		// DefaultFilterMap is a map of filters which can filter out devices with a known set of
+		// filters that is hardcoded in LSO. Such as - device in-use, has file system or has children
+		// mount points.
+		for name, filter := range DefaultFilterMap {
 			var valid bool
 			var err error
 			valid, err = filter(blockDevice, nil)
 			if err != nil {
 				klog.ErrorS(err, "filter error", "device",
 					blockDevice.Name, "filter", name)
-				valid = false
+				rejectedDevices = append(rejectedDevices, blockDevice)
 				continue DeviceLoop
 			} else if !valid {
 				klog.InfoS("filter negative", "device", blockDevice.Name, "filter", name)
@@ -453,7 +502,6 @@ DeviceLoop:
 		// skip devices younger than deviceMinAge
 		if !isOldEnough {
 			delayedDevices = append(delayedDevices, blockDevice)
-			// record DiscoveredDevice event
 			if lvset != nil {
 				r.eventReporter.Report(
 					lvset,
@@ -467,37 +515,8 @@ DeviceLoop:
 			continue DeviceLoop
 		}
 
-		for name, matcher := range matcherMap {
-			valid, err := matcher(blockDevice, lvset.Spec.DeviceInclusionSpec)
-			if err != nil {
-				klog.ErrorS(err, "match error", "device",
-					blockDevice.Name, "filter", name)
-				valid = false
-				continue DeviceLoop
-			} else if !valid {
-				klog.InfoS("match negative", "device",
-					blockDevice.Name, "filter", name)
-				continue DeviceLoop
-			}
-		}
-
-		for name, excluder := range exclusionMap {
-			valid, err := excluder(blockDevice, lvset.Spec.DeviceExclusionSpec)
-			if err != nil {
-				klog.ErrorS(err, "exclusion error", "device",
-					blockDevice.Name, "filter", name)
-				valid = false
-				continue DeviceLoop
-			} else if !valid {
-				klog.InfoS("exclusion match", "device",
-					blockDevice.Name, "filter", name)
-				continue DeviceLoop
-			}
-		}
 		klog.InfoS("matched disk", "device", blockDevice.Name)
-		// handle valid disk
 		validDevices = append(validDevices, blockDevice)
-
 	}
 	return validDevices, delayedDevices, rejectedDevices
 }

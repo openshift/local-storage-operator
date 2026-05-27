@@ -20,8 +20,8 @@ func (f *fakeClock) getCurrentTime() time.Time {
 
 func TestDeviceAge(t *testing.T) {
 	// empty the filters and matchers
-	oldFilterMap := FilterMap
-	FilterMap = make(map[string]func(internal.BlockDevice, *localv1alpha1.DeviceInclusionSpec) (bool, error), 0)
+	oldFilterMap := DefaultFilterMap
+	DefaultFilterMap = make(map[string]func(internal.BlockDevice, *localv1alpha1.DeviceInclusionSpec) (bool, error), 0)
 
 	oldMatcherMap := matcherMap
 	matcherMap = make(map[string]func(internal.BlockDevice, *localv1alpha1.DeviceInclusionSpec) (bool, error), 0)
@@ -31,11 +31,12 @@ func TestDeviceAge(t *testing.T) {
 
 	// reset the filters and matchers
 	defer func() {
-		FilterMap = oldFilterMap
+		DefaultFilterMap = oldFilterMap
 		matcherMap = oldMatcherMap
 		exclusionMap = oldExclusionMap
 	}()
 
+	lvset := &localv1alpha1.LocalVolumeSet{}
 	r, tc := newFakeLocalVolumeSetReconciler(t)
 
 	blockDevices := make([]internal.BlockDevice, 0)
@@ -70,7 +71,7 @@ func TestDeviceAge(t *testing.T) {
 			blockDevices = append(blockDevices, internal.BlockDevice{KName: fmt.Sprintf("dev-%d", len(blockDevices))})
 		}
 
-		validDevices, delayedDevices, _ := r.getValidDevices(nil, blockDevices)
+		validDevices, delayedDevices, _ := r.getValidDevices(lvset, blockDevices)
 		assert.Lenf(t, validDevices, expectedValid[run], "validDevices")
 		assert.Lenf(t, delayedDevices, len(blockDevices)-expectedValid[run], "delayedDevices")
 
