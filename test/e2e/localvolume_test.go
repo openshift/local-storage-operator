@@ -20,7 +20,6 @@ import (
 	framework "github.com/openshift/local-storage-operator/test/framework"
 	corev1 "k8s.io/api/core/v1"
 	v1 "k8s.io/api/core/v1"
-	storagev1 "k8s.io/api/storage/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -485,39 +484,77 @@ func cleanupLVAndWaitForOwnedPVsToDisappear(t *testing.T, f *framework.Framework
 	waitForLocalVolumeAndOwnedPVsToDisappear(t, f, localVolume)
 }
 
-func cleanupLVResources(t *testing.T, f *framework.Framework, localVolume *localv1.LocalVolume) error {
-	// first mark lv for deletion without removing finalizer
-	eventuallyDelete(t, false, localVolume)
-	pvList := &corev1.PersistentVolumeList{}
+// The caller is responsible for releasing all resources, so we only check here that StorageClass does not exist
+func checkForStorageClass(t *testing.T, f *framework.Framework, scName string) error {
 	matcher := gomega.NewWithT(t)
 	matcher.Eventually(func() error {
-		err := f.Client.List(context.TODO(), pvList, client.MatchingLabels{
-			common.PVOwnerKindLabel:      localv1.LocalVolumeKind,
-			common.PVOwnerNamespaceLabel: localVolume.Namespace,
-			common.PVOwnerNameLabel:      localVolume.Name,
-		})
-		if err != nil {
-			return err
+		_, err := f.KubeClient.StorageV1().StorageClasses().Get(goctx.TODO(), scName, metav1.GetOptions{})
+		if err == nil {
+			return fmt.Errorf("checkForStorageClass: StorageClass %s still exists", scName)
+		} else if !apierrors.IsNotFound(err) {
+			return fmt.Errorf("checkForStorageClass: failed to Get() StorageClass %s: %v", scName, err)
 		}
-		t.Logf("Deleting %d PVs", len(pvList.Items))
-		for _, pv := range pvList.Items {
-			eventuallyDelete(t, false, &pv)
-		}
+		t.Logf("checkForStorageClass: StorageClass %s not found -- OK", scName)
 		return nil
-	}, time.Minute*3, time.Second*2).ShouldNot(gomega.HaveOccurred(), "cleaning up pvs for lv: %q", localVolume.GetName())
-
-	// Delete the owning resources after their PVs are fully gone so the
-	// diskmaker cleanup path can remove PV finalizers first.
-	eventuallyDelete(t, true, localVolume)
-	sc := &storagev1.StorageClass{
-		TypeMeta:   metav1.TypeMeta{Kind: localv1.LocalVolumeKind},
-		ObjectMeta: metav1.ObjectMeta{Name: localVolume.Spec.StorageClassDevices[0].StorageClassName},
-	}
-	eventuallyDelete(t, false, sc)
+	}, time.Second*10, time.Second*2).ShouldNot(gomega.HaveOccurred(), "check for StorageClass %s", scName)
 
 	return nil
-
 }
+
+// The caller is responsible for releasing all resources, so we only check here that LocalVolume does not exist
+func checkForLocalVolume(t *testing.T, f *framework.Framework, localVolume *localv1.LocalVolume) error {
+	name := localVolume.Name
+	namespace := localVolume.Namespace
+
+	matcher := gomega.NewWithT(t)
+	matcher.Eventually(func() error {
+		err := f.Client.Get(context.TODO(), types.NamespacedName{Name: name, Namespace: namespace}, localVolume)
+		if err == nil {
+			return fmt.Errorf("checkForLocalVolume: LocalVolume %s still exists", name)
+		} else if !errors.IsNotFound(err) && !errors.IsGone(err) {
+			return fmt.Errorf("checkForLocalVolume: failed to Get() LocalVolume %s: %v", name, err)
+		}
+		t.Logf("checkForLocalVolume: LocalVolume %s not found -- OK", name)
+		return nil
+	}, time.Second*10, time.Second*2).ShouldNot(gomega.HaveOccurred(), "check for LocalVolume %s", name)
+
+	return nil
+}
+
+// The caller is responsible for releasing all resources, so we only check here that PVs do not exist
+func checkForPersistentVolumes(t *testing.T, f *framework.Framework, localVolume *localv1.LocalVolume) error {
+	name := localVolume.Name
+	namespace := localVolume.Namespace
+
+	matcher := gomega.NewWithT(t)
+	matcher.Eventually(func() error {
+		pvList := &corev1.PersistentVolumeList{}
+
+		err := f.Client.List(context.TODO(), pvList, client.MatchingLabels{
+			common.PVOwnerKindLabel:      localv1.LocalVolumeKind,
+			common.PVOwnerNamespaceLabel: namespace,
+			common.PVOwnerNameLabel:      name,
+		})
+		if err != nil {
+			return fmt.Errorf("checkForPersistentVolumes: cannot List() PVs for LocalVolume %s: %v", name, err)
+		}
+		if len(pvList.Items) != 0 {
+			return fmt.Errorf("checkForPersistentVolumes: %d PVs still exist for LocalVolume %s", len(pvList.Items), name)
+		}
+		t.Logf("checkForPersistentVolumes: no PVs found for LocalVolume %s -- OK", name)
+		return nil
+	}, time.Second*10, time.Second*2).ShouldNot(gomega.HaveOccurred(), "check for LocalVolume %s", name)
+
+	return nil
+}
+
+func cleanupLVResources(t *testing.T, f *framework.Framework, localVolume *localv1.LocalVolume) error {
+	checkForLocalVolume(t, f, localVolume)
+	checkForPersistentVolumes(t, f, localVolume)
+	checkForStorageClass(t, f, localVolume.Spec.StorageClassDevices[0].StorageClassName)
+	return nil
+}
+
 func verifyLocalVolume(t *testing.T, lv *localv1.LocalVolume, client framework.FrameworkClient) error {
 	waitErr := wait.PollImmediate(retryInterval, timeout, func() (bool, error) {
 		objectKey := dynclient.ObjectKey{
