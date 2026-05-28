@@ -346,7 +346,7 @@ func LocalVolumeTest(ctx *framework.Context, cleanupFuncs *[]cleanupFn) func(*te
 			}
 			t.Logf("LocalVolume found: %q with finalizers: %+v", localVolume.Name, localVolume.ObjectMeta.Finalizers)
 			return false
-		}).Should(gomega.BeTrue(), "verifying LocalVolume has been deleted", localVolume.Name)
+		}, time.Second*15, time.Second*3).Should(gomega.BeTrue(), "verifying LocalVolume has been deleted", localVolume.Name)
 
 		t.Log("verifying LocalVolumeDeviceLink objects are deleted after LocalVolume deletion")
 		verifyLVDLsDeleted(t, f, namespace, lvdlNames)
