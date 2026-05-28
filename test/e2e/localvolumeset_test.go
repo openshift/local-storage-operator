@@ -464,9 +464,11 @@ func LocalVolumeSetTest(ctx *framework.TestCtx, cleanupFuncs *[]cleanupFn) func(
 			t, ctx, f, namespace, selectedFSPV, currentSymlink,
 		)
 		fsPVs[0] = selectedFSPV
-		for i := range multiStepCleanups {
-			*cleanupFuncs = append(*cleanupFuncs, multiStepCleanups[i])
+		// multiStepCleanups ops must be done after deleting LVS, so put them in the beginning of the list.
+		for i := range *cleanupFuncs {
+			multiStepCleanups = append(multiStepCleanups, (*cleanupFuncs)[i])
 		}
+		*cleanupFuncs = multiStepCleanups
 
 		// Symlink fallback test: after multi-step left the PV on the wwn link,
 		// remove it and verify LSO falls back to the next-best scsi-3 link.
