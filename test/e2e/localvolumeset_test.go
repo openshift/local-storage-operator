@@ -20,7 +20,6 @@ import (
 	"github.com/openshift/local-storage-operator/pkg/common"
 	framework "github.com/openshift/local-storage-operator/test/framework"
 	corev1 "k8s.io/api/core/v1"
-	storagev1 "k8s.io/api/storage/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	provCommon "sigs.k8s.io/sig-storage-local-static-provisioner/pkg/common"
 )
@@ -583,6 +582,11 @@ func LocalVolumeSetTest(ctx *framework.TestCtx, cleanupFuncs *[]cleanupFn) func(
 		// check for leftover symlinks before cleanup
 		symLinkPath := path.Join(common.GetLocalDiskLocationPath(), twentyToFifty.Spec.StorageClassName)
 		checkForSymlinks(t, ctx, nodeEnv, symLinkPath)
+
+		// delete remaining LVSets explicitly, cleanupLVSetResources() will only check that everything has gone
+		eventuallyDelete(t, false, noOpLVSet)
+		eventuallyDelete(t, false, tenToThirty)
+		eventuallyDelete(t, false, twentyToFiftyFilesystem)
 	}
 
 }
@@ -624,36 +628,60 @@ func waitForLVSetAndOwnedPVsToDisappear(t *testing.T, lvset *localv1alpha1.Local
 	}, time.Minute*8, time.Second*5).ShouldNot(gomega.HaveOccurred(), "waiting for localvolumeset %q and owned PVs to be deleted", lvset.Name)
 }
 
+// The caller is responsible for releasing all resources, so we only check here that LocalVolume does not exist
+func checkForLocalVolumeSet(t *testing.T, f *framework.Framework, lvset *localv1alpha1.LocalVolumeSet) error {
+	name := lvset.Name
+	namespace := lvset.Namespace
+
+	matcher := gomega.NewWithT(t)
+	matcher.Eventually(func() error {
+		err := f.Client.Get(context.TODO(), types.NamespacedName{Name: name, Namespace: namespace}, lvset)
+		if err == nil {
+			return fmt.Errorf("checkForLocalVolumeSet: LocalVolumeSet %s still exists", name)
+		} else if !errors.IsNotFound(err) && !errors.IsGone(err) {
+			return fmt.Errorf("checkForLocalVolumeSet: failed to Get() LocalVolumeSet %s: %v", name, err)
+		}
+		t.Logf("checkForLocalVolumeSet: LocalVolumeSet %s not found -- OK", name)
+		return nil
+	}, time.Second*10, time.Second*2).ShouldNot(gomega.HaveOccurred(), "check for LocalVolumeSet %s", name)
+
+	return nil
+}
+
+// The caller is responsible for releasing all resources, so we only check here that PVs do not exist
+func checkForPersistentVolumesLVS(t *testing.T, f *framework.Framework, lvset *localv1alpha1.LocalVolumeSet) error {
+	name := lvset.Name
+	namespace := lvset.Namespace
+
+	matcher := gomega.NewWithT(t)
+	matcher.Eventually(func() error {
+		pvList := &corev1.PersistentVolumeList{}
+
+		err := f.Client.List(context.TODO(), pvList, client.MatchingLabels{
+			common.PVOwnerKindLabel:      localv1.LocalVolumeSetKind,
+			common.PVOwnerNamespaceLabel: namespace,
+			common.PVOwnerNameLabel:      name,
+		})
+		if err != nil {
+			return fmt.Errorf("checkForPersistentVolumes: cannot List() PVs for LocalVolumeSet %s: %v", name, err)
+		}
+		if len(pvList.Items) != 0 {
+			return fmt.Errorf("checkForPersistentVolumes: %d PVs still exist for LocalVolumeSet %s", len(pvList.Items), name)
+		}
+		t.Logf("checkForPersistentVolumes: no PVs found for LocalVolumeSet %s -- OK", name)
+		return nil
+	}, time.Second*10, time.Second*2).ShouldNot(gomega.HaveOccurred(), "check for LocalVolumeSet %s", name)
+
+	return nil
+}
+
 func cleanupLVSetResources(t *testing.T, lvsets *[]*localv1alpha1.LocalVolumeSet) error {
 	for _, lvset := range *lvsets {
-		t.Logf("cleaning up pvs and storageclasses: %q", lvset.GetName())
+		t.Logf("check that lvset %q and friends (SC, PVs) have gone", lvset.GetName())
 		f := framework.Global
-		matcher := gomega.NewWithT(t)
-		// delete lvset without removing finalizer, so as it doesn't
-		// automatically recreate the PVs we delete below
-		eventuallyDelete(t, false, lvset)
-
-		pvList := &corev1.PersistentVolumeList{}
-		t.Logf("listing pvs for lvset: %q", lvset.GetName())
-		matcher.Eventually(func() error {
-			err := f.Client.List(context.TODO(), pvList, client.MatchingLabels{
-				common.PVOwnerKindLabel:      localv1.LocalVolumeSetKind,
-				common.PVOwnerNamespaceLabel: lvset.Namespace,
-				common.PVOwnerNameLabel:      lvset.Name,
-			})
-			if err != nil {
-				return err
-			}
-			t.Logf("Deleting %d PVs", len(pvList.Items))
-			for _, pv := range pvList.Items {
-				eventuallyDelete(t, false, &pv)
-			}
-			return nil
-		}, time.Minute*3, time.Second*2).ShouldNot(gomega.HaveOccurred(), "cleaning up pvs for lvset: %q", lvset.GetName())
-
-		sc := &storagev1.StorageClass{ObjectMeta: metav1.ObjectMeta{Name: lvset.Spec.StorageClassName}}
-		eventuallyDelete(t, true, lvset)
-		eventuallyDelete(t, false, sc)
+		checkForLocalVolumeSet(t, f, lvset)
+		checkForPersistentVolumesLVS(t, f, lvset)
+		checkForStorageClass(t, f, lvset.Spec.StorageClassName)
 	}
 
 	return nil
