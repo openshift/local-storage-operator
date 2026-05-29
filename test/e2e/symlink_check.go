@@ -40,7 +40,7 @@ func checkForSymlinks(t *testing.T, ctx *framework.TestCtx, nodeEnv []nodeDisks,
 	for _, checkSymlinkJob := range checkSymlinkJobs {
 		waitForJobCompletion(t, checkSymlinkJob, fmt.Sprintf("waiting for check-symlink job to complete: %q", checkSymlinkJob.GetName()))
 		checkSymlinkJob.TypeMeta.Kind = "Job"
-		eventuallyDelete(t, false, checkSymlinkJob)
+		eventuallyDelete(t, checkSymlinkJob)
 	}
 
 	return nil
@@ -435,5 +435,5 @@ func verifyNodeSymlinkTarget(t *testing.T, ctx *framework.TestCtx, nodeHostname,
 	createOrReplaceJob(t, ctx, job, fmt.Sprintf("creating symlink target check job on node: %q", nodeHostname))
 	waitForJobCompletion(t, job, fmt.Sprintf("waiting for symlink target check job to complete: %q", job.GetName()))
 	job.TypeMeta.Kind = "Job"
-	eventuallyDelete(t, false, job)
+	eventuallyDelete(t, job)
 }

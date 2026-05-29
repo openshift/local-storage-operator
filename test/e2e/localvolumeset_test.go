@@ -225,7 +225,7 @@ func LocalVolumeSetTest(ctx *framework.TestCtx, cleanupFuncs *[]cleanupFn) func(
 		assertLVDLSymlinkPathMatchesPVs(t, sharedLVDLs, sharedPVs)
 
 		t.Log("cleaning up LocalVolumeSet duplicate by-id reproducer before continuing with standard test flow")
-		eventuallyDelete(t, false, sharedLVSet)
+		eventuallyDelete(t, sharedLVSet)
 		waitForLVSetAndOwnedPVsToDisappear(t, sharedLVSet)
 		removeUdevSymlink(t, ctx, nodeEnv[0].node.Labels[corev1.LabelHostname], sharedScsi8Link)
 		removeUdevSymlink(t, ctx, nodeEnv[1].node.Labels[corev1.LabelHostname], sharedScsi8Link)
@@ -492,7 +492,7 @@ func LocalVolumeSetTest(ctx *framework.TestCtx, cleanupFuncs *[]cleanupFn) func(
 		// record consuming objects for cleanup
 		consumingObjectList := make([]client.Object, 0)
 		addToCleanupFuncs(cleanupFuncs, "pv-consumer", func(t *testing.T) error {
-			eventuallyDelete(t, false, consumingObjectList...)
+			eventuallyDelete(t, consumingObjectList...)
 			return nil
 		})
 		for _, pv := range fsPVs[:1] {
@@ -506,7 +506,7 @@ func LocalVolumeSetTest(ctx *framework.TestCtx, cleanupFuncs *[]cleanupFn) func(
 		t.Log("verifying filesystemUUID is populated on LVDL for consumed filesystem PVs")
 		verifyLVDLFilesystemUUIDForPVs(t, f, namespace, consumedFSPVNames)
 		// release pvs
-		eventuallyDelete(t, false, consumingObjectList...)
+		eventuallyDelete(t, consumingObjectList...)
 		// verify that PVs eventually come back
 		eventuallyFindAvailablePVs(t, f, twentyToFiftyFilesystem.Spec.StorageClassName, fsPVs)
 
@@ -519,7 +519,7 @@ func LocalVolumeSetTest(ctx *framework.TestCtx, cleanupFuncs *[]cleanupFn) func(
 			consumingObjectList = append(consumingObjectList, job, pvc, pod)
 		}
 		// release pvs
-		eventuallyDelete(t, false, consumingObjectList...)
+		eventuallyDelete(t, consumingObjectList...)
 		// verify that PVs eventually come back
 		twentyToFiftyBlockPVs = eventuallyFindAvailablePVs(t, f, twentyToFifty.Spec.StorageClassName, twentyToFiftyBlockPVs)
 
@@ -556,7 +556,7 @@ func LocalVolumeSetTest(ctx *framework.TestCtx, cleanupFuncs *[]cleanupFn) func(
 		t.Logf("finalizers not removed with bound PVs: %q", finalizers)
 		// release PV
 		t.Logf("releasing pvs")
-		eventuallyDelete(t, false, consumingObjectList...)
+		eventuallyDelete(t, consumingObjectList...)
 		twentyToFiftyLVDLNames := make([]string, 0, len(twentyToFiftyBlockPVs))
 		for _, pv := range twentyToFiftyBlockPVs {
 			twentyToFiftyLVDLNames = append(twentyToFiftyLVDLNames, pv.Name)
@@ -584,9 +584,9 @@ func LocalVolumeSetTest(ctx *framework.TestCtx, cleanupFuncs *[]cleanupFn) func(
 		checkForSymlinks(t, ctx, nodeEnv, symLinkPath)
 
 		// delete remaining LVSets explicitly, cleanupLVSetResources() will only check that everything has gone
-		eventuallyDelete(t, false, noOpLVSet)
-		eventuallyDelete(t, false, tenToThirty)
-		eventuallyDelete(t, false, twentyToFiftyFilesystem)
+		eventuallyDelete(t, noOpLVSet)
+		eventuallyDelete(t, tenToThirty)
+		eventuallyDelete(t, twentyToFiftyFilesystem)
 	}
 
 }

@@ -35,7 +35,7 @@ func cleanupSymlinkDir(t *testing.T, ctx *framework.TestCtx, nodeEnv []nodeDisks
 	for _, cleanupJob := range cleanupJobs {
 		waitForJobCompletion(t, cleanupJob, fmt.Sprintf("waiting for cleanup job to complete: %q", cleanupJob.GetName()))
 		cleanupJob.TypeMeta.Kind = "Job"
-		eventuallyDelete(t, false, cleanupJob)
+		eventuallyDelete(t, cleanupJob)
 	}
 
 	return nil

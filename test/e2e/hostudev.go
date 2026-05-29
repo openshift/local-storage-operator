@@ -32,7 +32,7 @@ func addNewUdevSymlink(t *testing.T, ctx *framework.TestCtx, nodeHostname string
 
 	waitForJobCompletion(t, symlinkJob, fmt.Sprintf("waiting for check-symlink job to complete: %q", symlinkJob.GetName()))
 	symlinkJob.TypeMeta.Kind = "Job"
-	eventuallyDelete(t, false, symlinkJob)
+	eventuallyDelete(t, symlinkJob)
 	t.Logf("added udev symlink %s -> %s on node %s", currentLink, newLink, nodeHostname)
 }
 
@@ -61,7 +61,7 @@ func removeUdevSymlink(t *testing.T, ctx *framework.TestCtx, nodeHostname string
 
 	waitForJobCompletion(t, symlinkJob, fmt.Sprintf("waiting for check-symlink job to complete: %q", symlinkJob.GetName()))
 	symlinkJob.TypeMeta.Kind = "Job"
-	eventuallyDelete(t, false, symlinkJob)
+	eventuallyDelete(t, symlinkJob)
 	t.Logf("removed udev symlinks matching %s on node %s", linkPattern, nodeHostname)
 }
 

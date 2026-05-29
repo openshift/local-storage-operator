@@ -296,7 +296,7 @@ func LocalVolumeTest(ctx *framework.Context, cleanupFuncs *[]cleanupFn) func(*te
 			verifyLVDLFilesystemUUIDForPVs(t, f, namespace, filesystemConsumedPVNames)
 		}
 		// release pvs
-		eventuallyDelete(t, false, consumingObjectList...)
+		eventuallyDelete(t, consumingObjectList...)
 
 		// verify that PVs eventually come back
 		eventuallyFindAvailablePVs(t, f, localVolume.Spec.StorageClassDevices[0].StorageClassName, pvs)
@@ -305,7 +305,7 @@ func LocalVolumeTest(ctx *framework.Context, cleanupFuncs *[]cleanupFn) func(*te
 		consumingObjectList = make([]client.Object, 0)
 
 		addToCleanupFuncs(cleanupFuncs, "pv-consumer", func(t *testing.T) error {
-			eventuallyDelete(t, false, consumingObjectList...)
+			eventuallyDelete(t, consumingObjectList...)
 			return nil
 		})
 		for _, pv := range pvs[:1] {
@@ -333,7 +333,7 @@ func LocalVolumeTest(ctx *framework.Context, cleanupFuncs *[]cleanupFn) func(*te
 		}, time.Second*15, time.Second*3).Should(gomega.BeTrue(), "checking finalizer exists with bound PVs")
 		// release PV
 		t.Logf("releasing pvs")
-		eventuallyDelete(t, false, consumingObjectList...)
+		eventuallyDelete(t, consumingObjectList...)
 		// verify localVolume deletion
 		matcher.Eventually(func() bool {
 			t.Log("verifying LocalVolume deletion")
@@ -480,7 +480,7 @@ func waitForLocalVolumeAndOwnedPVsToDisappear(t *testing.T, f *framework.Framewo
 }
 
 func cleanupLVAndWaitForOwnedPVsToDisappear(t *testing.T, f *framework.Framework, localVolume *localv1.LocalVolume) {
-	eventuallyDelete(t, false, localVolume)
+	eventuallyDelete(t, localVolume)
 	waitForLocalVolumeAndOwnedPVsToDisappear(t, f, localVolume)
 }
 
