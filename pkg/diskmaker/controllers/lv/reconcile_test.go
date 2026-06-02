@@ -518,6 +518,7 @@ func TestProcessValidDevices(t *testing.T) {
 		[]internal.BlockDevice{{Name: "null", KName: "null", PathByID: fakeByIDLink}},
 		diskConfig,
 		sets.New[string](),
+		nil,
 	)
 
 	pvName := common.GeneratePVName(filepath.Base(fakeByIDLink), node.Name, storageClassName)
