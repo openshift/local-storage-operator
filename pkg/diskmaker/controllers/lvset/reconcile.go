@@ -270,8 +270,6 @@ func (r *LocalVolumeSetReconciler) Reconcile(ctx context.Context, request ctrl.R
 	}
 
 	// process valid devices
-	var totalProvisionedPVs int
-	var noMatch []string
 	for _, blockDevice := range validDevices {
 		existingSymlink, err := common.GetSymlinkedForCurrentSC(symLinkDir, blockDevice.KName)
 		if err != nil {
@@ -293,8 +291,6 @@ func (r *LocalVolumeSetReconciler) Reconcile(ctx context.Context, request ctrl.R
 		if err != nil {
 			return ctrl.Result{}, err
 		}
-		totalProvisionedPVs = result.provisionedCount
-		noMatch = result.noMatch
 		if result.fastRequeue {
 			requeueTime = fastRequeueTime
 		}
@@ -303,7 +299,13 @@ func (r *LocalVolumeSetReconciler) Reconcile(ctx context.Context, request ctrl.R
 		}
 	}
 
-	klog.InfoS("total devices provisioned", "storagecClass", storageClassName, "count", totalProvisionedPVs)
+	// count all provisioned symlinks (both existing and newly created)
+	totalProvisionedPVs, noMatch, err := getAlreadySymlinked(symLinkDir, blockDevices)
+	if err != nil {
+		klog.ErrorS(err, "error counting provisioned symlinks")
+	}
+
+	klog.InfoS("total devices provisioned", "storageClass", storageClassName, "count", totalProvisionedPVs)
 
 	// update metrics for total persistent volumes provisioned
 	localmetrics.SetLVSProvisionedPVMetric(nodeName, storageClassName, totalProvisionedPVs)
@@ -550,10 +552,8 @@ PathLoop:
 }
 
 type processNewSymlinkResult struct {
-	provisionedCount int
-	noMatch          []string
-	fastRequeue      bool
-	maxCountReached  bool
+	fastRequeue     bool
+	maxCountReached bool
 }
 
 func (r *LocalVolumeSetReconciler) processNewSymlink(
@@ -579,9 +579,7 @@ func (r *LocalVolumeSetReconciler) processNewSymlink(
 	}
 
 	// validate MaxDeviceCount
-	alreadyProvisionedCount, noMatch, err := getAlreadySymlinked(symLinkDir, blockDevices)
-	result.provisionedCount = alreadyProvisionedCount
-	result.noMatch = noMatch
+	alreadyProvisionedCount, _, err := getAlreadySymlinked(symLinkDir, blockDevices)
 
 	if err != nil && lvset.Spec.MaxDeviceCount != nil {
 		r.eventReporter.Report(lvset, newDiskEvent(ErrorListingExistingSymlinks, "error determining already provisioned disks", "", corev1.EventTypeWarning))
