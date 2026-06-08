@@ -369,8 +369,9 @@ func (r *LocalVolumeReconciler) Reconcile(ctx context.Context, request ctrl.Requ
 		validBlockDevices = append(validBlockDevices, blockDevice)
 	}
 
+	var inUsePVCount map[string]int
 	if len(ignoredDevices) > 0 {
-		r.processRejectedDevicesForDeviceLinks(ctx, ignoredDevices, diskConfig)
+		inUsePVCount = r.processRejectedDevicesForDeviceLinks(ctx, ignoredDevices, diskConfig)
 	}
 
 	r.updateMissingDevicePathMetrics(diskConfig)
@@ -381,36 +382,36 @@ func (r *LocalVolumeReconciler) Reconcile(ctx context.Context, request ctrl.Requ
 		return ctrl.Result{}, err
 	}
 
-	if len(validBlockDevices) > 0 {
-		r.processValidDevices(ctx, validBlockDevices, diskConfig, mountPointMap)
-	}
+	r.processValidDevices(ctx, validBlockDevices, diskConfig, mountPointMap, inUsePVCount)
 
 	r.updateOrphanedSymlinkMetrics(blockDevices, diskConfig)
 
 	return ctrl.Result{Requeue: true, RequeueAfter: r.effectiveRequeueTime}, nil
 }
 
-func (r *LocalVolumeReconciler) processValidDevices(ctx context.Context, validDevices []internal.BlockDevice, diskConfig *DiskConfig, mountPointMap sets.Set[string]) {
+func (r *LocalVolumeReconciler) processValidDevices(ctx context.Context, validDevices []internal.BlockDevice, diskConfig *DiskConfig, mountPointMap sets.Set[string], inUsePVCount map[string]int) {
 	for storageClass, disks := range diskConfig.Disks {
-		var totalProvisionedPVs int
+		totalProvisionedPVs := inUsePVCount[storageClass]
 
 		devicePaths := disks.DevicePaths
 		forceWipe := disks.ForceWipeDevicesAndDestroyAllData
 		symLinkDirPath := path.Join(r.symlinkLocation, storageClass)
 
-		for _, devicePath := range devicePaths {
-			deviceLocation, matched, err := r.resolveValidDeviceLocation(devicePath, forceWipe, validDevices)
-			if err != nil {
-				r.reportDeviceResolutionError(devicePath, err)
-				continue
-			}
-			if !matched {
-				r.logDeviceError(devicePath)
-				continue
-			}
+		if len(validDevices) > 0 {
+			for _, devicePath := range devicePaths {
+				deviceLocation, matched, err := r.resolveValidDeviceLocation(devicePath, forceWipe, validDevices)
+				if err != nil {
+					r.reportDeviceResolutionError(devicePath, err)
+					continue
+				}
+				if !matched {
+					r.logDeviceError(devicePath)
+					continue
+				}
 
-			if r.provisionValidDevice(ctx, storageClass, symLinkDirPath, devicePath, deviceLocation, mountPointMap) {
-				totalProvisionedPVs += 1
+				if r.provisionValidDevice(ctx, storageClass, symLinkDirPath, devicePath, deviceLocation, mountPointMap) {
+					totalProvisionedPVs += 1
+				}
 			}
 		}
 		localmetrics.SetLVProvisionedPVMetric(nodeName, storageClass, totalProvisionedPVs)
@@ -670,8 +671,14 @@ func (r *LocalVolumeReconciler) syncPVAndLVDL(ctx context.Context, scName string
 // and also updates preferredSymlink, fileSystemUUID and validLinks for PVs which are already
 // mounted and in-use by kubelet.
 //
+// It returns a map of storage class name to the number of rejected devices that have existing
+// provisioned PVs (i.e. in-use devices with valid symlinks). This count is used to correctly
+// report the lso_lv_provisioned_PV_count metric, which must include PVs on devices that are
+// currently in use by Pods and therefore filtered out of the valid device list.
+//
 // This function is called periodically with Reconcile loop every defaultRequeueTime (1 minute)
-func (r *LocalVolumeReconciler) processRejectedDevicesForDeviceLinks(ctx context.Context, rejectedDevices []internal.BlockDevice, diskConfig *DiskConfig) {
+func (r *LocalVolumeReconciler) processRejectedDevicesForDeviceLinks(ctx context.Context, rejectedDevices []internal.BlockDevice, diskConfig *DiskConfig) map[string]int {
+	inUsePVCount := make(map[string]int)
 	for storageClassName, disks := range diskConfig.Disks {
 		symLinkDirPath := path.Join(r.symlinkLocation, storageClassName)
 		devicePaths := disks.DevicePaths
@@ -704,6 +711,7 @@ func (r *LocalVolumeReconciler) processRejectedDevicesForDeviceLinks(ctx context
 				klog.V(4).InfoS("skipping processing of rejected device", "volume", blockDevice.Name)
 				continue
 			}
+			inUsePVCount[storageClassName]++
 			existingSymlinkName := filepath.Base(symlinkPath)
 
 			lvdlName := common.GeneratePVName(existingSymlinkName, r.runtimeConfig.Node.Name, storageClassName)
@@ -730,6 +738,7 @@ func (r *LocalVolumeReconciler) processRejectedDevicesForDeviceLinks(ctx context
 			}
 		}
 	}
+	return inUsePVCount
 }
 
 func getSymlinkSourceAndTarget(devLocation *internal.DiskLocation, symlinkDir string) (string, string, bool, error) {
