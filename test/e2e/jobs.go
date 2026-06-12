@@ -150,7 +150,7 @@ func createOrReplaceJob(t *testing.T, ctx *framework.TestCtx, job *batchv1.Job, 
 			}
 			if j.CreationTimestamp.Before(&started) {
 				j.TypeMeta.Kind = "Job"
-				eventuallyDelete(t, false, j)
+				eventuallyDelete(t, j)
 				return fmt.Errorf("deleted stale job %s/%s, retrying creation", j.GetNamespace(), j.GetName())
 			}
 		}

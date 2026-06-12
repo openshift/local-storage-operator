@@ -26,7 +26,7 @@ import (
 var pvConsumerLabel = "pv-consumer"
 
 // eventuallyDelete objs, removing the finalizer if necessary
-func eventuallyDelete(t *testing.T, removeFinalizers bool, objs ...client.Object) {
+func eventuallyDelete(t *testing.T, objs ...client.Object) {
 	f := framework.Global
 	matcher := gomega.NewWithT(t)
 	for _, obj := range objs {
@@ -53,27 +53,6 @@ func eventuallyDelete(t *testing.T, removeFinalizers bool, objs ...client.Object
 				t.Logf("object has finalizers: %+v", finalizers)
 			}
 			propPolicy := dynclient.PropagationPolicy(metav1.DeletePropagationBackground)
-			if removeFinalizers {
-				propPolicy = dynclient.PropagationPolicy(metav1.DeletePropagationForeground)
-				accessor.SetFinalizers([]string{})
-				err = f.Client.Update(context.TODO(), obj)
-				if errors.IsNotFound(err) || errors.IsGone(err) {
-					t.Logf("object already deleted: %s", err)
-					return nil
-				} else if err != nil {
-					return fmt.Errorf("could not remove finalizers: %+v", finalizers)
-				}
-				accessor, err = meta.Accessor(obj)
-				if err != nil {
-					t.Fatalf("deletion failed, cannot get accessor for object: %+v, obj: %+v", err, obj)
-				}
-				// recheck finalizers
-				finalizers = accessor.GetFinalizers()
-				if len(finalizers) > 0 {
-					return fmt.Errorf("could not remove finalizers: %+v", finalizers)
-				}
-
-			}
 			err = f.Client.Delete(context.TODO(), obj, propPolicy)
 			if errors.IsNotFound(err) || errors.IsGone(err) {
 				t.Logf("object already deleted: %s", err)
