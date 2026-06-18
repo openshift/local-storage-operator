@@ -80,6 +80,7 @@ yq -i '
   .metadata.annotations["olm.properties"] = strenv(NEW_OLM_PROPERTIES) |
   .metadata.annotations["operators.openshift.io/must-gather-image"] = strenv(NEW_MUST_GATHER_IMAGE) |
   .spec.version = strenv(NEW_SPEC_VERSION) |
-  .spec.labels.alm-status-descriptors = strenv(NEW_ALM_STATUS_DESC)
+  .spec.labels.alm-status-descriptors = strenv(NEW_ALM_STATUS_DESC) |
+  (.spec.install.spec.deployments[0].spec.template.spec.containers[0].env[] | select(.name == "MUSTGATHER_IMAGE")).value = strenv(NEW_MUST_GATHER_IMAGE)
 ' ${CSV_MANIFEST}
 
