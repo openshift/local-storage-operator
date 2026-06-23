@@ -95,6 +95,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/config v1.32.12
 	github.com/aws/aws-sdk-go-v2/credentials v1.19.12
 	github.com/aws/aws-sdk-go-v2/service/ec2 v1.296.0
+	github.com/onsi/ginkgo/v2 v2.32.0
 )
 
 require (
