@@ -19,7 +19,6 @@ Run all e2e suites (default), or select one suite:
 Examples:
   hack/test-e2e.sh --suite LocalVolumeSet
   hack/test-e2e.sh --suite localvolumeset -count=1
-  hack/test-e2e.sh -run 'TestLocalStorage/LocalVolumeSet$'
 EOF
 }
 
@@ -52,18 +51,18 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-suite_run_regex=""
+suite_label=""
 if [[ -n "$suite" ]]; then
   suite_lower=$(echo "$suite" | tr '[:upper:]' '[:lower:]')
   case "$suite_lower" in
     localvolumediscovery)
-      suite_name="LocalVolumeDiscovery"
+      suite_label="LocalVolumeDiscovery"
       ;;
     localvolumeset)
-      suite_name="LocalVolumeSet"
+      suite_label="LocalVolumeSet"
       ;;
     localvolume)
-      suite_name="LocalVolume"
+      suite_label="LocalVolume"
       ;;
     *)
       echo "error: unsupported suite '$suite'" >&2
@@ -71,13 +70,11 @@ if [[ -n "$suite" ]]; then
       exit 2
       ;;
   esac
-  suite_run_regex="TestLocalStorage/${suite_name}$"
 fi
 
 go test -timeout 0 ./test/e2e/... \
   -root="$(pwd)" \
   -kubeconfig="${KUBECONFIG}" \
   -v \
-  -parallel=1 \
-  ${suite_run_regex:+-run "$suite_run_regex"} \
+  ${suite_label:+--ginkgo.label-filter "$suite_label"} \
   "${extra_args[@]}"

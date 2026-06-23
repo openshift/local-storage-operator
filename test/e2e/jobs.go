@@ -3,10 +3,9 @@ package e2e
 import (
 	"context"
 	"fmt"
-	"testing"
 	"time"
 
-	"github.com/onsi/gomega"
+	. "github.com/onsi/gomega"
 	"github.com/openshift/local-storage-operator/pkg/common"
 	framework "github.com/openshift/local-storage-operator/test/framework"
 	batchv1 "k8s.io/api/batch/v1"
@@ -132,12 +131,11 @@ func newNodeJob(nodeHostname, namespace, jobName, description string, command []
 }
 
 // createOrReplaceJob creates a job. It deletes an old job with the same name, if it already exists and creates a new one.
-func createOrReplaceJob(t *testing.T, ctx *framework.TestCtx, job *batchv1.Job, message string) {
+func createOrReplaceJob(namespace string, job *batchv1.Job, message string) {
 	f := framework.Global
-	matcher := gomega.NewWithT(t)
 	started := metav1.NewTime(time.Now())
-	matcher.Eventually(func() error {
-		err := f.Client.Create(context.TODO(), job, &framework.CleanupOptions{TestContext: ctx})
+	Eventually(func() error {
+		err := f.Client.Create(context.TODO(), job, nil)
 		j := &batchv1.Job{}
 		if errors.IsAlreadyExists(err) {
 			err = f.Client.Get(
@@ -150,21 +148,20 @@ func createOrReplaceJob(t *testing.T, ctx *framework.TestCtx, job *batchv1.Job, 
 			}
 			if j.CreationTimestamp.Before(&started) {
 				j.TypeMeta.Kind = "Job"
-				eventuallyDelete(t, j)
+				eventuallyDelete(j)
 				return fmt.Errorf("deleted stale job %s/%s, retrying creation", j.GetNamespace(), j.GetName())
 			}
 		}
 		return err
 
-	}, time.Minute*1, time.Second*5).ShouldNot(gomega.HaveOccurred(), message)
+	}, time.Minute*1, time.Second*5).ShouldNot(HaveOccurred(), message)
 }
 
-func waitForJobCompletion(t *testing.T, job *batchv1.Job, message string) {
+func waitForJobCompletion(job *batchv1.Job, message string) {
 	f := framework.Global
-	matcher := gomega.NewWithT(t)
-	matcher.Eventually(func() int32 {
+	Eventually(func() int32 {
 		j := &batchv1.Job{}
-		matcher.Eventually(func() error {
+		Eventually(func() error {
 			return f.Client.Get(
 				context.TODO(),
 				types.NamespacedName{
@@ -172,9 +169,9 @@ func waitForJobCompletion(t *testing.T, job *batchv1.Job, message string) {
 					Namespace: job.GetNamespace()},
 				j,
 			)
-		}).ShouldNot(gomega.HaveOccurred())
+		}).ShouldNot(HaveOccurred())
 		completions := j.Status.Succeeded
-		t.Logf("job completions: %d", completions)
+		f.Logf("job completions: %d", completions)
 		return completions
-	}, time.Minute*2, time.Second*5).Should(gomega.BeNumerically(">=", 1), message)
+	}, time.Minute*2, time.Second*5).Should(BeNumerically(">=", 1), message)
 }
