@@ -2,40 +2,36 @@ package e2e
 
 import (
 	"fmt"
-	"testing"
 
 	framework "github.com/openshift/local-storage-operator/test/framework"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 )
 
-func cleanupSymlinkDir(t *testing.T, ctx *framework.TestCtx, nodeEnv []nodeDisks) error {
-	t.Logf("cleaning up hostdirs")
-	namespace, err := ctx.GetOperatorNamespace()
-	if err != nil || namespace == "" {
-		return fmt.Errorf("could not determine namespace: %w", err)
-	}
+func cleanupSymlinkDir(namespace string, nodeEnv []nodeDisks) error {
+	f := framework.Global
+	f.Logf("cleaning up hostdirs")
 
 	cleanupJobs := make([]*batchv1.Job, 0)
 
 	// create jobs
 	for _, nd := range nodeEnv {
 		node := nd.node
-		t.Logf("creating cleanup job on node: %q", node.GetName())
+		f.Logf("creating cleanup job on node: %q", node.GetName())
 		cleanupJob, err := newNodeCleanupJob(node, namespace)
 		if err != nil {
 			return err
 		}
 		cleanupJobs = append(cleanupJobs, cleanupJob)
-		createOrReplaceJob(t, ctx, cleanupJob, fmt.Sprintf("creating cleanup job on node: %q", node.GetName()))
+		createOrReplaceJob(namespace, cleanupJob, fmt.Sprintf("creating cleanup job on node: %q", node.GetName()))
 
 	}
 
 	// wait for jobs to have non-nil completetion time
 	for _, cleanupJob := range cleanupJobs {
-		waitForJobCompletion(t, cleanupJob, fmt.Sprintf("waiting for cleanup job to complete: %q", cleanupJob.GetName()))
+		waitForJobCompletion(cleanupJob, fmt.Sprintf("waiting for cleanup job to complete: %q", cleanupJob.GetName()))
 		cleanupJob.TypeMeta.Kind = "Job"
-		eventuallyDelete(t, cleanupJob)
+		eventuallyDelete(cleanupJob)
 	}
 
 	return nil
