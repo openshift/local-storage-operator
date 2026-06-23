@@ -45,6 +45,8 @@ if [ -z "${METADATA_NAME}" ] ||
 	exit 1
 fi
 
+IMAGE_REFERENCES_MANIFEST=config/manifests/stable/image-references
+
 OCP_VERSION=${1:-${PACKAGE_VERSION}}
 IFS='.' read -r MAJOR_VERSION MINOR_VERSION PATCH_VERSION <<< "${OCP_VERSION}"
 PATCH_VERSION=${PATCH_VERSION:-0}
@@ -80,6 +82,10 @@ yq -i '
   .metadata.annotations["olm.properties"] = strenv(NEW_OLM_PROPERTIES) |
   .metadata.annotations["operators.openshift.io/must-gather-image"] = strenv(NEW_MUST_GATHER_IMAGE) |
   .spec.version = strenv(NEW_SPEC_VERSION) |
-  .spec.labels.alm-status-descriptors = strenv(NEW_ALM_STATUS_DESC)
+  .spec.labels.alm-status-descriptors = strenv(NEW_ALM_STATUS_DESC) |
+  (.spec.install.spec.deployments[0].spec.template.spec.containers[0].env[] | select(.name == "MUSTGATHER_IMAGE")).value = strenv(NEW_MUST_GATHER_IMAGE)
 ' ${CSV_MANIFEST}
+
+echo "Updating image references to ${PACKAGE_VERSION}"
+yq -i '(.spec.tags[] | select(.name == "local-storage-mustgather")).from.name = strenv(NEW_MUST_GATHER_IMAGE)' ${IMAGE_REFERENCES_MANIFEST}
 

@@ -3,19 +3,19 @@ kind: ImageStream
 apiVersion: image.openshift.io/v1
 spec:
   tags:
-  - name: local-storage-operator
-    from:
-      kind: DockerImage
-      name: quay.io/openshift/origin-local-storage-operator:latest
-  - name: local-storage-diskmaker
-    from:
-      kind: DockerImage
-      name: quay.io/openshift/origin-local-storage-diskmaker:latest
-  - name: kube-rbac-proxy
-    from:
-      kind: DockerImage
-      name: quay.io/openshift/origin-kube-rbac-proxy:latest
-  - name: local-storage-mustgather
-    from:
-      kind: DockerImage
-      name: registry.redhat.io/openshift4/ose-local-storage-mustgather-rhel9:v4.22.0
+    - name: local-storage-operator
+      from:
+        kind: DockerImage
+        name: quay.io/openshift/origin-local-storage-operator:latest
+    - name: local-storage-diskmaker
+      from:
+        kind: DockerImage
+        name: quay.io/openshift/origin-local-storage-diskmaker:latest
+    - name: kube-rbac-proxy
+      from:
+        kind: DockerImage
+        name: quay.io/openshift/origin-kube-rbac-proxy:latest
+    - name: local-storage-mustgather
+      from:
+        kind: DockerImage
+        name: registry.redhat.io/openshift4/ose-local-storage-mustgather-rhel9:v5.0.0
