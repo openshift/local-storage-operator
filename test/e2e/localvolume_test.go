@@ -84,7 +84,7 @@ var _ = Describe("LocalVolume", Label("LocalVolume"), Ordered, func() {
 		Expect(selectedDisk.path).ShouldNot(BeZero(), "device path should not be empty")
 	})
 
-	Context("duplicate by-id cache reproducer", func() {
+	Context("duplicate by-id cache reproducer", Ordered, func() {
 		var tc *testContext
 
 		BeforeAll(func() {
@@ -172,7 +172,7 @@ var _ = Describe("LocalVolume", Label("LocalVolume"), Ordered, func() {
 		})
 	})
 
-	Context("standard LocalVolume lifecycle", func() {
+	Context("standard LocalVolume lifecycle", Ordered, func() {
 		var tc *testContext
 
 		BeforeAll(func() {

@@ -127,7 +127,6 @@ require (
 	github.com/google/btree v1.1.3 // indirect
 	github.com/google/pprof v0.0.0-20260402051712-545e8a4df936 // indirect
 	github.com/imdario/mergo v0.3.7 // indirect
-	github.com/onsi/ginkgo/v2 v2.32.0 // indirect
 	github.com/robfig/cron v1.2.0 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	go.opentelemetry.io/otel v1.42.0 // indirect
