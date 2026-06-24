@@ -103,7 +103,7 @@ var _ = Describe("LocalVolumeSet", Label("LocalVolumeSet"), Ordered, func() {
 		nodeEnv = populateDeviceInfo(namespace, nodeEnv)
 	})
 
-	Context("duplicate by-id cache reproducer", func() {
+	Context("duplicate by-id cache reproducer", Ordered, func() {
 		var tc *testContext
 
 		BeforeAll(func() {
@@ -195,7 +195,7 @@ var _ = Describe("LocalVolumeSet", Label("LocalVolumeSet"), Ordered, func() {
 		})
 	})
 
-	Context("block volume sets with device size filtering", func() {
+	Context("block volume sets with device size filtering", Ordered, func() {
 		var tc *testContext
 
 		BeforeAll(func() {
@@ -388,7 +388,7 @@ var _ = Describe("LocalVolumeSet", Label("LocalVolumeSet"), Ordered, func() {
 		})
 	})
 
-	Context("filesystem volume sets", func() {
+	Context("filesystem volume sets", Ordered, func() {
 		var tc *testContext
 
 		BeforeAll(func() {
@@ -459,7 +459,8 @@ var _ = Describe("LocalVolumeSet", Label("LocalVolumeSet"), Ordered, func() {
 				return nil
 			}, time.Minute, time.Second*2).ShouldNot(HaveOccurred(), "updating lvset")
 
-			tc.pvs = eventuallyFindPVs(f, tc.lvset.Spec.StorageClassName, 13)
+			// this should give us all 15 PVs now
+			tc.pvs = eventuallyFindPVs(f, tc.lvset.Spec.StorageClassName, 15)
 
 			f.Logf("looking for %q annotation on pvs", provCommon.AnnProvisionedBy)
 			verifyProvisionerAnnotation(tc.pvs, nodeList.Items)
@@ -503,7 +504,7 @@ var _ = Describe("LocalVolumeSet", Label("LocalVolumeSet"), Ordered, func() {
 			for _, pv := range tc.pvs {
 				eventuallyDeletePV(&pv)
 			}
-			tc.pvs = eventuallyFindPVs(f, tc.lvset.Spec.StorageClassName, 13)
+			tc.pvs = eventuallyFindPVs(f, tc.lvset.Spec.StorageClassName, 15)
 		})
 
 		It("verifies consumed filesystem PVs are recreated upon release", func() {
