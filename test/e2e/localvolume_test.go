@@ -37,6 +37,7 @@ var (
 	awsEBSNitroRegex   = "^[cmr]5.*|t3|z1d"
 	labelInstanceType  = "beta.kubernetes.io/instance-type"
 	lvStorageClassName = "test-local-sc"
+	lvdlDiskIndex      = 4 // lvdlDiskIndex is a dedicated disk for the main LocalVolume
 )
 
 func LocalVolumeTest(ctx *framework.Context, cleanupFuncs *[]cleanupFn) func(*testing.T) {
@@ -60,11 +61,15 @@ func LocalVolumeTest(ctx *framework.Context, cleanupFuncs *[]cleanupFn) func(*te
 		}
 
 		// represents the disk layout to setup on the nodes.
+		// Extended to support testing different FSTypes: default, ext4, xfs, block
 		nodeEnv := []nodeDisks{
 			{
 				disks: []disk{
-					{size: 10},
-					{size: 20},
+					{size: 10}, // default fsType subtest disk
+					{size: 20}, // ext4 fsType subtest disk
+					{size: 30}, // xfs fsType subtest disk
+					{size: 40}, // block fsType subtest disk
+					{size: 15}, // LVDL / symlink reconciliation disk
 				},
 				node: nodeList.Items[0],
 			},
@@ -107,8 +112,6 @@ func LocalVolumeTest(ctx *framework.Context, cleanupFuncs *[]cleanupFn) func(*te
 		// get the device paths and IDs
 		nodeEnv = populateDeviceInfo(t, ctx, nodeEnv)
 
-		selectedDisk := nodeEnv[0].disks[0]
-		matcher.Expect(selectedDisk.path).ShouldNot(gomega.BeZero(), "device path should not be empty")
 		sharedSelectedDisk := nodeEnv[0].disks[1]
 		matcher.Expect(sharedSelectedDisk.path).ShouldNot(gomega.BeZero(), "shared selected device path should not be empty")
 		sharedAliasDisk := nodeEnv[1].disks[1]
@@ -191,6 +194,258 @@ func LocalVolumeTest(ctx *framework.Context, cleanupFuncs *[]cleanupFn) func(*te
 		removeUdevSymlink(t, ctx, nodeEnv[0].node.Labels[corev1.LabelHostname], sharedScsi8Link)
 		removeUdevSymlink(t, ctx, nodeEnv[1].node.Labels[corev1.LabelHostname], sharedScsi8Link)
 
+		if len(nodeEnv[0].disks) <= lvdlDiskIndex {
+			t.Fatalf("expected at least %d disks on node 0, got %d", lvdlDiskIndex+1, len(nodeEnv[0].disks))
+		}
+
+		// Test cases for different FSType and VolumeMode configurations.
+		testCases := []struct {
+			name             string
+			fsType           string
+			volumeMode       localv1.PersistentVolumeMode
+			storageClassName string
+			diskIndex        int
+			testFinalizer    bool // whether to test finalizer behavior
+			testAnnotations  bool // whether to test provisioner annotations
+			testSymlinks     bool // whether to test symlink cleanup
+		}{
+			{
+				name:             "default-filesystem-with-tolerations",
+				fsType:           "",
+				volumeMode:       localv1.PersistentVolumeFilesystem,
+				storageClassName: lvStorageClassName,
+				diskIndex:        0,
+				testFinalizer:    true,
+				testAnnotations:  true,
+				testSymlinks:     true,
+			},
+			{
+				name:             "ext4-filesystem",
+				fsType:           "ext4",
+				volumeMode:       localv1.PersistentVolumeFilesystem,
+				storageClassName: "test-local-sc-ext4",
+				diskIndex:        1,
+				testFinalizer:    false,
+				testAnnotations:  false,
+				testSymlinks:     false,
+			},
+			{
+				name:             "xfs-filesystem",
+				fsType:           "xfs",
+				volumeMode:       localv1.PersistentVolumeFilesystem,
+				storageClassName: "test-local-sc-xfs",
+				diskIndex:        2,
+				testFinalizer:    false,
+				testAnnotations:  false,
+				testSymlinks:     false,
+			},
+			{
+				name:             "block-mode",
+				fsType:           "",
+				volumeMode:       localv1.PersistentVolumeBlock,
+				storageClassName: "test-local-sc-block",
+				diskIndex:        3,
+				testFinalizer:    false,
+				testAnnotations:  false,
+				testSymlinks:     false,
+			},
+		}
+
+		for _, tc := range testCases {
+			t.Run(tc.name, func(t *testing.T) {
+				subMatcher := gomega.NewGomegaWithT(t)
+
+				selectedDisk := nodeEnv[0].disks[tc.diskIndex]
+				subMatcher.Expect(selectedDisk.path).ShouldNot(gomega.BeZero(), "device path should not be empty for "+tc.name)
+
+				var localVolume *localv1.LocalVolume
+				if tc.name == "default-filesystem-with-tolerations" {
+					localVolume = getLocalVolume(selectedNode, selectedDisk.path, namespace)
+				} else {
+					localVolume = getLocalVolumeWithFSType(
+						selectedNode,
+						selectedDisk.path,
+						namespace,
+						tc.storageClassName,
+						tc.fsType,
+						tc.volumeMode,
+						"",
+						nil,
+					)
+				}
+
+				subMatcher.Eventually(func() error {
+					t.Logf("creating localvolume %s with fsType=%q, volumeMode=%s", tc.name, tc.fsType, tc.volumeMode)
+					return f.Client.Create(goctx.TODO(), localVolume, &framework.CleanupOptions{TestContext: ctx})
+				}, time.Minute, time.Second*2).ShouldNot(gomega.HaveOccurred(), "creating localvolume "+tc.name)
+
+				// add pv and storageclass cleanup
+				addToCleanupFuncs(
+					cleanupFuncs,
+					fmt.Sprintf("cleanupLVResources-%s", tc.name),
+					func(t *testing.T) error {
+						return cleanupLVResources(t, f, localVolume)
+					},
+				)
+
+				err = waitForDaemonSet(t, f.KubeClient, namespace, nodedaemon.DiskMakerName, retryInterval, timeout)
+				if err != nil {
+					t.Fatalf("error waiting for diskmaker daemonset : %v", err)
+				}
+
+				err = verifyLocalVolume(t, localVolume, f.Client)
+				if err != nil {
+					t.Fatalf("error verifying localvolume cr: %v", err)
+				}
+
+				err = checkLocalVolumeStatus(t, localVolume)
+				if err != nil {
+					t.Fatalf("error checking localvolume condition: %v", err)
+				}
+
+				// Find PVs
+				pvs := eventuallyFindPVs(t, f, tc.storageClassName, 1)
+				if len(pvs) == 0 {
+					t.Fatalf("no pvs returned by eventuallyFindPVs for %s", tc.name)
+				}
+
+				// Verify PV path
+				var expectedPath string
+				if selectedDisk.id != "" {
+					expectedPath = selectedDisk.id
+				} else {
+					expectedPath = selectedDisk.name
+				}
+				subMatcher.Expect(filepath.Base(pvs[0].Spec.Local.Path)).To(gomega.Equal(expectedPath))
+
+				// Verify PV spec matches expected FSType and VolumeMode
+				pv := pvs[0]
+				t.Logf("verifying PV %s for test case %s", pv.Name, tc.name)
+
+				if tc.volumeMode == localv1.PersistentVolumeBlock {
+					// For block mode, verify volumeMode is Block
+					if pv.Spec.VolumeMode == nil || *pv.Spec.VolumeMode != corev1.PersistentVolumeBlock {
+						t.Fatalf("expected PV volumeMode to be Block, got %v", pv.Spec.VolumeMode)
+					}
+					t.Logf("verified PV %s has volumeMode=Block", pv.Name)
+				} else {
+					// For filesystem mode, verify fsType if specified
+					if tc.fsType != "" {
+						if pv.Spec.Local.FSType == nil || *pv.Spec.Local.FSType != tc.fsType {
+							t.Fatalf("expected PV fsType to be %s, got %v", tc.fsType, pv.Spec.Local.FSType)
+						}
+						t.Logf("verified PV %s has fsType=%s", pv.Name, tc.fsType)
+					}
+				}
+
+				// Verify StorageClass exists (Local Storage Operator uses kubernetes.io/no-provisioner,
+				// so FSType is set on PV spec directly, not in StorageClass parameters)
+				_, err = f.KubeClient.StorageV1().StorageClasses().Get(goctx.TODO(), tc.storageClassName, metav1.GetOptions{})
+				if err != nil {
+					t.Fatalf("error getting storage class %s: %v", tc.storageClassName, err)
+				}
+				t.Logf("verified StorageClass %s exists", tc.storageClassName)
+
+				// Test provisioner annotations (only for default test)
+				if tc.testAnnotations {
+					t.Logf("looking for %q annotation on pvs", provCommon.AnnProvisionedBy)
+					verifyProvisionerAnnotation(t, pvs, nodeList.Items)
+				}
+
+				// Test PV deletion and recreation
+				for i := range pvs {
+					eventuallyDeletePV(t, &pvs[i])
+				}
+
+				// verify that PVs come back after deletion
+				pvs = eventuallyFindPVs(t, f, tc.storageClassName, 1)
+
+				// consume pvs
+				consumingObjectList := make([]client.Object, 0)
+				for _, pv := range pvs {
+					pvc, job, pod := consumePV(t, ctx, pv)
+					consumingObjectList = append(consumingObjectList, job, pvc, pod)
+				}
+
+				// release pvs
+				eventuallyDelete(t, consumingObjectList...)
+
+				// verify that PVs eventually come back
+				eventuallyFindAvailablePVs(t, f, tc.storageClassName, pvs)
+
+				// Test finalizer behavior (only for default test)
+				if tc.testFinalizer {
+					// consume one PV
+					consumingObjectList = make([]client.Object, 0)
+
+					addToCleanupFuncs(cleanupFuncs, "pv-consumer", func(t *testing.T) error {
+						eventuallyDelete(t, consumingObjectList...)
+						return nil
+					})
+					for _, pv := range pvs[:1] {
+						pvc, job, pod := consumePV(t, ctx, pv)
+						consumingObjectList = append(consumingObjectList, job, pvc, pod)
+					}
+
+					// attempt localVolume deletion
+					subMatcher.Eventually(func() error {
+						t.Logf("deleting LocalVolume %q", localVolume.Name)
+						return f.Client.Delete(context.TODO(), localVolume, client.PropagationPolicy(metav1.DeletePropagationBackground))
+					}, time.Minute*5, time.Second*5).ShouldNot(gomega.HaveOccurred(), "deleting LocalVolume %q", localVolume.Name)
+
+					// verify finalizer not removed while bound pvs exist
+					subMatcher.Consistently(func() bool {
+						t.Logf("verifying finalizer still exists")
+						err := f.Client.Get(goctx.TODO(), types.NamespacedName{Name: localVolume.Name, Namespace: f.OperatorNamespace}, localVolume)
+						if err != nil && (errors.IsGone(err) || errors.IsNotFound(err)) {
+							t.Fatalf("LocalVolume deleted with bound PVs")
+							return false
+						} else if err != nil {
+							t.Logf("error getting LocalVolume: %+v", err)
+							return false
+						}
+						return len(localVolume.ObjectMeta.Finalizers) > 0
+					}, time.Second*15, time.Second*3).Should(gomega.BeTrue(), "checking finalizer exists with bound PVs")
+
+					// release PV
+					t.Logf("releasing pvs")
+					eventuallyDelete(t, consumingObjectList...)
+				} else {
+					// For non-finalizer tests, just delete the LocalVolume
+					subMatcher.Eventually(func() error {
+						t.Logf("deleting LocalVolume %q", localVolume.Name)
+						return f.Client.Delete(context.TODO(), localVolume, client.PropagationPolicy(metav1.DeletePropagationBackground))
+					}, time.Minute*5, time.Second*5).ShouldNot(gomega.HaveOccurred(), "deleting LocalVolume %q", localVolume.Name)
+				}
+
+				// verify localVolume deletion
+				subMatcher.Eventually(func() bool {
+					t.Log("verifying LocalVolume deletion")
+					err := f.Client.Get(goctx.TODO(), types.NamespacedName{Name: localVolume.Name, Namespace: f.OperatorNamespace}, localVolume)
+					if err != nil && (errors.IsGone(err) || errors.IsNotFound(err)) {
+						t.Logf("LocalVolume deleted: %+v", err)
+						return true
+					} else if err != nil {
+						t.Logf("error getting LocalVolume: %+v", err)
+						return false
+					}
+					t.Logf("LocalVolume found: %q with finalizers: %+v", localVolume.Name, localVolume.ObjectMeta.Finalizers)
+					return false
+				}, time.Minute*5, time.Second*5).Should(gomega.BeTrue(), "verifying LocalVolume %s has been deleted", tc.name)
+
+				// Check for leftover symlinks (only for default test)
+				if tc.testSymlinks {
+					symLinkPath := path.Join(common.GetLocalDiskLocationPath(), tc.storageClassName)
+					checkForSymlinks(t, ctx, nodeEnv, symLinkPath)
+				}
+			})
+		}
+
+		// Main LocalVolume LVDL / symlink reconciliation flow,
+		// on a dedicated disk after fsType subtests complete.
+		selectedDisk := nodeEnv[0].disks[lvdlDiskIndex]
+		matcher.Expect(selectedDisk.path).ShouldNot(gomega.BeZero(), "device path should not be empty")
+
 		localVolume := getLocalVolume(selectedNode, selectedDisk.path, namespace)
 
 		matcher.Eventually(func() error {
@@ -216,7 +471,6 @@ func LocalVolumeTest(ctx *framework.Context, cleanupFuncs *[]cleanupFn) func(*te
 			t.Fatalf("error verifying localvolume cr: %v", err)
 		}
 
-		//	time.Sleep(10 * time.Minute)
 		err = checkLocalVolumeStatus(t, localVolume)
 		if err != nil {
 			t.Fatalf("error checking localvolume condition: %v", err)
@@ -312,6 +566,7 @@ func LocalVolumeTest(ctx *framework.Context, cleanupFuncs *[]cleanupFn) func(*te
 			pvc, job, pod := consumePV(t, ctx, pv)
 			consumingObjectList = append(consumingObjectList, job, pvc, pod)
 		}
+
 		// attempt localVolume deletion
 		matcher.Eventually(func() error {
 			t.Logf("deleting LocalVolume %q", localVolume.Name)
@@ -331,9 +586,11 @@ func LocalVolumeTest(ctx *framework.Context, cleanupFuncs *[]cleanupFn) func(*te
 			}
 			return len(localVolume.ObjectMeta.Finalizers) > 0
 		}, time.Second*15, time.Second*3).Should(gomega.BeTrue(), "checking finalizer exists with bound PVs")
+
 		// release PV
 		t.Logf("releasing pvs")
 		eventuallyDelete(t, consumingObjectList...)
+
 		// verify localVolume deletion
 		matcher.Eventually(func() bool {
 			t.Log("verifying LocalVolume deletion")
@@ -778,13 +1035,59 @@ func waitForNodeTaintUpdate(t *testing.T, kubeclient kubernetes.Interface, node 
 }
 
 func getLocalVolume(selectedNode v1.Node, selectedDisk, namespace string) *localv1.LocalVolume {
+	return getLocalVolumeWithFSType(
+		selectedNode,
+		selectedDisk,
+		namespace,
+		lvStorageClassName,
+		"",
+		localv1.PersistentVolumeFilesystem,
+		"test-local-disk",
+		[]v1.Toleration{
+			{
+				Key:      "localstorage",
+				Value:    "testvalue",
+				Operator: "Equal",
+			},
+		},
+	)
+}
+
+// getLocalVolumeWithFSType creates a LocalVolume CR with specific FSType and VolumeMode
+// Parameters:
+//   - selectedNode: the node to deploy on
+//   - selectedDisk: the disk device path
+//   - namespace: the namespace for the LocalVolume
+//   - storageClassName: the storage class name
+//   - fsType: filesystem type (ext4, xfs, or empty string for block mode)
+//   - volumeMode: PersistentVolumeFilesystem or PersistentVolumeBlock
+//   - name: the name of the LocalVolume CR (if empty, generates from storageClassName)
+//   - tolerations: tolerations to apply (can be nil)
+func getLocalVolumeWithFSType(selectedNode v1.Node, selectedDisk, namespace, storageClassName, fsType string, volumeMode localv1.PersistentVolumeMode, name string, tolerations []v1.Toleration) *localv1.LocalVolume {
+	// Generate name if not provided
+	if name == "" {
+		name = fmt.Sprintf("test-local-disk-%s", storageClassName)
+	}
+
+	// Build StorageClassDevice
+	scd := localv1.StorageClassDevice{
+		StorageClassName: storageClassName,
+		DevicePaths:      []string{selectedDisk},
+		VolumeMode:       volumeMode,
+	}
+
+	// Only set FSType for filesystem mode, not for block mode
+	if volumeMode != localv1.PersistentVolumeBlock && fsType != "" {
+		scd.FSType = fsType
+	}
+
 	localVolume := &localv1.LocalVolume{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "LocalVolume",
 			APIVersion: localv1.GroupVersion.String(),
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "test-local-disk",
+			Name:      name,
 			Namespace: namespace,
 		},
 		Spec: localv1.LocalVolumeSpec{
@@ -797,19 +1100,8 @@ func getLocalVolume(selectedNode v1.Node, selectedDisk, namespace string) *local
 					},
 				},
 			},
-			Tolerations: []v1.Toleration{
-				{
-					Key:      "localstorage",
-					Value:    "testvalue",
-					Operator: "Equal",
-				},
-			},
-			StorageClassDevices: []localv1.StorageClassDevice{
-				{
-					StorageClassName: lvStorageClassName,
-					DevicePaths:      []string{selectedDisk},
-				},
-			},
+			Tolerations:         tolerations,
+			StorageClassDevices: []localv1.StorageClassDevice{scd},
 		},
 	}
 
