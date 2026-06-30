@@ -75,6 +75,10 @@ type DeviceInclusionSpec struct {
 	// to contain at least one of these strings.
 	// +optional
 	Vendors []string `json:"vendors,omitempty"`
+	// Serials is a list of device serial IDs. If not empty, the device's serial ID as outputted
+	// by lsblk needs to contain at least one of these strings.
+	// +optional
+	Serials []string `json:"serials,omitempty"`
 }
 
 // DeviceExclusionSpec holds the exclusion filter spec

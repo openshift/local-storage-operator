@@ -611,6 +611,28 @@ func TestInModelList(t *testing.T) {
 	assertAll(t, results)
 }
 
+func TestInSerialList(t *testing.T) {
+	matcherMap := matcherMap
+	matcher := inSerialList
+	results := []knownMatcherResult{
+		// exact match
+		{
+			matcherMap: matcherMap, matcher: matcher,
+			dev:         internal.BlockDevice{Serial: "12345678ABCD"},
+			spec:        &localv1alpha1.DeviceInclusionSpec{Serials: []string{"12345678ABCD"}},
+			expectMatch: true, expectErr: false,
+		},
+		// mismatch
+		{
+			matcherMap: matcherMap, matcher: matcher,
+			dev:         internal.BlockDevice{Serial: "12345678ABCD"},
+			spec:        &localv1alpha1.DeviceInclusionSpec{Serials: []string{"ABCDEF012"}},
+			expectMatch: false, expectErr: false,
+		},
+	}
+	assertAll(t, results)
+}
+
 func TestNotInDeviceNameFilter(t *testing.T) {
 	em := exclusionMap
 	matcher := notInDeviceNameFilter
