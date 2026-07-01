@@ -6,7 +6,6 @@ import (
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
-	"github.com/onsi/gomega"
 	. "github.com/onsi/gomega"
 	localv1 "github.com/openshift/local-storage-operator/api/v1"
 	framework "github.com/openshift/local-storage-operator/test/framework"
@@ -42,9 +41,9 @@ func eventuallyDelete(objs ...client.Object) {
 		kind := obj.GetObjectKind().GroupVersionKind().Kind
 		name := accessor.GetName()
 		namespace := accessor.GetNamespace()
-		Eventually(func() error {
+		Eventually(func(ctx context.Context) error {
 			f.Logf("deleting obj %q with kind %q in ns %q", name, kind, namespace)
-			err := f.Client.Get(context.TODO(), types.NamespacedName{Name: name, Namespace: namespace}, obj)
+			err := f.Client.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, obj)
 			if errors.IsNotFound(err) || errors.IsGone(err) {
 				f.Logf("object already deleted: %s", err)
 				return nil
@@ -58,13 +57,13 @@ func eventuallyDelete(objs ...client.Object) {
 				f.Logf("object has finalizers: %+v", finalizers)
 			}
 			propPolicy := dynclient.PropagationPolicy(metav1.DeletePropagationBackground)
-			err = f.Client.Delete(context.TODO(), obj, propPolicy)
+			err = f.Client.Delete(ctx, obj, propPolicy)
 			if errors.IsNotFound(err) || errors.IsGone(err) {
 				f.Logf("object already deleted: %s", err)
 				return nil
 			}
 			return err
-		}, time.Minute*5, time.Second*5).ShouldNot(gomega.HaveOccurred(), "deleting %q", name)
+		}, time.Minute*5, time.Second*5).ShouldNot(HaveOccurred(), "deleting %q", name)
 	}
 }
 
@@ -75,9 +74,9 @@ func eventuallyDelete(objs ...client.Object) {
 func eventuallyDeletePV(pv *corev1.PersistentVolume) {
 	f := framework.Global
 	oldUID := pv.UID
-	Eventually(func() error {
+	Eventually(func(ctx context.Context) error {
 		f.Logf("deleting obj %q with kind %q in ns %q", pv.Name, pv.Kind, pv.Namespace)
-		err := f.Client.Get(context.TODO(), types.NamespacedName{Name: pv.Name, Namespace: pv.Namespace}, pv)
+		err := f.Client.Get(ctx, types.NamespacedName{Name: pv.Name, Namespace: pv.Namespace}, pv)
 		if errors.IsNotFound(err) || errors.IsGone(err) {
 			f.Logf("object already deleted: %s", err)
 			return nil
@@ -88,7 +87,7 @@ func eventuallyDeletePV(pv *corev1.PersistentVolume) {
 			return nil
 		}
 
-		err = f.Client.Delete(context.TODO(), pv)
+		err = f.Client.Delete(ctx, pv)
 		if errors.IsNotFound(err) || errors.IsGone(err) {
 			f.Logf("object already deleted: %s", err)
 			return nil
@@ -101,9 +100,11 @@ func eventuallyFindPVs(f *framework.Framework, storageClassName string, expected
 	var matchedPVs []corev1.PersistentVolume
 	Eventually(func() []corev1.PersistentVolume {
 		pvList := &corev1.PersistentVolumeList{}
-		Eventually(func() error {
-			return f.Client.List(context.TODO(), pvList)
+
+		Eventually(func(ctx context.Context) error {
+			return f.Client.List(ctx, pvList)
 		}).ShouldNot(HaveOccurred())
+
 		matchedPVs = make([]corev1.PersistentVolume, 0)
 		for _, pv := range pvList.Items {
 			if pv.Spec.StorageClassName == storageClassName {
@@ -121,9 +122,9 @@ func eventuallyFindPVs(f *framework.Framework, storageClassName string, expected
 func eventuallyFindLVDLsForPVs(f *framework.Framework, namespace string, pvNames []string) []localv1.LocalVolumeDeviceLink {
 	pvNameSet := sets.New(pvNames...)
 	foundLVDLs := make([]localv1.LocalVolumeDeviceLink, 0)
-	Eventually(func() bool {
+	Eventually(func(ctx context.Context) bool {
 		lvdlList := &localv1.LocalVolumeDeviceLinkList{}
-		err := f.Client.List(context.TODO(), lvdlList, client.InNamespace(namespace))
+		err := f.Client.List(ctx, lvdlList, client.InNamespace(namespace))
 		if err != nil {
 			f.Logf("error listing LocalVolumeDeviceLink objects: %v", err)
 			return false
@@ -247,9 +248,9 @@ func consumePV(namespace string, pv corev1.PersistentVolume) (*corev1.Persistent
 	}
 
 	// create pvc
-	Eventually(func() error {
+	Eventually(func(ctx context.Context) error {
 		f.Logf("creating pvc: %q", pvc.Name)
-		return f.Client.Create(context.TODO(), pvc, nil)
+		return f.Client.Create(ctx, pvc, nil)
 	}, time.Minute, time.Second*2).ShouldNot(HaveOccurred(), "creating pvc")
 
 	DeferCleanup(func() {
@@ -262,9 +263,9 @@ func consumePV(namespace string, pv corev1.PersistentVolume) (*corev1.Persistent
 	timeStarted := time.Date(toRound.Year(), toRound.Month(), toRound.Day(), toRound.Hour(), toRound.Minute(), 0, 0, toRound.Location())
 
 	// create consuming job
-	Eventually(func() error {
+	Eventually(func(ctx context.Context) error {
 		f.Logf("creating job: %q", job.Name)
-		return f.Client.Create(context.TODO(), job, nil)
+		return f.Client.Create(ctx, job, nil)
 	}, time.Minute, time.Second*2).ShouldNot(HaveOccurred(), "creating job")
 
 	DeferCleanup(func() {
@@ -272,9 +273,9 @@ func consumePV(namespace string, pv corev1.PersistentVolume) (*corev1.Persistent
 	})
 
 	// wait for job to complete
-	Eventually(func() int32 {
+	Eventually(func(ctx context.Context) int32 {
 		f.Logf("waiting for job to complete")
-		err := f.Client.Get(context.TODO(), types.NamespacedName{Name: job.Name, Namespace: job.Namespace}, job)
+		err := f.Client.Get(ctx, types.NamespacedName{Name: job.Name, Namespace: job.Namespace}, job)
 		if err != nil {
 			f.Logf("error fetching job: %+v", err)
 			return 0
@@ -286,7 +287,7 @@ func consumePV(namespace string, pv corev1.PersistentVolume) (*corev1.Persistent
 	// return pods because they have to be deleted before pv is released
 	podList := &corev1.PodList{}
 	var matchingPod corev1.Pod
-	Eventually(func() error {
+	Eventually(func(ctx context.Context) error {
 		f.Logf("looking for the completed pod")
 		appLabelReq, err := labels.NewRequirement("app", selection.Equals, []string{pvConsumerLabel})
 		if err != nil {
@@ -299,7 +300,7 @@ func consumePV(namespace string, pv corev1.PersistentVolume) (*corev1.Persistent
 			return err
 		}
 		selector := labels.NewSelector().Add(*appLabelReq).Add(*pvNameReq)
-		err = f.Client.List(context.TODO(), podList, dynclient.MatchingLabelsSelector{Selector: selector})
+		err = f.Client.List(ctx, podList, dynclient.MatchingLabelsSelector{Selector: selector})
 		if err != nil {
 			f.Logf("failed to list pods: %+v", err)
 			return err

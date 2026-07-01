@@ -121,10 +121,10 @@ func checkForPersistentVolumes(f *framework.Framework, obj client.Object) error 
 		return fmt.Errorf("checkForPersistentVolumes: unsupported type %T", obj)
 	}
 
-	Eventually(func() error {
+	Eventually(func(ctx context.Context) error {
 		pvList := &corev1.PersistentVolumeList{}
 
-		err := f.Client.List(context.TODO(), pvList, client.MatchingLabels{
+		err := f.Client.List(ctx, pvList, client.MatchingLabels{
 			common.PVOwnerKindLabel:      ownerKind,
 			common.PVOwnerNamespaceLabel: namespace,
 			common.PVOwnerNameLabel:      name,
@@ -143,8 +143,8 @@ func checkForPersistentVolumes(f *framework.Framework, obj client.Object) error 
 }
 
 func checkForStorageClass(f *framework.Framework, scName string) error {
-	Eventually(func() error {
-		_, err := f.KubeClient.StorageV1().StorageClasses().Get(context.TODO(), scName, metav1.GetOptions{})
+	Eventually(func(ctx context.Context) error {
+		_, err := f.KubeClient.StorageV1().StorageClasses().Get(ctx, scName, metav1.GetOptions{})
 		if err == nil {
 			return fmt.Errorf("checkForStorageClass: StorageClass %s still exists", scName)
 		} else if !apierrors.IsNotFound(err) {

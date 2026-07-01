@@ -46,8 +46,8 @@ var _ = BeforeSuite(func() {
 	namespace := f.OperatorNamespace
 
 	f.Logf("Waiting for local-storage-operator to be ready in namespace %s", namespace)
-	Eventually(func() error {
-		deployment, err := f.KubeClient.AppsV1().Deployments(namespace).Get(context.TODO(), "local-storage-operator", metav1.GetOptions{})
+	Eventually(func(ctx context.Context) error {
+		deployment, err := f.KubeClient.AppsV1().Deployments(namespace).Get(ctx, "local-storage-operator", metav1.GetOptions{})
 		if err != nil {
 			if apierrors.IsNotFound(err) {
 				return fmt.Errorf("deployment not found yet")

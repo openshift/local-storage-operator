@@ -107,9 +107,9 @@ var _ = Describe("LocalVolume", Label("LocalVolume"), Ordered, func() {
 			tc.localVolume.Name = "test-local-disk-shared-byid"
 			tc.localVolume.Spec.StorageClassDevices[0].StorageClassName = "test-local-sc-shared-byid"
 
-			Eventually(func() error {
+			Eventually(func(ctx context.Context) error {
 				f.Logf("creating shared localvolume reproducer")
-				return f.Client.Create(context.TODO(), tc.localVolume, nil)
+				return f.Client.Create(ctx, tc.localVolume, nil)
 			}, time.Minute, time.Second*2).ShouldNot(HaveOccurred(), "creating shared localvolume reproducer")
 
 			DeferCleanup(func() { tc.Cleanup() })
@@ -135,10 +135,10 @@ var _ = Describe("LocalVolume", Label("LocalVolume"), Ordered, func() {
 		})
 
 		It("creates PVs on second node after expanding node selector", func() {
-			Eventually(func() error {
+			Eventually(func(ctx context.Context) error {
 				f.Logf("expanding shared localvolume reproducer to a second node")
 				key := types.NamespacedName{Name: tc.localVolume.Name, Namespace: tc.localVolume.Namespace}
-				if err := f.Client.Get(context.TODO(), key, tc.localVolume); err != nil {
+				if err := f.Client.Get(ctx, key, tc.localVolume); err != nil {
 					return err
 				}
 				matchFields := tc.localVolume.Spec.NodeSelector.NodeSelectorTerms[0].MatchFields
@@ -152,7 +152,7 @@ var _ = Describe("LocalVolume", Label("LocalVolume"), Ordered, func() {
 					tc.localVolume.Spec.NodeSelector.NodeSelectorTerms,
 					secondNodeTerm,
 				)
-				return f.Client.Update(context.TODO(), tc.localVolume)
+				return f.Client.Update(ctx, tc.localVolume)
 			}, time.Minute, time.Second*2).ShouldNot(HaveOccurred(), "updating shared localvolume reproducer")
 
 			sharedPVs := eventuallyFindPVs(f, tc.localVolume.Spec.StorageClassDevices[0].StorageClassName, 2)
@@ -185,9 +185,9 @@ var _ = Describe("LocalVolume", Label("LocalVolume"), Ordered, func() {
 			selectedNode := nodeEnv[0].node
 			tc.localVolume = getLocalVolume(selectedNode, selectedDisk.path, namespace)
 
-			Eventually(func() error {
+			Eventually(func(ctx context.Context) error {
 				f.Logf("creating localvolume")
-				return f.Client.Create(context.TODO(), tc.localVolume, nil)
+				return f.Client.Create(ctx, tc.localVolume, nil)
 			}, time.Minute, time.Second*2).ShouldNot(HaveOccurred(), "creating localvolume")
 
 			DeferCleanup(func() { tc.Cleanup() })
@@ -280,9 +280,9 @@ var _ = Describe("LocalVolume", Label("LocalVolume"), Ordered, func() {
 				consumingObjectList = append(consumingObjectList, job, pvc, pod)
 			}
 
-			Eventually(func() error {
+			Eventually(func(ctx context.Context) error {
 				f.Logf("deleting LocalVolume %q", tc.localVolume.Name)
-				return f.Client.Delete(context.TODO(), tc.localVolume, client.PropagationPolicy(metav1.DeletePropagationBackground))
+				return f.Client.Delete(ctx, tc.localVolume, client.PropagationPolicy(metav1.DeletePropagationBackground))
 			}, time.Minute*5, time.Second*5).ShouldNot(HaveOccurred(), "deleting LocalVolume %q", tc.localVolume.Name)
 
 			Consistently(func() bool {
@@ -301,9 +301,9 @@ var _ = Describe("LocalVolume", Label("LocalVolume"), Ordered, func() {
 			f.Logf("releasing pvs")
 			eventuallyDelete(consumingObjectList...)
 
-			Eventually(func() bool {
+			Eventually(func(ctx context.Context) bool {
 				f.Logf("verifying LocalVolume deletion")
-				err := f.Client.Get(context.TODO(), types.NamespacedName{Name: tc.localVolume.Name, Namespace: f.OperatorNamespace}, tc.localVolume)
+				err := f.Client.Get(ctx, types.NamespacedName{Name: tc.localVolume.Name, Namespace: f.OperatorNamespace}, tc.localVolume)
 				if err != nil && (apierrors.IsGone(err) || apierrors.IsNotFound(err)) {
 					f.Logf("LocalVolume deleted: %+v", err)
 					return true
@@ -333,9 +333,9 @@ func verifyLVDLFilesystemUUIDForPVs(f *framework.Framework, namespace string, pv
 	for _, pvName := range pvNames {
 		pvNameSet[pvName] = struct{}{}
 	}
-	Eventually(func() bool {
+	Eventually(func(ctx context.Context) bool {
 		lvdlList := &localv1.LocalVolumeDeviceLinkList{}
-		err := f.Client.List(context.TODO(), lvdlList, client.InNamespace(namespace))
+		err := f.Client.List(ctx, lvdlList, client.InNamespace(namespace))
 		if err != nil {
 			f.Logf("error listing LocalVolumeDeviceLink objects while verifying filesystemUUID: %v", err)
 			return false
@@ -364,9 +364,9 @@ func verifyLVDLsDeleted(f *framework.Framework, namespace string, lvdlNames []st
 	for _, name := range lvdlNames {
 		targetNames[name] = struct{}{}
 	}
-	Eventually(func() bool {
+	Eventually(func(ctx context.Context) bool {
 		lvdlList := &localv1.LocalVolumeDeviceLinkList{}
-		err := f.Client.List(context.TODO(), lvdlList, client.InNamespace(namespace))
+		err := f.Client.List(ctx, lvdlList, client.InNamespace(namespace))
 		if err != nil {
 			f.Logf("error listing LocalVolumeDeviceLink objects during deletion check: %v", err)
 			return false
@@ -409,10 +409,10 @@ func verifyProvisionerAnnotation(pvs []corev1.PersistentVolume, nodeList []corev
 }
 
 func waitForLocalVolumeAndOwnedPVsToDisappear(f *framework.Framework, localVolume *localv1.LocalVolume) {
-	Eventually(func() error {
+	Eventually(func(ctx context.Context) error {
 		key := types.NamespacedName{Name: localVolume.Name, Namespace: localVolume.Namespace}
 		currentLocalVolume := &localv1.LocalVolume{}
-		err := f.Client.Get(context.TODO(), key, currentLocalVolume)
+		err := f.Client.Get(ctx, key, currentLocalVolume)
 		if err != nil {
 			if !apierrors.IsNotFound(err) && !apierrors.IsGone(err) {
 				return err
@@ -422,7 +422,7 @@ func waitForLocalVolumeAndOwnedPVsToDisappear(f *framework.Framework, localVolum
 		}
 
 		pvList := &corev1.PersistentVolumeList{}
-		err = f.Client.List(context.TODO(), pvList, client.MatchingLabels{
+		err = f.Client.List(ctx, pvList, client.MatchingLabels{
 			common.PVOwnerKindLabel:      localv1.LocalVolumeKind,
 			common.PVOwnerNamespaceLabel: localVolume.Namespace,
 			common.PVOwnerNameLabel:      localVolume.Name,
