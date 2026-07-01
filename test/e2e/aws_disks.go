@@ -68,10 +68,10 @@ func populateDeviceInfo(namespace string, nodeEnv []nodeDisks) []nodeDisks {
 	})
 
 	discoveryResults := &localv1alpha1.LocalVolumeDiscoveryResultList{}
-	Eventually(func() bool {
+	Eventually(func(ctx context.Context) bool {
 		f.Logf("fetching localvolumediscoveryresults")
-		Eventually(func() error {
-			return f.Client.List(context.TODO(), discoveryResults)
+		Eventually(func(listCtx context.Context) error {
+			return f.Client.List(listCtx, discoveryResults)
 		}, time.Minute, time.Second*2).ShouldNot(HaveOccurred(), "fetching localvolumediscoveryresults")
 
 		f.Logf("matching localvolumediscoveryresults with LocalVolume device IDs")

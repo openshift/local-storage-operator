@@ -2,7 +2,6 @@ package e2e
 
 import (
 	"context"
-	goctx "context"
 	"fmt"
 	"time"
 
@@ -28,7 +27,7 @@ import (
 var pvConsumerLabel = "pv-consumer"
 var (
 	retryInterval   = time.Second * 5
-	timeout         = time.Hour
+	hourTimeout     = time.Hour
 	deletionTimeout = 10 * time.Minute
 )
 
@@ -124,7 +123,7 @@ func eventuallyFindLVDLsForPVs(f *framework.Framework, namespace string, pvNames
 	foundLVDLs := make([]localv1.LocalVolumeDeviceLink, 0)
 	Eventually(func() bool {
 		lvdlList := &localv1.LocalVolumeDeviceLinkList{}
-		err := f.Client.List(goctx.TODO(), lvdlList, client.InNamespace(namespace))
+		err := f.Client.List(context.TODO(), lvdlList, client.InNamespace(namespace))
 		if err != nil {
 			f.Logf("error listing LocalVolumeDeviceLink objects: %v", err)
 			return false
@@ -250,7 +249,7 @@ func consumePV(namespace string, pv corev1.PersistentVolume) (*corev1.Persistent
 	// create pvc
 	Eventually(func() error {
 		f.Logf("creating pvc: %q", pvc.Name)
-		return f.Client.Create(goctx.TODO(), pvc, nil)
+		return f.Client.Create(context.TODO(), pvc, nil)
 	}, time.Minute, time.Second*2).ShouldNot(HaveOccurred(), "creating pvc")
 
 	DeferCleanup(func() {
@@ -265,7 +264,7 @@ func consumePV(namespace string, pv corev1.PersistentVolume) (*corev1.Persistent
 	// create consuming job
 	Eventually(func() error {
 		f.Logf("creating job: %q", job.Name)
-		return f.Client.Create(goctx.TODO(), job, nil)
+		return f.Client.Create(context.TODO(), job, nil)
 	}, time.Minute, time.Second*2).ShouldNot(HaveOccurred(), "creating job")
 
 	DeferCleanup(func() {
@@ -275,7 +274,7 @@ func consumePV(namespace string, pv corev1.PersistentVolume) (*corev1.Persistent
 	// wait for job to complete
 	Eventually(func() int32 {
 		f.Logf("waiting for job to complete")
-		err := f.Client.Get(goctx.TODO(), types.NamespacedName{Name: job.Name, Namespace: job.Namespace}, job)
+		err := f.Client.Get(context.TODO(), types.NamespacedName{Name: job.Name, Namespace: job.Namespace}, job)
 		if err != nil {
 			f.Logf("error fetching job: %+v", err)
 			return 0
@@ -300,7 +299,7 @@ func consumePV(namespace string, pv corev1.PersistentVolume) (*corev1.Persistent
 			return err
 		}
 		selector := labels.NewSelector().Add(*appLabelReq).Add(*pvNameReq)
-		err = f.Client.List(goctx.TODO(), podList, dynclient.MatchingLabelsSelector{Selector: selector})
+		err = f.Client.List(context.TODO(), podList, dynclient.MatchingLabelsSelector{Selector: selector})
 		if err != nil {
 			f.Logf("failed to list pods: %+v", err)
 			return err
@@ -357,7 +356,7 @@ func assertLVDLSymlinkPathMatchesPVs(lvdls []localv1.LocalVolumeDeviceLink, pvs 
 	}
 }
 func deleteResource(obj client.Object, namespace, name string, cl framework.FrameworkClient) error {
-	pollingContext, cancel := goctx.WithTimeout(goctx.TODO(), deletionTimeout)
+	pollingContext, cancel := context.WithTimeout(context.TODO(), deletionTimeout)
 	defer cancel()
 	err := cl.Delete(pollingContext, obj)
 	if err != nil {
@@ -366,7 +365,7 @@ func deleteResource(obj client.Object, namespace, name string, cl framework.Fram
 		}
 		return err
 	}
-	return wait.PollUntilContextTimeout(pollingContext, retryInterval, timeout, true, func(ctx goctx.Context) (bool, error) {
+	return wait.PollUntilContextTimeout(pollingContext, retryInterval, hourTimeout, true, func(ctx context.Context) (bool, error) {
 		objectKey := types.NamespacedName{Namespace: namespace, Name: name}
 		err := cl.Get(ctx, objectKey, obj)
 		if err != nil {

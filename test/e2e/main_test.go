@@ -58,7 +58,7 @@ var _ = BeforeSuite(func() {
 			return fmt.Errorf("waiting for full availability (%d/1)", deployment.Status.AvailableReplicas)
 		}
 		return nil
-	}, timeout, retryInterval).Should(Succeed(), "waiting for operator to be ready")
+	}, hourTimeout, retryInterval).Should(Succeed(), "waiting for operator to be ready")
 
 	ns, err := f.KubeClient.CoreV1().Namespaces().Get(context.TODO(), namespace, metav1.GetOptions{})
 	Expect(err).NotTo(HaveOccurred(), "getting namespace")
