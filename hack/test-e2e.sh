@@ -76,5 +76,6 @@ go test -timeout 0 ./test/e2e/... \
   -root="$(pwd)" \
   -kubeconfig="${KUBECONFIG}" \
   -v \
+  --ginkgo.v \
   ${suite_label:+--ginkgo.label-filter "$suite_label"} \
   "${extra_args[@]}"

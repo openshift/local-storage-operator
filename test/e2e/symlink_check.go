@@ -93,6 +93,8 @@ func findCurrentSymlinkForPV(nodeEnv []nodeDisks, pv *corev1.PersistentVolume) s
 	return ""
 }
 
+// findNodeHostnameForLVDL returns the node hostname where the LVDL's PV is scheduled,
+// by inspecting the PV's spec.nodeAffinity (Required, LabelHostname).
 func findNodeHostnameForPV(pv *corev1.PersistentVolume) string {
 	pvName := pv.Name
 	if pv.Spec.NodeAffinity == nil || pv.Spec.NodeAffinity.Required == nil {
@@ -178,6 +180,14 @@ func waitForRecreatedPVByName(f *framework.Framework, name string, previousUID t
 	return pv
 }
 
+// verifyMultiStepPreferredLinkReconciliation tests that the preferred symlink
+// can be changed in multiple steps, each time to a higher-priority by-id link.
+// At each step it verifies:
+//   - The LVDL reflects the updated current and preferred link targets
+//   - The on-disk symlink points to the expected target
+//   - After PV deletion, the PV is recreated with the correct symlink target
+//
+// The three steps use increasingly preferred by-id patterns:
 func verifyMultiStepPreferredLinkReconciliation(
 	tc *testContext,
 	pv corev1.PersistentVolume,
@@ -189,6 +199,9 @@ func verifyMultiStepPreferredLinkReconciliation(
 		name   string
 		target string
 	}
+	// Steps must go from lower to higher priority to trigger relinking.
+	// Priority (high to low): wwn > scsi-3 > scsi-2 > scsi-8 > scsi-S > scsi-1 > scsi-0 > scsi > nvme-eui > nvme
+	// step through scsi-2 → scsi-3 → wwn (each higher priority than the last).
 	steps := []relinkStep{
 		{"scsi-2", "/dev/disk/by-id/scsi-2-local-storage-e2e-step1"},
 		{"scsi-3", "/dev/disk/by-id/scsi-3-local-storage-e2e-step2"},
@@ -222,7 +235,6 @@ func verifyMultiStepPreferredLinkReconciliation(
 	lvdl = updateLVDLPolicy(tc.f, lvdl, localv1.DeviceLinkPolicyPreferredLinkTarget)
 	lvdl = waitForLVDLLinkTargets(tc.f, lvdl, steps[0].target, steps[0].target)
 	verifyNodeSymlinkTarget(tc.namespace, nodeHostName, pv.Spec.Local.Path, steps[0].target)
-	currentSymlink = lvdl.Status.CurrentLinkTarget
 
 	// ---- Steps 2 and 3: higher-priority links, auto-relink, PV recreation ----
 	for i := 1; i < len(steps); i++ {
@@ -238,7 +250,6 @@ func verifyMultiStepPreferredLinkReconciliation(
 		tc.f.Logf("step %d: waiting for auto-relink to %s", i+1, step.target)
 		lvdl = waitForLVDLLinkTargets(tc.f, lvdl, step.target, step.target)
 		verifyNodeSymlinkTarget(tc.namespace, nodeHostName, pv.Spec.Local.Path, step.target)
-		currentSymlink = lvdl.Status.CurrentLinkTarget
 
 		tc.f.Logf("step %d: deleting PV %q and verifying recreation", i+1, pv.Name)
 		oldPVUID := pv.UID
@@ -270,6 +281,14 @@ func verifyMultiStepPreferredLinkReconciliation(
 	return pv
 }
 
+// verifySymlinkFallbackOnDisappearingLink tests that when the current preferred
+// by-id symlink disappears from /dev/disk/by-id (e.g. udev removes a wwn- link),
+// LSO automatically detects the dangling symlink in /mnt/local-storage and
+// relinks it to the next-best available by-id symlink.
+//
+// Precondition: the PV's on-disk symlink currently points to currentPreferred
+// (e.g. wwn-*), and expectedFallback (e.g. scsi-3-*) also exists on the node
+// for the same underlying device. LVDL policy must already be PreferredLinkTarget.
 func verifySymlinkFallbackOnDisappearingLink(
 	tc *testContext,
 	pv corev1.PersistentVolume,
