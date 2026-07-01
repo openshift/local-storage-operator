@@ -134,12 +134,12 @@ func newNodeJob(nodeHostname, namespace, jobName, description string, command []
 func createOrReplaceJob(namespace string, job *batchv1.Job, message string) {
 	f := framework.Global
 	started := metav1.NewTime(time.Now())
-	Eventually(func() error {
-		err := f.Client.Create(context.TODO(), job, nil)
+	Eventually(func(ctx context.Context) error {
+		err := f.Client.Create(ctx, job, nil)
 		j := &batchv1.Job{}
 		if errors.IsAlreadyExists(err) {
 			err = f.Client.Get(
-				context.TODO(),
+				ctx,
 				types.NamespacedName{Name: job.GetName(), Namespace: job.GetNamespace()},
 				j,
 			)
@@ -161,15 +161,18 @@ func waitForJobCompletion(job *batchv1.Job, message string) {
 	f := framework.Global
 	Eventually(func() int32 {
 		j := &batchv1.Job{}
-		Eventually(func() error {
+
+		// This uses Eventually global defaults
+		Eventually(func(ctx context.Context) error {
 			return f.Client.Get(
-				context.TODO(),
+				ctx,
 				types.NamespacedName{
 					Name:      job.GetName(),
 					Namespace: job.GetNamespace()},
 				j,
 			)
 		}).ShouldNot(HaveOccurred())
+
 		completions := j.Status.Succeeded
 		f.Logf("job completions: %d", completions)
 		return completions

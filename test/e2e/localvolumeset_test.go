@@ -163,17 +163,17 @@ var _ = Describe("LocalVolumeSet", Label("LocalVolumeSet"), Ordered, func() {
 
 		It("creates PVs on second node after expanding node selector", func() {
 			sharedLVSet := tc.lvSets[0]
-			Eventually(func() error {
+			Eventually(func(ctx context.Context) error {
 				f.Logf("expanding shared localvolumeset reproducer to a second node")
 				key := types.NamespacedName{Name: sharedLVSet.GetName(), Namespace: sharedLVSet.GetNamespace()}
-				if err := f.Client.Get(context.TODO(), key, sharedLVSet); err != nil {
+				if err := f.Client.Get(ctx, key, sharedLVSet); err != nil {
 					return err
 				}
 				sharedLVSet.Spec.NodeSelector.NodeSelectorTerms[0].MatchExpressions[0].Values = append(
 					sharedLVSet.Spec.NodeSelector.NodeSelectorTerms[0].MatchExpressions[0].Values,
 					nodeEnv[1].node.ObjectMeta.Labels[corev1.LabelHostname],
 				)
-				return f.Client.Update(context.TODO(), sharedLVSet)
+				return f.Client.Update(ctx, sharedLVSet)
 			}, time.Minute, time.Second*2).ShouldNot(HaveOccurred(), "updating shared localvolumeset reproducer")
 
 			sharedPVs := eventuallyFindPVs(f, sharedLVSet.Spec.StorageClassName, 2)
@@ -250,16 +250,16 @@ var _ = Describe("LocalVolumeSet", Label("LocalVolumeSet"), Ordered, func() {
 
 		It("increases device count and verifies PV recreation after deletion", func() {
 			three := int32(3)
-			Eventually(func() error {
+			Eventually(func(ctx context.Context) error {
 				f.Logf("updating lvset")
 				key := types.NamespacedName{Name: tc.lvset.GetName(), Namespace: tc.lvset.GetNamespace()}
-				err := f.Client.Get(context.TODO(), key, tc.lvset)
+				err := f.Client.Get(ctx, key, tc.lvset)
 				if err != nil {
 					f.Logf("error getting lvset %q: %+v", key, err)
 					return err
 				}
 				tc.lvset.Spec.MaxDeviceCount = &three
-				err = f.Client.Update(context.TODO(), tc.lvset)
+				err = f.Client.Update(ctx, tc.lvset)
 				if err != nil {
 					f.Logf("error updating lvset %q: %+v", key, err)
 					return err
@@ -295,10 +295,10 @@ var _ = Describe("LocalVolumeSet", Label("LocalVolumeSet"), Ordered, func() {
 
 			eventuallyFindPVs(f, overlappingLVSet.Spec.StorageClassName, 1)
 
-			Eventually(func() error {
+			Eventually(func(ctx context.Context) error {
 				f.Logf("updating lvset")
 				key := types.NamespacedName{Name: overlappingLVSet.GetName(), Namespace: overlappingLVSet.GetNamespace()}
-				err := f.Client.Get(context.TODO(), key, overlappingLVSet)
+				err := f.Client.Get(ctx, key, overlappingLVSet)
 				if err != nil {
 					f.Logf("error getting lvset %q: %+v", key, err)
 					return err
@@ -307,7 +307,7 @@ var _ = Describe("LocalVolumeSet", Label("LocalVolumeSet"), Ordered, func() {
 					overlappingLVSet.Spec.NodeSelector.NodeSelectorTerms[0].MatchExpressions[0].Values,
 					nodeEnv[1].node.ObjectMeta.Labels[corev1.LabelHostname],
 				)
-				err = f.Client.Update(context.TODO(), overlappingLVSet)
+				err = f.Client.Update(ctx, overlappingLVSet)
 				if err != nil {
 					f.Logf("error updating lvset %q: %+v", key, err)
 					return err
@@ -337,9 +337,9 @@ var _ = Describe("LocalVolumeSet", Label("LocalVolumeSet"), Ordered, func() {
 				consumingObjectList = append(consumingObjectList, job, pvc, pod)
 			}
 
-			Eventually(func() error {
+			Eventually(func(ctx context.Context) error {
 				f.Logf("deleting LocalVolumeSet %q", tc.lvset.Name)
-				return f.Client.Delete(context.TODO(), tc.lvset)
+				return f.Client.Delete(ctx, tc.lvset)
 			}, time.Minute*5, time.Second*5).ShouldNot(HaveOccurred(), "deleting LocalVolumeSet %q", tc.lvset.Name)
 
 			var finalizers []string
@@ -366,9 +366,9 @@ var _ = Describe("LocalVolumeSet", Label("LocalVolumeSet"), Ordered, func() {
 				lvdlNames = append(lvdlNames, pv.Name)
 			}
 
-			Eventually(func() bool {
+			Eventually(func(ctx context.Context) bool {
 				f.Logf("verifying LocalVolumeSet deletion")
-				err := f.Client.Get(context.TODO(), types.NamespacedName{Name: tc.lvset.Name, Namespace: f.OperatorNamespace}, tc.lvset)
+				err := f.Client.Get(ctx, types.NamespacedName{Name: tc.lvset.Name, Namespace: f.OperatorNamespace}, tc.lvset)
 				if err != nil && (apierrors.IsGone(err) || apierrors.IsNotFound(err)) {
 					f.Logf("LocalVolumeSet deleted: %+v", err)
 					return true
@@ -440,10 +440,10 @@ var _ = Describe("LocalVolumeSet", Label("LocalVolumeSet"), Ordered, func() {
 
 			eventuallyFindPVs(f, tc.lvset.Spec.StorageClassName, 2)
 
-			Eventually(func() error {
+			Eventually(func(ctx context.Context) error {
 				f.Logf("updating lvset")
 				key := types.NamespacedName{Name: tc.lvset.GetName(), Namespace: tc.lvset.GetNamespace()}
-				err := f.Client.Get(context.TODO(), key, tc.lvset)
+				err := f.Client.Get(ctx, key, tc.lvset)
 				if err != nil {
 					f.Logf("error getting lvset %q: %+v", key, err)
 					return err
@@ -451,7 +451,7 @@ var _ = Describe("LocalVolumeSet", Label("LocalVolumeSet"), Ordered, func() {
 				tc.lvset.Spec.NodeSelector = nil
 				tc.lvset.Spec.MaxDeviceCount = nil
 				tc.lvset.Spec.DeviceInclusionSpec = nil
-				err = f.Client.Update(context.TODO(), tc.lvset)
+				err = f.Client.Update(ctx, tc.lvset)
 				if err != nil {
 					f.Logf("error updating lvset %q: %+v", key, err)
 					return err
@@ -530,10 +530,10 @@ var _ = Describe("LocalVolumeSet", Label("LocalVolumeSet"), Ordered, func() {
 func waitForLVSetAndOwnedPVsToDisappear(lvset *localv1alpha1.LocalVolumeSet) {
 	f := framework.Global
 
-	Eventually(func() error {
+	Eventually(func(ctx context.Context) error {
 		key := types.NamespacedName{Name: lvset.Name, Namespace: lvset.Namespace}
 		currentLVSet := &localv1alpha1.LocalVolumeSet{}
-		err := f.Client.Get(context.TODO(), key, currentLVSet)
+		err := f.Client.Get(ctx, key, currentLVSet)
 		if err != nil {
 			if !apierrors.IsNotFound(err) && !apierrors.IsGone(err) {
 				return err
@@ -543,7 +543,7 @@ func waitForLVSetAndOwnedPVsToDisappear(lvset *localv1alpha1.LocalVolumeSet) {
 		}
 
 		pvList := &corev1.PersistentVolumeList{}
-		err = f.Client.List(context.TODO(), pvList, client.MatchingLabels{
+		err = f.Client.List(ctx, pvList, client.MatchingLabels{
 			common.PVOwnerKindLabel:      localv1.LocalVolumeSetKind,
 			common.PVOwnerNamespaceLabel: lvset.Namespace,
 			common.PVOwnerNameLabel:      lvset.Name,

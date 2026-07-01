@@ -54,9 +54,9 @@ func populateDeviceInfo(namespace string, nodeEnv []nodeDisks) []nodeDisks {
 			Namespace: namespace,
 		},
 	}
-	Eventually(func() error {
+	Eventually(func(ctx context.Context) error {
 		f.Logf("creating localvolumediscovery")
-		err := f.Client.Create(context.TODO(), localVolumeDiscovery, nil)
+		err := f.Client.Create(ctx, localVolumeDiscovery, nil)
 		if apierrors.IsAlreadyExists(err) {
 			return nil
 		}
