@@ -91,6 +91,9 @@ var _ = Describe("LocalVolumeSet", Label("LocalVolumeSet"), Ordered, func() {
 			},
 		}
 		lvSets = append(lvSets, noOpLVSet)
+		// creating a noOpLVSet to pre-pull diskmaker images on all nodes and speed up the test.
+		// having the diskmaker-manager running will also kickstart measuring the age of the disks
+		// this speeds things up as PVs are only created 1m after first observing the disk.
 		f.Logf("creating noop localvolumeset %q", noOpLVSet.GetName())
 		err = f.Client.Create(context.TODO(), noOpLVSet, nil)
 		Expect(err).NotTo(HaveOccurred(), "create noop localvolumeset")

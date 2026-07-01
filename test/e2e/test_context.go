@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	. "github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
 	. "github.com/onsi/gomega"
 	localv1 "github.com/openshift/local-storage-operator/api/v1"
@@ -107,7 +108,7 @@ func cleanupSingleLVSet(f *framework.Framework, lvset *localv1alpha1.LocalVolume
 }
 
 // checkForPersistentVolumes verifies that no PVs exist for the given LocalVolume or LocalVolumeSet.
-func checkForPersistentVolumes(f *framework.Framework, obj client.Object) error {
+func checkForPersistentVolumes(f *framework.Framework, obj client.Object) {
 	name := obj.GetName()
 	namespace := obj.GetNamespace()
 
@@ -118,7 +119,7 @@ func checkForPersistentVolumes(f *framework.Framework, obj client.Object) error 
 	case *localv1alpha1.LocalVolumeSet:
 		ownerKind = localv1.LocalVolumeSetKind
 	default:
-		return fmt.Errorf("checkForPersistentVolumes: unsupported type %T", obj)
+		Fail(fmt.Sprintf("checkForPersistentVolumes: unsupported type %T", obj))
 	}
 
 	Eventually(func(ctx context.Context) error {
@@ -138,8 +139,6 @@ func checkForPersistentVolumes(f *framework.Framework, obj client.Object) error 
 		f.Logf("checkForPersistentVolumes: no PVs found for %s %s", ownerKind, name)
 		return nil
 	}, waitPeriodForPVDeletion, time.Second*2).ShouldNot(HaveOccurred(), "check for %s %s", ownerKind, name)
-
-	return nil
 }
 
 func checkForStorageClass(f *framework.Framework, scName string) error {

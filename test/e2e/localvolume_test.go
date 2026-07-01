@@ -384,18 +384,18 @@ func verifyLVDLsDeleted(f *framework.Framework, namespace string, lvdlNames []st
 func verifyProvisionerAnnotation(pvs []corev1.PersistentVolume, nodeList []corev1.Node) {
 	for _, pv := range pvs {
 		hostFound := true
-		hostname, found := pv.ObjectMeta.Labels[corev1.LabelHostname]
+		hostname, found := pv.Labels[corev1.LabelHostname]
 		if !found {
 			Fail(fmt.Sprintf("expected to find %q label on the pv %+v", corev1.LabelHostname, pv))
 		}
 		for _, node := range nodeList {
-			nodeHostName, found := node.ObjectMeta.Labels[corev1.LabelHostname]
+			nodeHostName, found := node.Labels[corev1.LabelHostname]
 			if !found {
 				Fail(fmt.Sprintf("expected to find %q label on the node %+v", corev1.LabelHostname, node))
 			}
 			if hostname == nodeHostName {
 				expectedAnnotation := common.GetProvisionedByValue(node)
-				actualAnnotation, found := pv.ObjectMeta.Annotations[provCommon.AnnProvisionedBy]
+				actualAnnotation, found := pv.Annotations[provCommon.AnnProvisionedBy]
 				Expect(found).To(BeTrue(), "expected to find annotation %q on pv", provCommon.AnnProvisionedBy)
 				Expect(actualAnnotation).To(Equal(expectedAnnotation), "expected to find correct annotation value for %q", provCommon.AnnProvisionedBy)
 				hostFound = true
