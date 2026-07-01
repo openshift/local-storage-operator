@@ -116,7 +116,7 @@ func eventuallyGetLVDL(f *framework.Framework, namespace, name string) *localv1.
 
 	Eventually(func(ctx context.Context) error {
 		return f.Client.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, lvdl)
-	}, time.Minute*5, time.Second*5).ShouldNot(HaveOccurred(), "waiting for LocalVolumeDeviceLink %q", name)
+	}, time.Minute*5, time.Second*5).WithContext(context.Background()).ShouldNot(HaveOccurred(), "waiting for LocalVolumeDeviceLink %q", name)
 	return lvdl
 }
 
@@ -159,7 +159,7 @@ func updateLVDLPolicy(f *framework.Framework, lvdl *localv1.LocalVolumeDeviceLin
 		}
 		lvdl.Spec.Policy = policy
 		return f.Client.Update(ctx, lvdl)
-	}, time.Minute, time.Second*5).ShouldNot(HaveOccurred(), "updating LVDL %q policy", name)
+	}, time.Minute, time.Second*5).WithContext(context.Background()).ShouldNot(HaveOccurred(), "updating LVDL %q policy", name)
 	return eventuallyGetLVDL(f, namespace, name)
 }
 
@@ -176,7 +176,7 @@ func waitForRecreatedPVByName(f *framework.Framework, name string, previousUID t
 			return false
 		}
 		return true
-	}, time.Minute*8, time.Second*10).Should(BeTrue(), "waiting for PV %q recreation", name)
+	}, time.Minute*8, time.Second*10).WithContext(context.Background()).Should(BeTrue(), "waiting for PV %q recreation", name)
 	return pv
 }
 

@@ -138,7 +138,7 @@ func checkForPersistentVolumes(f *framework.Framework, obj client.Object) {
 		}
 		f.Logf("checkForPersistentVolumes: no PVs found for %s %s", ownerKind, name)
 		return nil
-	}, waitPeriodForPVDeletion, time.Second*2).ShouldNot(HaveOccurred(), "check for %s %s", ownerKind, name)
+	}, waitPeriodForPVDeletion, time.Second*2).WithContext(context.Background()).ShouldNot(HaveOccurred(), "check for %s %s", ownerKind, name)
 }
 
 func checkForStorageClass(f *framework.Framework, scName string) error {
@@ -151,7 +151,7 @@ func checkForStorageClass(f *framework.Framework, scName string) error {
 		}
 		f.Logf("checkForStorageClass: StorageClass %s not found -- OK", scName)
 		return nil
-	}, waitPeriodForSCDeletion, time.Second*2).ShouldNot(gomega.HaveOccurred(), "check for StorageClass %s", scName)
+	}, waitPeriodForSCDeletion, time.Second*2).WithContext(context.Background()).ShouldNot(gomega.HaveOccurred(), "check for StorageClass %s", scName)
 
 	return nil
 }

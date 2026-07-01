@@ -110,7 +110,7 @@ var _ = Describe("LocalVolume", Label("LocalVolume"), Ordered, func() {
 			Eventually(func(ctx context.Context) error {
 				f.Logf("creating shared localvolume reproducer")
 				return f.Client.Create(ctx, tc.localVolume, nil)
-			}, time.Minute, time.Second*2).ShouldNot(HaveOccurred(), "creating shared localvolume reproducer")
+			}, time.Minute, time.Second*2).WithContext(context.Background()).ShouldNot(HaveOccurred(), "creating shared localvolume reproducer")
 
 			DeferCleanup(func() { tc.Cleanup() })
 		})
@@ -153,7 +153,7 @@ var _ = Describe("LocalVolume", Label("LocalVolume"), Ordered, func() {
 					secondNodeTerm,
 				)
 				return f.Client.Update(ctx, tc.localVolume)
-			}, time.Minute, time.Second*2).ShouldNot(HaveOccurred(), "updating shared localvolume reproducer")
+			}, time.Minute, time.Second*2).WithContext(context.Background()).ShouldNot(HaveOccurred(), "updating shared localvolume reproducer")
 
 			sharedPVs := eventuallyFindPVs(f, tc.localVolume.Spec.StorageClassDevices[0].StorageClassName, 2)
 			sharedPVNames := make([]string, 0, len(sharedPVs))
@@ -188,7 +188,7 @@ var _ = Describe("LocalVolume", Label("LocalVolume"), Ordered, func() {
 			Eventually(func(ctx context.Context) error {
 				f.Logf("creating localvolume")
 				return f.Client.Create(ctx, tc.localVolume, nil)
-			}, time.Minute, time.Second*2).ShouldNot(HaveOccurred(), "creating localvolume")
+			}, time.Minute, time.Second*2).WithContext(context.Background()).ShouldNot(HaveOccurred(), "creating localvolume")
 
 			DeferCleanup(func() { tc.Cleanup() })
 		})
@@ -283,7 +283,7 @@ var _ = Describe("LocalVolume", Label("LocalVolume"), Ordered, func() {
 			Eventually(func(ctx context.Context) error {
 				f.Logf("deleting LocalVolume %q", tc.localVolume.Name)
 				return f.Client.Delete(ctx, tc.localVolume, client.PropagationPolicy(metav1.DeletePropagationBackground))
-			}, time.Minute*5, time.Second*5).ShouldNot(HaveOccurred(), "deleting LocalVolume %q", tc.localVolume.Name)
+			}, time.Minute*5, time.Second*5).WithContext(context.Background()).ShouldNot(HaveOccurred(), "deleting LocalVolume %q", tc.localVolume.Name)
 
 			Consistently(func() bool {
 				f.Logf("verifying finalizer still exists")
@@ -313,7 +313,7 @@ var _ = Describe("LocalVolume", Label("LocalVolume"), Ordered, func() {
 				}
 				f.Logf("LocalVolume found: %q with finalizers: %+v", tc.localVolume.Name, tc.localVolume.ObjectMeta.Finalizers)
 				return false
-			}).Should(BeTrue(), "verifying LocalVolume has been deleted")
+			}).WithContext(context.Background()).Should(BeTrue(), "verifying LocalVolume has been deleted")
 		})
 
 		It("verifies cleanup after deletion", func() {
@@ -356,7 +356,7 @@ func verifyLVDLFilesystemUUIDForPVs(f *framework.Framework, namespace string, pv
 			uuidFoundCount++
 		}
 		return uuidFoundCount == len(pvNameSet)
-	}, time.Minute*5, time.Second*5).Should(BeTrue(), "waiting for filesystemUUID on all consumed filesystem PV LVDLs")
+	}, time.Minute*5, time.Second*5).WithContext(context.Background()).Should(BeTrue(), "waiting for filesystemUUID on all consumed filesystem PV LVDLs")
 }
 
 func verifyLVDLsDeleted(f *framework.Framework, namespace string, lvdlNames []string) {
@@ -378,7 +378,7 @@ func verifyLVDLsDeleted(f *framework.Framework, namespace string, lvdlNames []st
 			}
 		}
 		return true
-	}, time.Minute*5, time.Second*5).Should(BeTrue(), "waiting for LVDL deletion after LocalVolume deletion")
+	}, time.Minute*5, time.Second*5).WithContext(context.Background()).Should(BeTrue(), "waiting for LVDL deletion after LocalVolume deletion")
 }
 
 func verifyProvisionerAnnotation(pvs []corev1.PersistentVolume, nodeList []corev1.Node) {
@@ -439,7 +439,7 @@ func waitForLocalVolumeAndOwnedPVsToDisappear(f *framework.Framework, localVolum
 		}
 
 		return nil
-	}, time.Minute*8, time.Second*5).ShouldNot(HaveOccurred(), "waiting for localvolume %q and owned PVs to be deleted", localVolume.Name)
+	}, time.Minute*8, time.Second*5).WithContext(context.Background()).ShouldNot(HaveOccurred(), "waiting for localvolume %q and owned PVs to be deleted", localVolume.Name)
 }
 
 func cleanupLVAndWaitForOwnedPVsToDisappear(f *framework.Framework, localVolume *localv1.LocalVolume) {

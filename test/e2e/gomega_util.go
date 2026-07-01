@@ -63,7 +63,7 @@ func eventuallyDelete(objs ...client.Object) {
 				return nil
 			}
 			return err
-		}, time.Minute*5, time.Second*5).ShouldNot(HaveOccurred(), "deleting %q", name)
+		}, time.Minute*5, time.Second*5).WithContext(context.Background()).ShouldNot(HaveOccurred(), "deleting %q", name)
 	}
 }
 
@@ -93,7 +93,7 @@ func eventuallyDeletePV(pv *corev1.PersistentVolume) {
 			return nil
 		}
 		return err
-	}, time.Minute*5, time.Second*5).ShouldNot(HaveOccurred(), "deleting %q", pv.Name)
+	}, time.Minute*5, time.Second*5).WithContext(context.Background()).ShouldNot(HaveOccurred(), "deleting %q", pv.Name)
 }
 
 func eventuallyFindPVs(f *framework.Framework, storageClassName string, expectedPVs int) []corev1.PersistentVolume {
@@ -103,7 +103,7 @@ func eventuallyFindPVs(f *framework.Framework, storageClassName string, expected
 
 		Eventually(func(ctx context.Context) error {
 			return f.Client.List(ctx, pvList)
-		}).ShouldNot(HaveOccurred())
+		}).WithContext(context.Background()).ShouldNot(HaveOccurred())
 
 		matchedPVs = make([]corev1.PersistentVolume, 0)
 		for _, pv := range pvList.Items {
@@ -140,7 +140,7 @@ func eventuallyFindLVDLsForPVs(f *framework.Framework, namespace string, pvNames
 			}
 		}
 		return len(foundLVDLs) == len(pvNameSet)
-	}, time.Minute*5, time.Second*5).Should(BeTrue(), "waiting for LVDL objects with populated status for all PVs")
+	}, time.Minute*5, time.Second*5).WithContext(context.Background()).Should(BeTrue(), "waiting for LVDL objects with populated status for all PVs")
 	return foundLVDLs
 }
 
@@ -251,7 +251,7 @@ func consumePV(namespace string, pv corev1.PersistentVolume) (*corev1.Persistent
 	Eventually(func(ctx context.Context) error {
 		f.Logf("creating pvc: %q", pvc.Name)
 		return f.Client.Create(ctx, pvc, nil)
-	}, time.Minute, time.Second*2).ShouldNot(HaveOccurred(), "creating pvc")
+	}, time.Minute, time.Second*2).WithContext(context.Background()).ShouldNot(HaveOccurred(), "creating pvc")
 
 	DeferCleanup(func() {
 		deleteResource(pvc, pvc.Namespace, pvc.Name, f.Client)
@@ -266,7 +266,7 @@ func consumePV(namespace string, pv corev1.PersistentVolume) (*corev1.Persistent
 	Eventually(func(ctx context.Context) error {
 		f.Logf("creating job: %q", job.Name)
 		return f.Client.Create(ctx, job, nil)
-	}, time.Minute, time.Second*2).ShouldNot(HaveOccurred(), "creating job")
+	}, time.Minute, time.Second*2).WithContext(context.Background()).ShouldNot(HaveOccurred(), "creating job")
 
 	DeferCleanup(func() {
 		deleteResource(job, job.Namespace, job.Name, f.Client)
@@ -282,7 +282,7 @@ func consumePV(namespace string, pv corev1.PersistentVolume) (*corev1.Persistent
 		}
 		f.Logf("job completions: %d", job.Status.Succeeded)
 		return job.Status.Succeeded
-	}, time.Minute*5, time.Second*4).Should(BeNumerically(">=", 1), "waiting for job to complete")
+	}, time.Minute*5, time.Second*4).WithContext(context.Background()).Should(BeNumerically(">=", 1), "waiting for job to complete")
 
 	// return pods because they have to be deleted before pv is released
 	podList := &corev1.PodList{}
@@ -319,7 +319,7 @@ func consumePV(namespace string, pv corev1.PersistentVolume) (*corev1.Persistent
 		f.Logf("could not find pod created after %q to consume PV %q in podList: %+v", timeStarted, pv.Name, podNameList)
 		return fmt.Errorf("could not find pod")
 
-	}).ShouldNot(HaveOccurred(), "fetching consuming pod")
+	}).WithContext(context.Background()).ShouldNot(HaveOccurred(), "fetching consuming pod")
 
 	matchingPod.TypeMeta.Kind = "Pod"
 	return pvc, job, &matchingPod

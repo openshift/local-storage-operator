@@ -26,7 +26,7 @@ func TestE2E(t *testing.T) {
 	RunSpecs(t, "Local Storage Operator E2E Suite")
 }
 
-var _ = BeforeSuite(func() {
+var _ = BeforeSuite(func(ctx context.Context) {
 	GinkgoWriter.TeeTo(os.Stdout)
 
 	localVolumeDiscoveryList := &localv1alpha1.LocalVolumeDiscoveryList{}
@@ -58,7 +58,7 @@ var _ = BeforeSuite(func() {
 			return fmt.Errorf("waiting for full availability (%d/1)", deployment.Status.AvailableReplicas)
 		}
 		return nil
-	}, hourTimeout, retryInterval).Should(Succeed(), "waiting for operator to be ready")
+	}, hourTimeout, retryInterval).WithContext(ctx).Should(Succeed(), "waiting for operator to be ready")
 
 	ns, err := f.KubeClient.CoreV1().Namespaces().Get(context.TODO(), namespace, metav1.GetOptions{})
 	Expect(err).NotTo(HaveOccurred(), "getting namespace")
