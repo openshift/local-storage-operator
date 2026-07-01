@@ -61,7 +61,7 @@ func populateDeviceInfo(namespace string, nodeEnv []nodeDisks) []nodeDisks {
 			return nil
 		}
 		return err
-	}, time.Minute, time.Second*2).ShouldNot(HaveOccurred(), "creating localvolumediscovery")
+	}, time.Minute, time.Second*2).WithContext(context.Background()).ShouldNot(HaveOccurred(), "creating localvolumediscovery")
 
 	DeferCleanup(func() {
 		eventuallyDelete(localVolumeDiscovery)
@@ -72,7 +72,7 @@ func populateDeviceInfo(namespace string, nodeEnv []nodeDisks) []nodeDisks {
 		f.Logf("fetching localvolumediscoveryresults")
 		Eventually(func(listCtx context.Context) error {
 			return f.Client.List(listCtx, discoveryResults)
-		}, time.Minute, time.Second*2).ShouldNot(HaveOccurred(), "fetching localvolumediscoveryresults")
+		}, time.Minute, time.Second*2).WithContext(context.Background()).ShouldNot(HaveOccurred(), "fetching localvolumediscoveryresults")
 
 		f.Logf("matching localvolumediscoveryresults with LocalVolume device IDs")
 		for nodeIndex, nodeEnvEntry := range nodeEnv {
@@ -117,7 +117,7 @@ func populateDeviceInfo(namespace string, nodeEnv []nodeDisks) []nodeDisks {
 
 		return true
 
-	}, time.Minute*10, time.Second*2).Should(BeTrue(), "matching localvolumediscoveryresults with LocalVolume device IDs")
+	}, time.Minute*10, time.Second*2).WithContext(context.Background()).Should(BeTrue(), "matching localvolumediscoveryresults with LocalVolume device IDs")
 	return nodeEnv
 
 }

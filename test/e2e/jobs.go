@@ -154,7 +154,7 @@ func createOrReplaceJob(namespace string, job *batchv1.Job, message string) {
 		}
 		return err
 
-	}, time.Minute*1, time.Second*5).ShouldNot(HaveOccurred(), message)
+	}, time.Minute*1, time.Second*5).WithContext(context.Background()).ShouldNot(HaveOccurred(), message)
 }
 
 func waitForJobCompletion(job *batchv1.Job, message string) {
@@ -171,7 +171,7 @@ func waitForJobCompletion(job *batchv1.Job, message string) {
 					Namespace: job.GetNamespace()},
 				j,
 			)
-		}).ShouldNot(HaveOccurred())
+		}).WithContext(context.Background()).ShouldNot(HaveOccurred())
 
 		completions := j.Status.Succeeded
 		f.Logf("job completions: %d", completions)

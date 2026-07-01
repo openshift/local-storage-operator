@@ -177,7 +177,7 @@ var _ = Describe("LocalVolumeSet", Label("LocalVolumeSet"), Ordered, func() {
 					nodeEnv[1].node.ObjectMeta.Labels[corev1.LabelHostname],
 				)
 				return f.Client.Update(ctx, sharedLVSet)
-			}, time.Minute, time.Second*2).ShouldNot(HaveOccurred(), "updating shared localvolumeset reproducer")
+			}, time.Minute, time.Second*2).WithContext(context.Background()).ShouldNot(HaveOccurred(), "updating shared localvolumeset reproducer")
 
 			sharedPVs := eventuallyFindPVs(f, sharedLVSet.Spec.StorageClassName, 2)
 			sharedPVNames := make([]string, 0, len(sharedPVs))
@@ -268,7 +268,7 @@ var _ = Describe("LocalVolumeSet", Label("LocalVolumeSet"), Ordered, func() {
 					return err
 				}
 				return nil
-			}, time.Minute, time.Second*2).ShouldNot(HaveOccurred(), "updating lvset")
+			}, time.Minute, time.Second*2).WithContext(context.Background()).ShouldNot(HaveOccurred(), "updating lvset")
 
 			tc.pvs = eventuallyFindPVs(f, tc.lvset.Spec.StorageClassName, 3)
 			for _, pv := range tc.pvs {
@@ -316,7 +316,7 @@ var _ = Describe("LocalVolumeSet", Label("LocalVolumeSet"), Ordered, func() {
 					return err
 				}
 				return nil
-			}, time.Minute, time.Second*2).ShouldNot(HaveOccurred(), "updating lvset")
+			}, time.Minute, time.Second*2).WithContext(context.Background()).ShouldNot(HaveOccurred(), "updating lvset")
 
 			eventuallyFindPVs(f, overlappingLVSet.Spec.StorageClassName, 3)
 		})
@@ -343,7 +343,7 @@ var _ = Describe("LocalVolumeSet", Label("LocalVolumeSet"), Ordered, func() {
 			Eventually(func(ctx context.Context) error {
 				f.Logf("deleting LocalVolumeSet %q", tc.lvset.Name)
 				return f.Client.Delete(ctx, tc.lvset)
-			}, time.Minute*5, time.Second*5).ShouldNot(HaveOccurred(), "deleting LocalVolumeSet %q", tc.lvset.Name)
+			}, time.Minute*5, time.Second*5).WithContext(context.Background()).ShouldNot(HaveOccurred(), "deleting LocalVolumeSet %q", tc.lvset.Name)
 
 			var finalizers []string
 			Consistently(func() bool {
@@ -381,7 +381,7 @@ var _ = Describe("LocalVolumeSet", Label("LocalVolumeSet"), Ordered, func() {
 				}
 				f.Logf("LocalVolumeSet found: %s with finalizers: %+v", tc.lvset.Name, tc.lvset.ObjectMeta.Finalizers)
 				return false
-			}, time.Minute*5, time.Second*5).Should(BeTrue(), "verifying LocalVolumeSet has been deleted")
+			}, time.Minute*5, time.Second*5).WithContext(context.Background()).Should(BeTrue(), "verifying LocalVolumeSet has been deleted")
 
 			f.Logf("verifying LocalVolumeDeviceLink objects are deleted for removed LocalVolumeSet")
 			verifyLVDLsDeleted(f, namespace, lvdlNames)
@@ -460,7 +460,7 @@ var _ = Describe("LocalVolumeSet", Label("LocalVolumeSet"), Ordered, func() {
 					return err
 				}
 				return nil
-			}, time.Minute, time.Second*2).ShouldNot(HaveOccurred(), "updating lvset")
+			}, time.Minute, time.Second*2).WithContext(context.Background()).ShouldNot(HaveOccurred(), "updating lvset")
 
 			// this should give us all 15 PVs now
 			tc.pvs = eventuallyFindPVs(f, tc.lvset.Spec.StorageClassName, 15)
@@ -563,7 +563,7 @@ func waitForLVSetAndOwnedPVsToDisappear(lvset *localv1alpha1.LocalVolumeSet) {
 		}
 
 		return nil
-	}, time.Minute*8, time.Second*5).ShouldNot(HaveOccurred(), "waiting for localvolumeset %q and owned PVs to be deleted", lvset.Name)
+	}, time.Minute*8, time.Second*5).WithContext(context.Background()).ShouldNot(HaveOccurred(), "waiting for localvolumeset %q and owned PVs to be deleted", lvset.Name)
 }
 
 func cleanupLVSetResources(lvsets *[]*localv1alpha1.LocalVolumeSet) error {
