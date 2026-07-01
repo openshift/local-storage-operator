@@ -27,8 +27,9 @@ import (
 
 var pvConsumerLabel = "pv-consumer"
 var (
-	retryInterval = time.Second * 5
-	timeout       = time.Hour
+	retryInterval   = time.Second * 5
+	timeout         = time.Hour
+	deletionTimeout = 10 * time.Minute
 )
 
 // eventuallyDelete objs, removing the finalizer if necessary
@@ -356,16 +357,18 @@ func assertLVDLSymlinkPathMatchesPVs(lvdls []localv1.LocalVolumeDeviceLink, pvs 
 	}
 }
 func deleteResource(obj client.Object, namespace, name string, cl framework.FrameworkClient) error {
-	err := cl.Delete(context.TODO(), obj)
+	pollingContext, cancel := goctx.WithTimeout(goctx.TODO(), deletionTimeout)
+	defer cancel()
+	err := cl.Delete(pollingContext, obj)
 	if err != nil {
 		if errors.IsNotFound(err) {
 			return nil
 		}
 		return err
 	}
-	return wait.PollImmediate(retryInterval, timeout, func() (bool, error) {
+	return wait.PollUntilContextTimeout(pollingContext, retryInterval, timeout, true, func(ctx goctx.Context) (bool, error) {
 		objectKey := types.NamespacedName{Namespace: namespace, Name: name}
-		err := cl.Get(context.TODO(), objectKey, obj)
+		err := cl.Get(ctx, objectKey, obj)
 		if err != nil {
 			if errors.IsNotFound(err) {
 				return true, nil
