@@ -1,7 +1,7 @@
 package e2e
 
 import (
-	goctx "context"
+	"context"
 	"fmt"
 	"path/filepath"
 	"time"
@@ -113,7 +113,7 @@ func eventuallyGetLVDL(f *framework.Framework, namespace, name string) *localv1.
 	lvdl := &localv1.LocalVolumeDeviceLink{}
 
 	Eventually(func() error {
-		return f.Client.Get(goctx.TODO(), types.NamespacedName{Name: name, Namespace: namespace}, lvdl)
+		return f.Client.Get(context.TODO(), types.NamespacedName{Name: name, Namespace: namespace}, lvdl)
 	}, time.Minute*5, time.Second*5).ShouldNot(HaveOccurred(), "waiting for LocalVolumeDeviceLink %q", name)
 	return lvdl
 }
@@ -152,11 +152,11 @@ func updateLVDLPolicy(f *framework.Framework, lvdl *localv1.LocalVolumeDeviceLin
 	namespace := lvdl.Namespace
 	Expect(namespace).ToNot(BeEmpty(), "LVDL namespace must be set")
 	Eventually(func() error {
-		if err := f.Client.Get(goctx.TODO(), types.NamespacedName{Name: name, Namespace: namespace}, lvdl); err != nil {
+		if err := f.Client.Get(context.TODO(), types.NamespacedName{Name: name, Namespace: namespace}, lvdl); err != nil {
 			return err
 		}
 		lvdl.Spec.Policy = policy
-		return f.Client.Update(goctx.TODO(), lvdl)
+		return f.Client.Update(context.TODO(), lvdl)
 	}, time.Minute, time.Second*5).ShouldNot(HaveOccurred(), "updating LVDL %q policy", name)
 	return eventuallyGetLVDL(f, namespace, name)
 }
@@ -164,7 +164,7 @@ func updateLVDLPolicy(f *framework.Framework, lvdl *localv1.LocalVolumeDeviceLin
 func waitForRecreatedPVByName(f *framework.Framework, name string, previousUID types.UID) corev1.PersistentVolume {
 	pv := corev1.PersistentVolume{}
 	Eventually(func() bool {
-		err := f.Client.Get(goctx.TODO(), types.NamespacedName{Name: name}, &pv)
+		err := f.Client.Get(context.TODO(), types.NamespacedName{Name: name}, &pv)
 		if err != nil {
 			f.Logf("waiting for recreated PV %q: %v", name, err)
 			return false

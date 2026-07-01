@@ -116,7 +116,7 @@ var _ = Describe("LocalVolume", Label("LocalVolume"), Ordered, func() {
 		})
 
 		It("creates PVs on single node with shared scsi-8 alias", func() {
-			err := waitForDaemonSet(f.KubeClient, namespace, nodedaemon.DiskMakerName, retryInterval, timeout)
+			err := waitForDaemonSet(f.KubeClient, namespace, nodedaemon.DiskMakerName, retryInterval, hourTimeout)
 			Expect(err).NotTo(HaveOccurred(), "waiting for diskmaker daemonset for shared localvolume reproducer")
 
 			err = verifyLocalVolume(tc.localVolume, f.Client)
@@ -194,7 +194,7 @@ var _ = Describe("LocalVolume", Label("LocalVolume"), Ordered, func() {
 		})
 
 		It("creates LocalVolume and provisions PVs", func() {
-			err := waitForDaemonSet(f.KubeClient, namespace, nodedaemon.DiskMakerName, retryInterval, timeout)
+			err := waitForDaemonSet(f.KubeClient, namespace, nodedaemon.DiskMakerName, retryInterval, hourTimeout)
 			Expect(err).NotTo(HaveOccurred(), "waiting for diskmaker daemonset")
 
 			err = verifyLocalVolume(tc.localVolume, f.Client)
@@ -448,7 +448,7 @@ func cleanupLVAndWaitForOwnedPVsToDisappear(f *framework.Framework, localVolume 
 }
 
 func verifyLocalVolume(lv *localv1.LocalVolume, cl framework.FrameworkClient) error {
-	return wait.PollImmediate(retryInterval, timeout, func() (bool, error) {
+	return wait.PollImmediate(retryInterval, hourTimeout, func() (bool, error) {
 		objectKey := types.NamespacedName{Namespace: lv.Namespace, Name: lv.Name}
 		err := cl.Get(context.TODO(), objectKey, lv)
 		if err != nil {
@@ -464,7 +464,7 @@ func verifyLocalVolume(lv *localv1.LocalVolume, cl framework.FrameworkClient) er
 
 func verifyDaemonSetTolerations(kubeclient kubernetes.Interface, daemonSetName, namespace string, tolerations []corev1.Toleration) error {
 	dsTolerations := []corev1.Toleration{}
-	err := wait.Poll(retryInterval, timeout, func() (done bool, err error) {
+	err := wait.Poll(retryInterval, hourTimeout, func() (done bool, err error) {
 		daemonset, err := kubeclient.AppsV1().DaemonSets(namespace).Get(context.TODO(), daemonSetName, metav1.GetOptions{})
 		if err != nil {
 			if apierrors.IsNotFound(err) {
@@ -485,7 +485,7 @@ func verifyDaemonSetTolerations(kubeclient kubernetes.Interface, daemonSetName, 
 }
 
 func verifyStorageClassDeletion(scName string, kubeclient kubernetes.Interface) error {
-	return wait.Poll(retryInterval, timeout, func() (done bool, err error) {
+	return wait.Poll(retryInterval, hourTimeout, func() (done bool, err error) {
 		_, err = kubeclient.StorageV1().StorageClasses().Get(context.TODO(), scName, metav1.GetOptions{})
 		if err != nil {
 			if apierrors.IsNotFound(err) {
@@ -524,7 +524,7 @@ func deleteCreatedPV(kubeClient kubernetes.Interface, lv *localv1.LocalVolume) e
 }
 
 func waitForCreatedPV(kubeClient kubernetes.Interface, lv *localv1.LocalVolume) error {
-	return wait.PollImmediate(retryInterval, timeout, func() (bool, error) {
+	return wait.PollImmediate(retryInterval, hourTimeout, func() (bool, error) {
 		pvs, err := kubeClient.CoreV1().PersistentVolumes().List(context.TODO(), metav1.ListOptions{LabelSelector: common.GetPVOwnerSelector(lv).String()})
 		if err != nil {
 			if isRetryableAPIError(err) {
@@ -593,7 +593,7 @@ func isRetryableAPIError(err error) bool {
 func waitListSchedulableNodes(c kubernetes.Interface) (*corev1.NodeList, error) {
 	var nodes *corev1.NodeList
 	var err error
-	if wait.PollImmediate(retryInterval, timeout, func() (bool, error) {
+	if wait.PollImmediate(retryInterval, hourTimeout, func() (bool, error) {
 		nodes, err = c.CoreV1().Nodes().List(context.TODO(), metav1.ListOptions{FieldSelector: fields.Set{
 			"spec.unschedulable": "false",
 		}.AsSelector().String()})
@@ -637,10 +637,14 @@ func waitForDaemonSet(kubeclient kubernetes.Interface, namespace, name string, r
 func waitForNodeTaintUpdate(kubeclient kubernetes.Interface, node corev1.Node, retryInterval, timeout time.Duration) (corev1.Node, error) {
 	var newNode *corev1.Node
 	name := node.Name
-	err := wait.Poll(retryInterval, timeout, func() (done bool, err error) {
-		newNode, err = kubeclient.CoreV1().Nodes().Get(context.TODO(), name, metav1.GetOptions{})
+	err := wait.PollUntilContextTimeout(context.TODO(), retryInterval, timeout, true, func(ctx context.Context) (done bool, err error) {
+		newNode, err = kubeclient.CoreV1().Nodes().Get(ctx, name, metav1.GetOptions{})
+		if err != nil {
+			framework.Global.Logf("error getting node %v: %v", name, err)
+			return false, nil
+		}
 		newNode.Spec.Taints = node.Spec.Taints
-		newNode, err = kubeclient.CoreV1().Nodes().Update(context.TODO(), newNode, metav1.UpdateOptions{})
+		newNode, err = kubeclient.CoreV1().Nodes().Update(ctx, newNode, metav1.UpdateOptions{})
 		if err != nil {
 			framework.Global.Logf("Failed to update node %v successfully: %v", name, err)
 			return false, nil

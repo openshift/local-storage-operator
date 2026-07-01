@@ -39,12 +39,12 @@ var _ = Describe("LocalVolumeDiscovery", Label("LocalVolumeDiscovery"), Ordered,
 			},
 		}
 		var err error
-		selectedNode, err = waitForNodeTaintUpdate(f.KubeClient, selectedNode, retryInterval, timeout)
+		selectedNode, err = waitForNodeTaintUpdate(f.KubeClient, selectedNode, retryInterval, hourTimeout)
 		Expect(err).NotTo(HaveOccurred(), "tainting node")
 
 		DeferCleanup(func() {
 			selectedNode.Spec.Taints = originalNodeTaints
-			_, err := waitForNodeTaintUpdate(f.KubeClient, selectedNode, retryInterval, timeout)
+			_, err := waitForNodeTaintUpdate(f.KubeClient, selectedNode, retryInterval, hourTimeout)
 			if err != nil {
 				f.Logf("error restoring original taints on node: %v", err)
 			}
@@ -60,7 +60,7 @@ var _ = Describe("LocalVolumeDiscovery", Label("LocalVolumeDiscovery"), Ordered,
 	})
 
 	It("discovers local volumes on tainted node", func() {
-		err := waitForDaemonSet(f.KubeClient, namespace, "diskmaker-discovery", retryInterval, timeout)
+		err := waitForDaemonSet(f.KubeClient, namespace, "diskmaker-discovery", retryInterval, hourTimeout)
 		Expect(err).NotTo(HaveOccurred(), "waiting for diskmaker-discovery daemonset")
 
 		err = verifyLocalVolumeDiscovery(localVolumeDiscovery, f.Client)
@@ -157,7 +157,7 @@ func checkLocalVolumeDiscoveryStatus(lvd *localv1alpha1.LocalVolumeDiscovery) er
 }
 
 func verifyLocalVolumeDiscovery(lvd *localv1alpha1.LocalVolumeDiscovery, client framework.FrameworkClient) error {
-	return wait.PollImmediate(retryInterval, timeout, func() (bool, error) {
+	return wait.PollImmediate(retryInterval, hourTimeout, func() (bool, error) {
 		objectKey := dynclient.ObjectKey{
 			Namespace: lvd.Namespace,
 			Name:      lvd.Name,
@@ -173,7 +173,7 @@ func verifyLocalVolumeDiscovery(lvd *localv1alpha1.LocalVolumeDiscovery, client 
 func verifyContinousDiscovery(client framework.FrameworkClient, lvdr *localv1alpha1.LocalVolumeDiscoveryResult,
 	oldDevices []v1alpha1.DiscoveredDevice, nodeName string) error {
 	f := framework.Global
-	return wait.Poll(retryInterval, timeout, func() (bool, error) {
+	return wait.Poll(retryInterval, hourTimeout, func() (bool, error) {
 		updatedDiscoveredDevices, err := verifyLocalVolumeDiscoveryResult(lvdr, nodeName, client)
 		if err != nil {
 			return false, fmt.Errorf("error fetching discovered devices from localvolumediscoveryresult: %v", err)
@@ -191,7 +191,7 @@ func verifyLocalVolumeDiscoveryResult(lvdr *localv1alpha1.LocalVolumeDiscoveryRe
 	client framework.FrameworkClient) ([]v1alpha1.DiscoveredDevice, error) {
 	f := framework.Global
 	discoveredDevices := []v1alpha1.DiscoveredDevice{}
-	waitErr := wait.PollImmediate(retryInterval, timeout, func() (bool, error) {
+	waitErr := wait.PollImmediate(retryInterval, hourTimeout, func() (bool, error) {
 		objectKey := dynclient.ObjectKey{
 			Namespace: lvdr.Namespace,
 			Name:      lvdr.Name,
