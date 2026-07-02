@@ -90,11 +90,10 @@ func (tc *testContext) Cleanup() {
 }
 
 // cleanupLVResources deletes a LocalVolume, its owned PVs, and its StorageClass.
-func cleanupLVResources(f *framework.Framework, localVolume *localv1.LocalVolume) error {
+func cleanupLVResources(f *framework.Framework, localVolume *localv1.LocalVolume) {
 	eventuallyDelete(localVolume)
 	checkForPersistentVolumes(f, localVolume)
 	checkForStorageClass(f, localVolume.Spec.StorageClassDevices[0].StorageClassName)
-	return nil
 }
 
 // cleanupSingleLVSet deletes a single LocalVolumeSet, its owned PVs, and its
@@ -141,7 +140,7 @@ func checkForPersistentVolumes(f *framework.Framework, obj client.Object) {
 	}, waitPeriodForPVDeletion, time.Second*2).WithContext(context.Background()).ShouldNot(HaveOccurred(), "check for %s %s", ownerKind, name)
 }
 
-func checkForStorageClass(f *framework.Framework, scName string) error {
+func checkForStorageClass(f *framework.Framework, scName string) {
 	Eventually(func(ctx context.Context) error {
 		_, err := f.KubeClient.StorageV1().StorageClasses().Get(ctx, scName, metav1.GetOptions{})
 		if err == nil {
@@ -153,5 +152,4 @@ func checkForStorageClass(f *framework.Framework, scName string) error {
 		return nil
 	}, waitPeriodForSCDeletion, time.Second*2).WithContext(context.Background()).ShouldNot(gomega.HaveOccurred(), "check for StorageClass %s", scName)
 
-	return nil
 }

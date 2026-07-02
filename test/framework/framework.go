@@ -286,11 +286,13 @@ func (f *Framework) setupLocalCommand() (*exec.Cmd, error) {
 }
 
 // Log implements TB.Log. It overrides the implementation from Ginkgo to ensure consistent output.
+// this implementation is copied from https://github.com/gnufied/kubernetes/blob/implement-volume-health-api/test/e2e/framework/framework.go#L168
 func (f *Framework) Log(args ...any) {
 	frameworkLog(f, 1, strings.TrimSuffix(fmt.Sprintln(args...), "\n"))
 }
 
 // Logf implements TB.Logf. It overrides the implementation from Ginkgo to ensure consistent output.
+// copied from https://github.com/gnufied/kubernetes/blob/implement-volume-health-api/test/e2e/framework/framework.go#L168
 func (f *Framework) Logf(format string, args ...any) {
 	frameworkLog(f, 1, fmt.Sprintf(format, args...))
 }
