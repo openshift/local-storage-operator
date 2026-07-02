@@ -2,12 +2,11 @@ package e2e
 
 import (
 	"context"
-	goctx "context"
 	"fmt"
-	"testing"
 	"time"
 
-	"github.com/onsi/gomega"
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 	localv1 "github.com/openshift/local-storage-operator/api/v1"
 	framework "github.com/openshift/local-storage-operator/test/framework"
 	batchv1 "k8s.io/api/batch/v1"
@@ -19,111 +18,115 @@ import (
 	"k8s.io/apimachinery/pkg/selection"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	dynclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 var pvConsumerLabel = "pv-consumer"
+var (
+	retryInterval   = time.Second * 5
+	hourTimeout     = time.Hour
+	deletionTimeout = 10 * time.Minute
+)
 
 // eventuallyDelete objs, removing the finalizer if necessary
-func eventuallyDelete(t *testing.T, objs ...client.Object) {
+func eventuallyDelete(objs ...client.Object) {
 	f := framework.Global
-	matcher := gomega.NewWithT(t)
 	for _, obj := range objs {
 		accessor, err := meta.Accessor(obj)
 		if err != nil {
-			t.Fatalf("deletion failed, cannot get accessor for object: %+v, obj: %+v", err, obj)
+			Fail(fmt.Sprintf("deletion failed, cannot get accessor for object: %+v, obj: %+v", err, obj))
 		}
 		kind := obj.GetObjectKind().GroupVersionKind().Kind
 		name := accessor.GetName()
 		namespace := accessor.GetNamespace()
-		matcher.Eventually(func() error {
-			t.Logf("deleting obj %q with kind %q in ns %q", name, kind, namespace)
-			err := f.Client.Get(context.TODO(), types.NamespacedName{Name: name, Namespace: namespace}, obj)
+		Eventually(func(ctx context.Context) error {
+			f.Logf("deleting obj %q with kind %q in ns %q", name, kind, namespace)
+			err := f.Client.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, obj)
 			if errors.IsNotFound(err) || errors.IsGone(err) {
-				t.Logf("object already deleted: %s", err)
+				f.Logf("object already deleted: %s", err)
 				return nil
 			}
 			accessor, err = meta.Accessor(obj)
 			if err != nil {
-				t.Fatalf("deletion failed, cannot get accessor for object: %+v, obj: %+v", err, obj)
+				Fail(fmt.Sprintf("deletion failed, cannot get accessor for object: %+v, obj: %+v", err, obj))
 			}
 			finalizers := accessor.GetFinalizers()
 			if len(finalizers) > 0 {
-				t.Logf("object has finalizers: %+v", finalizers)
+				f.Logf("object has finalizers: %+v", finalizers)
 			}
 			propPolicy := dynclient.PropagationPolicy(metav1.DeletePropagationBackground)
-			err = f.Client.Delete(context.TODO(), obj, propPolicy)
+			err = f.Client.Delete(ctx, obj, propPolicy)
 			if errors.IsNotFound(err) || errors.IsGone(err) {
-				t.Logf("object already deleted: %s", err)
+				f.Logf("object already deleted: %s", err)
 				return nil
 			}
 			return err
-		}, time.Minute*5, time.Second*5).ShouldNot(gomega.HaveOccurred(), "deleting %q", name)
+		}, time.Minute*5, time.Second*5).WithContext(context.Background()).ShouldNot(HaveOccurred(), "deleting %q", name)
 	}
-
 }
 
 // PVs rapidly get deleted and recreated if diskmaker is running
 // using eventuallyDelete is inherently racy
 // this function compares if PV was recreated with a different UID
 // then PV must be deleted.
-func eventuallyDeletePV(t *testing.T, pv *corev1.PersistentVolume) {
+func eventuallyDeletePV(pv *corev1.PersistentVolume) {
 	f := framework.Global
-	matcher := gomega.NewWithT(t)
 	oldUID := pv.UID
-	matcher.Eventually(func() error {
-		t.Logf("deleting obj %q with kind %q in ns %q", pv.Name, pv.Kind, pv.Namespace)
-		err := f.Client.Get(context.TODO(), types.NamespacedName{Name: pv.Name, Namespace: pv.Namespace}, pv)
+	Eventually(func(ctx context.Context) error {
+		f.Logf("deleting obj %q with kind %q in ns %q", pv.Name, pv.Kind, pv.Namespace)
+		err := f.Client.Get(ctx, types.NamespacedName{Name: pv.Name, Namespace: pv.Namespace}, pv)
 		if errors.IsNotFound(err) || errors.IsGone(err) {
-			t.Logf("object already deleted: %s", err)
+			f.Logf("object already deleted: %s", err)
 			return nil
 		}
 		newUID := pv.GetUID()
 		if newUID != oldUID {
-			t.Logf("object %s has been deleted and recreated", pv.Name)
+			f.Logf("object %s has been deleted and recreated", pv.Name)
 			return nil
 		}
 
-		err = f.Client.Delete(context.TODO(), pv)
+		err = f.Client.Delete(ctx, pv)
 		if errors.IsNotFound(err) || errors.IsGone(err) {
-			t.Logf("object already deleted: %s", err)
+			f.Logf("object already deleted: %s", err)
 			return nil
 		}
 		return err
-	}, time.Minute*5, time.Second*5).ShouldNot(gomega.HaveOccurred(), "deleting %q", pv.Name)
+	}, time.Minute*5, time.Second*5).WithContext(context.Background()).ShouldNot(HaveOccurred(), "deleting %q", pv.Name)
 }
 
-func eventuallyFindPVs(t *testing.T, f *framework.Framework, storageClassName string, expectedPVs int) []corev1.PersistentVolume {
+func eventuallyFindPVs(f *framework.Framework, storageClassName string, expectedPVs int) []corev1.PersistentVolume {
 	var matchedPVs []corev1.PersistentVolume
-	matcher := gomega.NewWithT(t)
-	matcher.Eventually(func() []corev1.PersistentVolume {
+	Eventually(func() []corev1.PersistentVolume {
 		pvList := &corev1.PersistentVolumeList{}
-		t.Logf("waiting for %d PVs to be created with StorageClass: %q", expectedPVs, storageClassName)
-		matcher.Eventually(func() error {
-			return f.Client.List(context.TODO(), pvList)
-		}).ShouldNot(gomega.HaveOccurred())
+
+		Eventually(func(ctx context.Context) error {
+			return f.Client.List(ctx, pvList)
+		}).WithContext(context.Background()).ShouldNot(HaveOccurred())
+
 		matchedPVs = make([]corev1.PersistentVolume, 0)
 		for _, pv := range pvList.Items {
 			if pv.Spec.StorageClassName == storageClassName {
 				matchedPVs = append(matchedPVs, pv)
 			}
 		}
+		f.Logf("waiting for %d PVs to be created with StorageClass: %q, found %d", expectedPVs, storageClassName, len(matchedPVs))
+
 		return matchedPVs
-	}, time.Minute*5, time.Second*8).Should(gomega.HaveLen(expectedPVs), "checking number of PVs for for storageclass: %q", storageClassName)
+	}, time.Minute*5, time.Second*8).Should(HaveLen(expectedPVs), "checking number of PVs for for storageclass: %q", storageClassName)
 	return matchedPVs
 
 }
 
-func eventuallyFindLVDLsForPVs(t *testing.T, f *framework.Framework, namespace string, pvNames []string) []localv1.LocalVolumeDeviceLink {
-	matcher := gomega.NewWithT(t)
+func eventuallyFindLVDLsForPVs(f *framework.Framework, namespace string, pvNames []string) []localv1.LocalVolumeDeviceLink {
 	pvNameSet := sets.New(pvNames...)
 	foundLVDLs := make([]localv1.LocalVolumeDeviceLink, 0)
-	matcher.Eventually(func() bool {
+	Eventually(func(ctx context.Context) bool {
 		lvdlList := &localv1.LocalVolumeDeviceLinkList{}
-		err := f.Client.List(goctx.TODO(), lvdlList, client.InNamespace(namespace))
+		err := f.Client.List(ctx, lvdlList, client.InNamespace(namespace))
 		if err != nil {
-			t.Logf("error listing LocalVolumeDeviceLink objects: %v", err)
+			f.Logf("error listing LocalVolumeDeviceLink objects: %v", err)
 			return false
 		}
 		foundLVDLs = foundLVDLs[:0]
@@ -137,16 +140,15 @@ func eventuallyFindLVDLsForPVs(t *testing.T, f *framework.Framework, namespace s
 			}
 		}
 		return len(foundLVDLs) == len(pvNameSet)
-	}, time.Minute*5, time.Second*5).Should(gomega.BeTrue(), "waiting for LVDL objects with populated status for all PVs")
+	}, time.Minute*5, time.Second*5).WithContext(context.Background()).Should(BeTrue(), "waiting for LVDL objects with populated status for all PVs")
 	return foundLVDLs
 }
 
 // waits for PVs of the same name to become available
-func eventuallyFindAvailablePVs(t *testing.T, f *framework.Framework, storageClassName string, expectedPVs []corev1.PersistentVolume) []corev1.PersistentVolume {
-	matcher := gomega.NewWithT(t)
+func eventuallyFindAvailablePVs(f *framework.Framework, storageClassName string, expectedPVs []corev1.PersistentVolume) []corev1.PersistentVolume {
 	var newPVs []corev1.PersistentVolume
-	matcher.Eventually(func() bool {
-		newPVs = eventuallyFindPVs(t, f, storageClassName, len(expectedPVs))
+	Eventually(func() bool {
+		newPVs = eventuallyFindPVs(f, storageClassName, len(expectedPVs))
 		for _, pv := range expectedPVs {
 			pvFound := false
 			for _, newPV := range newPVs {
@@ -154,7 +156,7 @@ func eventuallyFindAvailablePVs(t *testing.T, f *framework.Framework, storageCla
 					if newPV.Status.Phase == corev1.VolumeAvailable {
 						pvFound = true
 					} else {
-						t.Logf("PV is in phase %q, waiting for it to be in phase %q", newPV.Status.Phase, corev1.VolumeAvailable)
+						f.Logf("PV is in phase %q, waiting for it to be in phase %q", newPV.Status.Phase, corev1.VolumeAvailable)
 					}
 					break
 				}
@@ -165,14 +167,13 @@ func eventuallyFindAvailablePVs(t *testing.T, f *framework.Framework, storageCla
 			}
 		}
 		return true
-	}, time.Minute*8, time.Second*25).Should(gomega.BeTrue(), "waiting for PVs to become available again")
+	}, time.Minute*8, time.Second*25).Should(BeTrue(), "waiting for PVs to become available again")
 	return newPVs
 }
 
-func consumePV(t *testing.T, ctx *framework.Context, pv corev1.PersistentVolume) (*corev1.PersistentVolumeClaim, *batchv1.Job, *corev1.Pod) {
-	t.Logf("consuming PV: %q", pv.Name)
-	matcher := gomega.NewWithT(t)
+func consumePV(namespace string, pv corev1.PersistentVolume) (*corev1.PersistentVolumeClaim, *batchv1.Job, *corev1.Pod) {
 	f := framework.Global
+	f.Logf("consuming PV: %q", pv.Name)
 	name := fmt.Sprintf("%s-consumer", pv.ObjectMeta.Name)
 	pvc := &corev1.PersistentVolumeClaim{
 		ObjectMeta: metav1.ObjectMeta{
@@ -247,10 +248,14 @@ func consumePV(t *testing.T, ctx *framework.Context, pv corev1.PersistentVolume)
 	}
 
 	// create pvc
-	matcher.Eventually(func() error {
-		t.Logf("creating pvc: %q", pvc.Name)
-		return f.Client.Create(goctx.TODO(), pvc, &framework.CleanupOptions{TestContext: ctx})
-	}, time.Minute, time.Second*2).ShouldNot(gomega.HaveOccurred(), "creating pvc")
+	Eventually(func(ctx context.Context) error {
+		f.Logf("creating pvc: %q", pvc.Name)
+		return f.Client.Create(ctx, pvc, nil)
+	}, time.Minute, time.Second*2).WithContext(context.Background()).ShouldNot(HaveOccurred(), "creating pvc")
+
+	DeferCleanup(func() {
+		deleteResource(pvc, pvc.Namespace, pvc.Name, f.Client)
+	})
 
 	// recording a time before the job was created
 	toRound := time.Now()
@@ -258,42 +263,46 @@ func consumePV(t *testing.T, ctx *framework.Context, pv corev1.PersistentVolume)
 	timeStarted := time.Date(toRound.Year(), toRound.Month(), toRound.Day(), toRound.Hour(), toRound.Minute(), 0, 0, toRound.Location())
 
 	// create consuming job
-	matcher.Eventually(func() error {
-		t.Logf("creating job: %q", job.Name)
-		return f.Client.Create(goctx.TODO(), job, &framework.CleanupOptions{TestContext: ctx})
-	}, time.Minute, time.Second*2).ShouldNot(gomega.HaveOccurred(), "creating job")
+	Eventually(func(ctx context.Context) error {
+		f.Logf("creating job: %q", job.Name)
+		return f.Client.Create(ctx, job, nil)
+	}, time.Minute, time.Second*2).WithContext(context.Background()).ShouldNot(HaveOccurred(), "creating job")
+
+	DeferCleanup(func() {
+		deleteResource(job, job.Namespace, job.Name, f.Client)
+	})
 
 	// wait for job to complete
-	matcher.Eventually(func() int32 {
-		t.Log("waiting for job to complete")
-		err := f.Client.Get(goctx.TODO(), types.NamespacedName{Name: job.Name, Namespace: job.Namespace}, job)
+	Eventually(func(ctx context.Context) int32 {
+		f.Logf("waiting for job to complete")
+		err := f.Client.Get(ctx, types.NamespacedName{Name: job.Name, Namespace: job.Namespace}, job)
 		if err != nil {
-			t.Logf("error fetching job: %+v", err)
+			f.Logf("error fetching job: %+v", err)
 			return 0
 		}
-		t.Logf("job completions: %d", job.Status.Succeeded)
+		f.Logf("job completions: %d", job.Status.Succeeded)
 		return job.Status.Succeeded
-	}, time.Minute*5, time.Second*4).Should(gomega.BeNumerically(">=", 1), "waiting for job to complete")
+	}, time.Minute*5, time.Second*4).WithContext(context.Background()).Should(BeNumerically(">=", 1), "waiting for job to complete")
 
 	// return pods because they have to be deleted before pv is released
 	podList := &corev1.PodList{}
 	var matchingPod corev1.Pod
-	matcher.Eventually(func() error {
-		t.Logf("looking for the completed pod")
+	Eventually(func(ctx context.Context) error {
+		f.Logf("looking for the completed pod")
 		appLabelReq, err := labels.NewRequirement("app", selection.Equals, []string{pvConsumerLabel})
 		if err != nil {
-			t.Logf("failed to compose labelselector 'app' requirement: %+v", err)
+			f.Logf("failed to compose labelselector 'app' requirement: %+v", err)
 			return err
 		}
 		pvNameReq, err := labels.NewRequirement("pv-name", selection.Equals, []string{pv.Name})
 		if err != nil {
-			t.Logf("failed to compose labelselector 'pv-name' requirement: %+v", err)
+			f.Logf("failed to compose labelselector 'pv-name' requirement: %+v", err)
 			return err
 		}
 		selector := labels.NewSelector().Add(*appLabelReq).Add(*pvNameReq)
-		err = f.Client.List(goctx.TODO(), podList, dynclient.MatchingLabelsSelector{Selector: selector})
+		err = f.Client.List(ctx, podList, dynclient.MatchingLabelsSelector{Selector: selector})
 		if err != nil {
-			t.Logf("failed to list pods: %+v", err)
+			f.Logf("failed to list pods: %+v", err)
 			return err
 		}
 		podNameList := make([]string, 0)
@@ -304,36 +313,34 @@ func consumePV(t *testing.T, ctx *framework.Context, pv corev1.PersistentVolume)
 				matchingPod = pod
 				return nil
 			} else {
-				t.Logf("pod is old: %q created at %v before e2e started at %v, skipping", pod.Name, timeStarted, pod.CreationTimestamp)
+				f.Logf("pod is old: %q created at %v before e2e started at %v, skipping", pod.Name, timeStarted, pod.CreationTimestamp)
 			}
 		}
-		t.Logf("could not find pod created after %q to consume PV %q in podList: %+v", timeStarted, pv.Name, podNameList)
+		f.Logf("could not find pod created after %q to consume PV %q in podList: %+v", timeStarted, pv.Name, podNameList)
 		return fmt.Errorf("could not find pod")
 
-	}).ShouldNot(gomega.HaveOccurred(), "fetching consuming pod")
+	}).WithContext(context.Background()).ShouldNot(HaveOccurred(), "fetching consuming pod")
 
 	matchingPod.TypeMeta.Kind = "Pod"
 	return pvc, job, &matchingPod
 }
 
-func assertLVDLsContainTargetAndNodes(t *testing.T, lvdls []localv1.LocalVolumeDeviceLink, expectedTarget string, expectedNodeNames []string) {
-	matcher := gomega.NewWithT(t)
+func assertLVDLsContainTargetAndNodes(lvdls []localv1.LocalVolumeDeviceLink, expectedTarget string, expectedNodeNames []string) {
 	foundNodeNames := sets.New[string]()
 	for _, lvdl := range lvdls {
-		matcher.Expect(lvdl.Status.ValidLinkTargets).To(gomega.ContainElement(expectedTarget),
+		Expect(lvdl.Status.ValidLinkTargets).To(ContainElement(expectedTarget),
 			"expected ValidLinkTargets for LVDL %q to contain %q", lvdl.Name, expectedTarget)
-		matcher.Expect(lvdl.Spec.NodeName).ToNot(gomega.BeEmpty(), "expected NodeName for LVDL %q", lvdl.Name)
-		matcher.Expect(lvdl.Status.PersistentVolumeSymlinkPath).ToNot(gomega.BeEmpty(), "expected PersistentVolumeSymlinkPath for LVDL %q", lvdl.Name)
+		Expect(lvdl.Spec.NodeName).ToNot(BeEmpty(), "expected NodeName for LVDL %q", lvdl.Name)
+		Expect(lvdl.Status.PersistentVolumeSymlinkPath).ToNot(BeEmpty(), "expected PersistentVolumeSymlinkPath for LVDL %q", lvdl.Name)
 		foundNodeNames.Insert(lvdl.Spec.NodeName)
 	}
-	matcher.Expect(foundNodeNames.UnsortedList()).To(gomega.ConsistOf(expectedNodeNames),
+	Expect(foundNodeNames.UnsortedList()).To(ConsistOf(expectedNodeNames),
 		"expected LVDL node names for target %q", expectedTarget)
 }
 
 // assertLVDLSymlinkPathMatchesPVs checks that each LVDL's status.symlinkPath matches the
 // corresponding PersistentVolume's spec.local.path (same as the on-disk symlink under /mnt/local-storage).
-func assertLVDLSymlinkPathMatchesPVs(t *testing.T, lvdls []localv1.LocalVolumeDeviceLink, pvs []corev1.PersistentVolume) {
-	matcher := gomega.NewWithT(t)
+func assertLVDLSymlinkPathMatchesPVs(lvdls []localv1.LocalVolumeDeviceLink, pvs []corev1.PersistentVolume) {
 	byName := make(map[string]corev1.PersistentVolume, len(pvs))
 	for _, pv := range pvs {
 		byName[pv.Name] = pv
@@ -341,11 +348,33 @@ func assertLVDLSymlinkPathMatchesPVs(t *testing.T, lvdls []localv1.LocalVolumeDe
 	for i := range lvdls {
 		lvdl := &lvdls[i]
 		pv, ok := byName[lvdl.Spec.PersistentVolumeName]
-		matcher.Expect(ok).To(gomega.BeTrue(), "missing PV %q for LVDL %q", lvdl.Spec.PersistentVolumeName, lvdl.Name)
-		matcher.Expect(lvdl.Status.PersistentVolumeSymlinkPath).ToNot(gomega.BeEmpty(), "expected PersistentVolumeSymlinkPath for LVDL %q", lvdl.Name)
+		Expect(ok).To(BeTrue(), "missing PV %q for LVDL %q", lvdl.Spec.PersistentVolumeName, lvdl.Name)
+		Expect(lvdl.Status.PersistentVolumeSymlinkPath).ToNot(BeEmpty(), "expected PersistentVolumeSymlinkPath for LVDL %q", lvdl.Name)
 		if pv.Spec.Local != nil && pv.Spec.Local.Path != "" {
-			matcher.Expect(lvdl.Status.PersistentVolumeSymlinkPath).To(gomega.Equal(pv.Spec.Local.Path),
+			Expect(lvdl.Status.PersistentVolumeSymlinkPath).To(Equal(pv.Spec.Local.Path),
 				"LVDL %q status.symlinkPath should match PV %q spec.local.path", lvdl.Name, pv.Name)
 		}
 	}
+}
+func deleteResource(obj client.Object, namespace, name string, cl framework.FrameworkClient) error {
+	pollingContext, cancel := context.WithTimeout(context.TODO(), deletionTimeout)
+	defer cancel()
+	err := cl.Delete(pollingContext, obj)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return nil
+		}
+		return err
+	}
+	return wait.PollUntilContextTimeout(pollingContext, retryInterval, hourTimeout, true, func(ctx context.Context) (bool, error) {
+		objectKey := types.NamespacedName{Namespace: namespace, Name: name}
+		err := cl.Get(ctx, objectKey, obj)
+		if err != nil {
+			if errors.IsNotFound(err) {
+				return true, nil
+			}
+			return false, err
+		}
+		return false, nil
+	})
 }

@@ -1,53 +1,47 @@
 package e2e
 
 import (
-	goctx "context"
+	"context"
 	"fmt"
 	"path/filepath"
-	"testing"
 	"time"
 
-	"github.com/onsi/gomega"
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 	localv1 "github.com/openshift/local-storage-operator/api/v1"
 	framework "github.com/openshift/local-storage-operator/test/framework"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
-	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 )
 
-func checkForSymlinks(t *testing.T, ctx *framework.TestCtx, nodeEnv []nodeDisks, path string) error {
-	t.Logf("checking for leftover symlinks on host")
-	namespace, err := ctx.GetOperatorNamespace()
-	if err != nil || namespace == "" {
-		return fmt.Errorf("could not determine namespace: %w", err)
-	}
+func checkForSymlinks(namespace string, nodeEnv []nodeDisks, path string) error {
+	f := framework.Global
+	f.Logf("checking for leftover symlinks on host")
 
 	checkSymlinkJobs := make([]*batchv1.Job, 0)
 
 	for _, nd := range nodeEnv {
 		node := nd.node
-		t.Logf("creating check-symlink job on node: %q", node.GetName())
+		f.Logf("creating check-symlink job on node: %q", node.GetName())
 		checkSymlinkJob, err := newNodeCheckSymlinkJob(node, namespace, path)
 		if err != nil {
 			return err
 		}
 		checkSymlinkJobs = append(checkSymlinkJobs, checkSymlinkJob)
-		createOrReplaceJob(t, ctx, checkSymlinkJob, fmt.Sprintf("creating check-symlink job on node: %q", node.GetName()))
+		createOrReplaceJob(namespace, checkSymlinkJob, fmt.Sprintf("creating check-symlink job on node: %q", node.GetName()))
 	}
 
-	// wait for jobs to have non-nil completetion time
 	for _, checkSymlinkJob := range checkSymlinkJobs {
-		waitForJobCompletion(t, checkSymlinkJob, fmt.Sprintf("waiting for check-symlink job to complete: %q", checkSymlinkJob.GetName()))
+		waitForJobCompletion(checkSymlinkJob, fmt.Sprintf("waiting for check-symlink job to complete: %q", checkSymlinkJob.GetName()))
 		checkSymlinkJob.TypeMeta.Kind = "Job"
-		eventuallyDelete(t, checkSymlinkJob)
+		eventuallyDelete(checkSymlinkJob)
 	}
 
 	return nil
 }
 
 func newNodeCheckSymlinkJob(node corev1.Node, namespace string, path string) (*batchv1.Job, error) {
-	// check each node for symlinks, fail the job if it exists
 	const hostCheckSymlinkScript = `
 set -eu
 set -x
@@ -82,9 +76,8 @@ func currentSymlinkForDisk(d disk) string {
 	return filepath.Join("/dev", d.name)
 }
 
-func findCurrentSymlinkForPV(t *testing.T, nodeEnv []nodeDisks, pv *corev1.PersistentVolume) string {
-
-	nodeHostName := findNodeHostnameForPV(t, pv)
+func findCurrentSymlinkForPV(nodeEnv []nodeDisks, pv *corev1.PersistentVolume) string {
+	nodeHostName := findNodeHostnameForPV(pv)
 	pvBase := filepath.Base(pv.Spec.Local.Path)
 	for _, nodeEntry := range nodeEnv {
 		if nodeEntry.node.Labels[corev1.LabelHostname] != nodeHostName {
@@ -96,16 +89,16 @@ func findCurrentSymlinkForPV(t *testing.T, nodeEnv []nodeDisks, pv *corev1.Persi
 			}
 		}
 	}
-	t.Fatalf("failed to find current symlink for PV %q on node hostname %q", pv.Name, nodeHostName)
+	Fail(fmt.Sprintf("failed to find current symlink for PV %q on node hostname %q", pv.Name, nodeHostName))
 	return ""
 }
 
 // findNodeHostnameForLVDL returns the node hostname where the LVDL's PV is scheduled,
 // by inspecting the PV's spec.nodeAffinity (Required, LabelHostname).
-func findNodeHostnameForPV(t *testing.T, pv *v1.PersistentVolume) string {
+func findNodeHostnameForPV(pv *corev1.PersistentVolume) string {
 	pvName := pv.Name
 	if pv.Spec.NodeAffinity == nil || pv.Spec.NodeAffinity.Required == nil {
-		t.Fatalf("PV %s has no NodeAffinity.Required", pvName)
+		Fail(fmt.Sprintf("PV %s has no NodeAffinity.Required", pvName))
 	}
 	for _, term := range pv.Spec.NodeAffinity.Required.NodeSelectorTerms {
 		for _, expr := range term.MatchExpressions {
@@ -114,81 +107,76 @@ func findNodeHostnameForPV(t *testing.T, pv *v1.PersistentVolume) string {
 			}
 		}
 	}
-	t.Fatalf("PV %s NodeAffinity has no %q expression", pvName, corev1.LabelHostname)
+	Fail(fmt.Sprintf("PV %s NodeAffinity has no %q expression", pvName, corev1.LabelHostname))
 	return ""
 }
 
-func eventuallyGetLVDL(t *testing.T, f *framework.Framework, namespace, name string) *localv1.LocalVolumeDeviceLink {
-	matcher := gomega.NewWithT(t)
+func eventuallyGetLVDL(f *framework.Framework, namespace, name string) *localv1.LocalVolumeDeviceLink {
 	lvdl := &localv1.LocalVolumeDeviceLink{}
 
-	matcher.Eventually(func() error {
-		return f.Client.Get(goctx.TODO(), types.NamespacedName{Name: name, Namespace: namespace}, lvdl)
-	}, time.Minute*5, time.Second*5).ShouldNot(gomega.HaveOccurred(), "waiting for LocalVolumeDeviceLink %q", name)
+	Eventually(func(ctx context.Context) error {
+		return f.Client.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, lvdl)
+	}, time.Minute*5, time.Second*5).WithContext(context.Background()).ShouldNot(HaveOccurred(), "waiting for LocalVolumeDeviceLink %q", name)
 	return lvdl
 }
 
-func waitForLVDLPreferredLinkTarget(t *testing.T, f *framework.Framework, lvdl *localv1.LocalVolumeDeviceLink, expectedPreferredTarget string) *localv1.LocalVolumeDeviceLink {
-	matcher := gomega.NewWithT(t)
-	matcher.Expect(lvdl).NotTo(gomega.BeNil(), "LVDL pointer must be provided")
+func waitForLVDLPreferredLinkTarget(f *framework.Framework, lvdl *localv1.LocalVolumeDeviceLink, expectedPreferredTarget string) *localv1.LocalVolumeDeviceLink {
+	Expect(lvdl).NotTo(BeNil(), "LVDL pointer must be provided")
 	name := lvdl.Name
-	matcher.Expect(name).ToNot(gomega.BeEmpty(), "LVDL name must be set")
+	Expect(name).ToNot(BeEmpty(), "LVDL name must be set")
 	namespace := lvdl.Namespace
-	matcher.Expect(namespace).ToNot(gomega.BeEmpty(), "LVDL namespace must be set")
-	matcher.Eventually(func() string {
-		lvdl = eventuallyGetLVDL(t, f, namespace, name)
+	Expect(namespace).ToNot(BeEmpty(), "LVDL namespace must be set")
+	Eventually(func() string {
+		lvdl = eventuallyGetLVDL(f, namespace, name)
 		return lvdl.Status.PreferredLinkTarget
-	}, time.Minute*5, time.Second*5).Should(gomega.Equal(expectedPreferredTarget), "waiting for LVDL %q preferred link target to update", name)
+	}, time.Minute*5, time.Second*5).Should(Equal(expectedPreferredTarget), "waiting for LVDL %q preferred link target to update", name)
 	return lvdl
 }
 
-func waitForLVDLLinkTargets(t *testing.T, f *framework.Framework, lvdl *localv1.LocalVolumeDeviceLink, expectedCurrentTarget, expectedPreferredTarget string) *localv1.LocalVolumeDeviceLink {
-	matcher := gomega.NewWithT(t)
-	matcher.Expect(lvdl).NotTo(gomega.BeNil(), "LVDL pointer must be provided")
+func waitForLVDLLinkTargets(f *framework.Framework, lvdl *localv1.LocalVolumeDeviceLink, expectedCurrentTarget, expectedPreferredTarget string) *localv1.LocalVolumeDeviceLink {
+	Expect(lvdl).NotTo(BeNil(), "LVDL pointer must be provided")
 	name := lvdl.Name
-	matcher.Expect(name).ToNot(gomega.BeEmpty(), "LVDL name must be set")
+	Expect(name).ToNot(BeEmpty(), "LVDL name must be set")
 	namespace := lvdl.Namespace
-	matcher.Expect(namespace).ToNot(gomega.BeEmpty(), "LVDL namespace must be set")
-	matcher.Eventually(func() bool {
-		lvdl = eventuallyGetLVDL(t, f, namespace, name)
+	Expect(namespace).ToNot(BeEmpty(), "LVDL namespace must be set")
+	Eventually(func() bool {
+		lvdl = eventuallyGetLVDL(f, namespace, name)
 		return lvdl.Status.CurrentLinkTarget == expectedCurrentTarget &&
 			lvdl.Status.PreferredLinkTarget == expectedPreferredTarget
-	}, time.Minute*5, time.Second*5).Should(gomega.BeTrue(), "waiting for LVDL %q link targets to converge", name)
+	}, time.Minute*5, time.Second*5).Should(BeTrue(), "waiting for LVDL %q link targets to converge", name)
 	return lvdl
 }
 
-func updateLVDLPolicy(t *testing.T, f *framework.Framework, lvdl *localv1.LocalVolumeDeviceLink, policy localv1.DeviceLinkPolicy) *localv1.LocalVolumeDeviceLink {
-	matcher := gomega.NewWithT(t)
-	matcher.Expect(lvdl).NotTo(gomega.BeNil(), "LVDL pointer must be provided")
+func updateLVDLPolicy(f *framework.Framework, lvdl *localv1.LocalVolumeDeviceLink, policy localv1.DeviceLinkPolicy) *localv1.LocalVolumeDeviceLink {
+	Expect(lvdl).NotTo(BeNil(), "LVDL pointer must be provided")
 	name := lvdl.Name
-	matcher.Expect(name).ToNot(gomega.BeEmpty(), "LVDL name must be set")
+	Expect(name).ToNot(BeEmpty(), "LVDL name must be set")
 	namespace := lvdl.Namespace
-	matcher.Expect(namespace).ToNot(gomega.BeEmpty(), "LVDL namespace must be set")
-	matcher.Eventually(func() error {
-		if err := f.Client.Get(goctx.TODO(), types.NamespacedName{Name: name, Namespace: namespace}, lvdl); err != nil {
+	Expect(namespace).ToNot(BeEmpty(), "LVDL namespace must be set")
+	Eventually(func(ctx context.Context) error {
+		if err := f.Client.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, lvdl); err != nil {
 			return err
 		}
 		lvdl.Spec.Policy = policy
-		return f.Client.Update(goctx.TODO(), lvdl)
-	}, time.Minute, time.Second*5).ShouldNot(gomega.HaveOccurred(), "updating LVDL %q policy", name)
-	return eventuallyGetLVDL(t, f, namespace, name)
+		return f.Client.Update(ctx, lvdl)
+	}, time.Minute, time.Second*5).WithContext(context.Background()).ShouldNot(HaveOccurred(), "updating LVDL %q policy", name)
+	return eventuallyGetLVDL(f, namespace, name)
 }
 
-func waitForRecreatedPVByName(t *testing.T, f *framework.Framework, name string, previousUID types.UID) corev1.PersistentVolume {
-	matcher := gomega.NewWithT(t)
+func waitForRecreatedPVByName(f *framework.Framework, name string, previousUID types.UID) corev1.PersistentVolume {
 	pv := corev1.PersistentVolume{}
-	matcher.Eventually(func() bool {
-		err := f.Client.Get(goctx.TODO(), types.NamespacedName{Name: name}, &pv)
+	Eventually(func(ctx context.Context) bool {
+		err := f.Client.Get(ctx, types.NamespacedName{Name: name}, &pv)
 		if err != nil {
-			t.Logf("waiting for recreated PV %q: %v", name, err)
+			f.Logf("waiting for recreated PV %q: %v", name, err)
 			return false
 		}
 		if pv.UID == previousUID || pv.UID == "" {
-			t.Logf("PV %q has not been recreated yet; current UID=%q previous UID=%q", name, pv.UID, previousUID)
+			f.Logf("PV %q has not been recreated yet; current UID=%q previous UID=%q", name, pv.UID, previousUID)
 			return false
 		}
 		return true
-	}, time.Minute*8, time.Second*10).Should(gomega.BeTrue(), "waiting for PV %q recreation", name)
+	}, time.Minute*8, time.Second*10).WithContext(context.Background()).Should(BeTrue(), "waiting for PV %q recreation", name)
 	return pv
 }
 
@@ -201,16 +189,11 @@ func waitForRecreatedPVByName(t *testing.T, f *framework.Framework, name string,
 //
 // The three steps use increasingly preferred by-id patterns:
 func verifyMultiStepPreferredLinkReconciliation(
-	t *testing.T,
-	ctx *framework.TestCtx,
-	f *framework.Framework,
-	namespace string,
+	tc *testContext,
 	pv corev1.PersistentVolume,
 	currentSymlink string,
-) (corev1.PersistentVolume, []cleanupFn) {
-	matcher := gomega.NewWithT(t)
-	nodeHostName := findNodeHostnameForPV(t, &pv)
-	cleanups := make([]cleanupFn, 0, 3)
+) corev1.PersistentVolume {
+	nodeHostName := findNodeHostnameForPV(&pv)
 
 	type relinkStep struct {
 		name   string
@@ -225,113 +208,77 @@ func verifyMultiStepPreferredLinkReconciliation(
 		{"wwn", "/dev/disk/by-id/wwn-local-storage-e2e-step3"},
 	}
 
-	// pv name is same as LVDL name
-	selectedLVDL := eventuallyGetLVDL(t, f, namespace, pv.Name)
+	selectedLVDL := eventuallyGetLVDL(tc.f, tc.namespace, pv.Name)
 
-	// Pre-check there is no pending alert for the volume
-	prometheusClient := newPrometheusClient(f)
-	waitForMetric(t, prometheusClient, fmt.Sprintf("ALERTS{alertname=\"LSODeviceLinkMismatch\", alertstate=\"pending\", persistent_volume=\"%s\"}", selectedLVDL.Name), 0)
+	currentSymlink = selectedLVDL.Status.CurrentLinkTarget
+
+	prometheusClient := newPrometheusClient(tc.f)
+	waitForMetric(prometheusClient, fmt.Sprintf("ALERTS{alertname=\"LSODeviceLinkMismatch\", alertstate=\"pending\", persistent_volume=\"%s\"}", selectedLVDL.Name), 0)
 
 	// ---- Step 1: initial relink ----
-	t.Logf("multi-step relink step 1: adding %s symlink %s", steps[0].name, steps[0].target)
-	addNewUdevSymlink(t, ctx, nodeHostName, currentSymlink, steps[0].target)
-	cleanups = append(cleanups, cleanupFn{
-		name: fmt.Sprintf("removeUdevSymlink-%s", filepath.Base(steps[0].target)),
-		fn: func(t *testing.T) error {
-			removeUdevSymlink(t, ctx, nodeHostName, steps[0].target)
-			return nil
-		},
-	})
+	tc.f.Logf("multi-step relink step 1: adding %s symlink %s", steps[0].name, steps[0].target)
+	tc.addHostSymlink(nodeHostName, currentSymlink, steps[0].target)
 
-	t.Log("step 1: waiting for LVDL PreferredLinkTarget to update")
-	lvdl := waitForLVDLPreferredLinkTarget(t, f, selectedLVDL, steps[0].target)
-	matcher.Expect(lvdl.Status.CurrentLinkTarget).To(gomega.Equal(currentSymlink),
+	tc.f.Logf("step 1: waiting for LVDL PreferredLinkTarget to update")
+	lvdl := waitForLVDLPreferredLinkTarget(tc.f, selectedLVDL, steps[0].target)
+	Expect(lvdl.Status.CurrentLinkTarget).To(Equal(currentSymlink),
 		"step 1: current should still be original before policy change")
 
-	waitForMetric(t, prometheusClient, fmt.Sprintf("lso_device_link_mismatch{name=\"%s\", policy=\"None\"}", lvdl.Name), 1)
-	// Wait for alert to get Pending, that should be fast
-	// It would take ~15 minutes to get it Firing, don't bother with that
-	waitForMetric(t, prometheusClient, fmt.Sprintf("ALERTS{alertname=\"LSODeviceLinkMismatch\", alertstate=\"pending\", persistent_volume=\"%s\"}", lvdl.Name), 1)
+	waitForMetric(prometheusClient, fmt.Sprintf("lso_device_link_mismatch{name=\"%s\", policy=\"None\"}", lvdl.Name), 1)
+	waitForMetric(prometheusClient, fmt.Sprintf("ALERTS{alertname=\"LSODeviceLinkMismatch\", alertstate=\"pending\", persistent_volume=\"%s\"}", lvdl.Name), 1)
 
-	// Update the policy to CurrentLinkTarget
-	lvdl = updateLVDLPolicy(t, f, lvdl, localv1.DeviceLinkPolicyCurrentLinkTarget)
-	// Wait for the metric with Node to disappear and CurrentLinkTarget to be set
-	waitForMetric(t, prometheusClient, fmt.Sprintf("lso_device_link_mismatch{name=\"%s\", policy=\"None\"}", lvdl.Name), 0)
-	waitForMetric(t, prometheusClient, fmt.Sprintf("lso_device_link_mismatch{name=\"%s\", policy=\"CurrentLinkTarget\"}", lvdl.Name), 1)
-	// Do not wait for the alert to disappear - it takes ~ 5 minutes.
-	// Let the other test pass and check for the alert at the end.
+	lvdl = updateLVDLPolicy(tc.f, lvdl, localv1.DeviceLinkPolicyCurrentLinkTarget)
+	waitForMetric(prometheusClient, fmt.Sprintf("lso_device_link_mismatch{name=\"%s\", policy=\"None\"}", lvdl.Name), 0)
+	waitForMetric(prometheusClient, fmt.Sprintf("lso_device_link_mismatch{name=\"%s\", policy=\"CurrentLinkTarget\"}", lvdl.Name), 1)
 
-	t.Log("step 1: setting LVDL policy to PreferredLinkTarget")
-	lvdl = updateLVDLPolicy(t, f, lvdl, localv1.DeviceLinkPolicyPreferredLinkTarget)
-	lvdl = waitForLVDLLinkTargets(t, f, lvdl, steps[0].target, steps[0].target)
-	verifyNodeSymlinkTarget(t, ctx, nodeHostName, pv.Spec.Local.Path, steps[0].target)
-	currentSymlink = lvdl.Status.CurrentLinkTarget
+	tc.f.Logf("step 1: setting LVDL policy to PreferredLinkTarget")
+	lvdl = updateLVDLPolicy(tc.f, lvdl, localv1.DeviceLinkPolicyPreferredLinkTarget)
+	lvdl = waitForLVDLLinkTargets(tc.f, lvdl, steps[0].target, steps[0].target)
+	verifyNodeSymlinkTarget(tc.namespace, nodeHostName, pv.Spec.Local.Path, steps[0].target)
 
 	// ---- Steps 2 and 3: higher-priority links, auto-relink, PV recreation ----
 	for i := 1; i < len(steps); i++ {
 		step := steps[i]
 		prevTarget := steps[i-1].target
 
-		removalTarget := step.target
+		tc.f.Logf("multi-step relink step %d: adding %s symlink %s", i+1, step.name, step.target)
+		tc.addHostSymlink(nodeHostName, prevTarget, step.target)
 
-		t.Logf("multi-step relink step %d: adding %s symlink %s", i+1, step.name, step.target)
-		addNewUdevSymlink(t, ctx, nodeHostName, prevTarget, step.target)
-		cleanups = append(cleanups, cleanupFn{
-			name: fmt.Sprintf("removeUdevSymlink-%s", filepath.Base(removalTarget)),
-			fn: func(t *testing.T) error {
-				removeUdevSymlink(t, ctx, nodeHostName, removalTarget)
-				return nil
-			},
-		})
-		t.Logf("step %d: wait for lvdl preferredTarget update to %s", i+1, step.target)
-		lvdl = waitForLVDLPreferredLinkTarget(t, f, lvdl, step.target)
+		tc.f.Logf("step %d: wait for lvdl preferredTarget update to %s", i+1, step.target)
+		lvdl = waitForLVDLPreferredLinkTarget(tc.f, lvdl, step.target)
 
-		// Policy is already PreferredLinkTarget, so relink should happen automatically.
-		t.Logf("step %d: waiting for auto-relink to %s", i+1, step.target)
-		lvdl = waitForLVDLLinkTargets(t, f, lvdl, step.target, step.target)
-		verifyNodeSymlinkTarget(t, ctx, nodeHostName, pv.Spec.Local.Path, step.target)
-		currentSymlink = lvdl.Status.CurrentLinkTarget
+		tc.f.Logf("step %d: waiting for auto-relink to %s", i+1, step.target)
+		lvdl = waitForLVDLLinkTargets(tc.f, lvdl, step.target, step.target)
+		verifyNodeSymlinkTarget(tc.namespace, nodeHostName, pv.Spec.Local.Path, step.target)
 
-		// Verify PV comes back correctly after deletion.
-		t.Logf("step %d: deleting PV %q and verifying recreation", i+1, pv.Name)
+		tc.f.Logf("step %d: deleting PV %q and verifying recreation", i+1, pv.Name)
 		oldPVUID := pv.UID
 		oldPVPath := pv.Spec.Local.Path
-		eventuallyDeletePV(t, &pv)
+		eventuallyDeletePV(&pv)
 
-		// After PV deletion + symlink cleanup + recreation, the symlink filename
-		// may change (the recreated symlink uses the current preferred by-id name).
-		// Use eventuallyFindPVs to find the PV regardless of name.
-		pv = waitForRecreatedPVByName(t, f, pv.Name, oldPVUID)
-		matcher.Expect(pv.Spec.Local.Path).To(gomega.Equal(oldPVPath))
+		pv = waitForRecreatedPVByName(tc.f, pv.Name, oldPVUID)
+		Expect(pv.Spec.Local.Path).To(Equal(oldPVPath))
 
-		// Verify the recreated PV's symlink points to the correct target.
-		verifyNodeSymlinkTarget(t, ctx, nodeHostName, pv.Spec.Local.Path, step.target)
+		verifyNodeSymlinkTarget(tc.namespace, nodeHostName, pv.Spec.Local.Path, step.target)
 
-		// Verify LVDL reflects the correct state after PV recreation.
-		t.Logf("step %d: verifying LVDL state after PV recreation", i+1)
-		lvdls := eventuallyFindLVDLsForPVs(t, f, namespace, []string{pv.Name})
-		matcher.Expect(lvdls).To(gomega.HaveLen(1),
+		tc.f.Logf("step %d: verifying LVDL state after PV recreation", i+1)
+		lvdls := eventuallyFindLVDLsForPVs(tc.f, tc.namespace, []string{pv.Name})
+		Expect(lvdls).To(HaveLen(1),
 			"step %d: expected exactly 1 LVDL for recreated PV", i+1)
 		lvdl = &lvdls[0]
-		matcher.Expect(lvdl.Status.CurrentLinkTarget).To(gomega.Equal(step.target),
+		Expect(lvdl.Status.CurrentLinkTarget).To(Equal(step.target),
 			"step %d: LVDL CurrentLinkTarget after PV recreation", i+1)
-		matcher.Expect(lvdl.Status.PreferredLinkTarget).To(gomega.Equal(step.target),
+		Expect(lvdl.Status.PreferredLinkTarget).To(Equal(step.target),
 			"step %d: LVDL PreferredLinkTarget after PV recreation", i+1)
-		matcher.Expect(lvdl.Spec.Policy).To(gomega.Equal(localv1.DeviceLinkPolicyPreferredLinkTarget),
+		Expect(lvdl.Spec.Policy).To(Equal(localv1.DeviceLinkPolicyPreferredLinkTarget),
 			"step %d: LVDL policy must remain PreferredLinkTarget after PV recreation", i+1)
-		matcher.Expect(lvdl.Status.PersistentVolumeSymlinkPath).To(gomega.Equal(pv.Spec.Local.Path),
+		Expect(lvdl.Status.PersistentVolumeSymlinkPath).To(Equal(pv.Spec.Local.Path),
 			"step %d: LVDL SymlinkPath after PV recreation should match PV local path", i+1)
-		// The policy is PreferredLinkTarget + the symlink has been fixed.
-		// All LVDL metrics should be removed at this point.
-		waitForMetric(t, prometheusClient, fmt.Sprintf("lso_device_link_mismatch{name=\"%s\"}", lvdl.Name), 0)
+		waitForMetric(prometheusClient, fmt.Sprintf("lso_device_link_mismatch{name=\"%s\"}", lvdl.Name), 0)
 	}
-	// Wait for the initial alert to disappear, which takes 5 minutes.
-	// The policy is PreferredLinkTarget for quite a some time,
-	// so the alert from time when it was None should be cleared at this point
-	// (or in a near future).
-	waitForMetric(t, prometheusClient, fmt.Sprintf("ALERTS{alertname=\"LSODeviceLinkMismatch\", alertstate=\"pending\", persistent_volume=\"%s\"}", lvdl.Name), 0)
+	waitForMetric(prometheusClient, fmt.Sprintf("ALERTS{alertname=\"LSODeviceLinkMismatch\", alertstate=\"pending\", persistent_volume=\"%s\"}", lvdl.Name), 0)
 
-	return pv, cleanups
+	return pv
 }
 
 // verifySymlinkFallbackOnDisappearingLink tests that when the current preferred
@@ -343,63 +290,51 @@ func verifyMultiStepPreferredLinkReconciliation(
 // (e.g. wwn-*), and expectedFallback (e.g. scsi-3-*) also exists on the node
 // for the same underlying device. LVDL policy must already be PreferredLinkTarget.
 func verifySymlinkFallbackOnDisappearingLink(
-	t *testing.T,
-	ctx *framework.TestCtx,
-	f *framework.Framework,
-	namespace string,
+	tc *testContext,
 	pv corev1.PersistentVolume,
 	currentPreferred string,
 	expectedFallback string,
 ) corev1.PersistentVolume {
-	matcher := gomega.NewWithT(t)
-	nodeHostName := findNodeHostnameForPV(t, &pv)
+	nodeHostName := findNodeHostnameForPV(&pv)
 
-	// Sanity: confirm the LVDL is in the expected state before we break anything.
-	lvdl := eventuallyGetLVDL(t, f, namespace, pv.Name)
-	matcher.Expect(lvdl.Status.CurrentLinkTarget).To(gomega.Equal(currentPreferred),
+	lvdl := eventuallyGetLVDL(tc.f, tc.namespace, pv.Name)
+	Expect(lvdl.Status.CurrentLinkTarget).To(Equal(currentPreferred),
 		"precondition: LVDL CurrentLinkTarget should be the link we are about to remove")
-	matcher.Expect(lvdl.Spec.Policy).To(gomega.Equal(localv1.DeviceLinkPolicyPreferredLinkTarget),
+	Expect(lvdl.Spec.Policy).To(Equal(localv1.DeviceLinkPolicyPreferredLinkTarget),
 		"precondition: LVDL policy must be PreferredLinkTarget")
 
-	// Remove the current preferred link from /dev/disk/by-id/ on the node.
-	t.Logf("fallback test: removing current preferred link %s from node %s", currentPreferred, nodeHostName)
-	removeUdevSymlink(t, ctx, nodeHostName, currentPreferred)
+	tc.f.Logf("fallback test: removing current preferred link %s from node %s", currentPreferred, nodeHostName)
+	removeUdevSymlink(tc.namespace, nodeHostName, currentPreferred)
 
-	// LSO should detect that the symlink in /mnt/local-storage is now dangling
-	// and relink it to the next-best by-id link.
-	t.Logf("fallback test: waiting for auto-relink from %s to %s", currentPreferred, expectedFallback)
-	lvdl = waitForLVDLLinkTargets(t, f, lvdl, expectedFallback, expectedFallback)
+	tc.f.Logf("fallback test: waiting for auto-relink from %s to %s", currentPreferred, expectedFallback)
+	lvdl = waitForLVDLLinkTargets(tc.f, lvdl, expectedFallback, expectedFallback)
 
-	// Verify the on-disk symlink on the node now points to the fallback target.
-	verifyNodeSymlinkTarget(t, ctx, nodeHostName, pv.Spec.Local.Path, expectedFallback)
+	verifyNodeSymlinkTarget(tc.namespace, nodeHostName, pv.Spec.Local.Path, expectedFallback)
 
-	// Verify PV survives deletion and is recreated with the correct symlink.
-	t.Logf("fallback test: deleting PV %q and verifying recreation with fallback target", pv.Name)
+	tc.f.Logf("fallback test: deleting PV %q and verifying recreation with fallback target", pv.Name)
 	oldPVUID := pv.UID
 	oldPVPath := pv.Spec.Local.Path
-	eventuallyDeletePV(t, &pv)
+	eventuallyDeletePV(&pv)
 
-	pv = waitForRecreatedPVByName(t, f, pv.Name, oldPVUID)
-	matcher.Expect(pv.Spec.Local.Path).To(gomega.Equal(oldPVPath),
+	pv = waitForRecreatedPVByName(tc.f, pv.Name, oldPVUID)
+	Expect(pv.Spec.Local.Path).To(Equal(oldPVPath),
 		"recreated PV should keep the same local path")
-	verifyNodeSymlinkTarget(t, ctx, nodeHostName, pv.Spec.Local.Path, expectedFallback)
+	verifyNodeSymlinkTarget(tc.namespace, nodeHostName, pv.Spec.Local.Path, expectedFallback)
 
-	// Confirm LVDL state after PV recreation.
-	lvdls := eventuallyFindLVDLsForPVs(t, f, namespace, []string{pv.Name})
-	matcher.Expect(lvdls).To(gomega.HaveLen(1), "expected exactly 1 LVDL for recreated PV")
-	matcher.Expect(lvdls[0].Status.CurrentLinkTarget).To(gomega.Equal(expectedFallback),
+	lvdls := eventuallyFindLVDLsForPVs(tc.f, tc.namespace, []string{pv.Name})
+	Expect(lvdls).To(HaveLen(1), "expected exactly 1 LVDL for recreated PV")
+	Expect(lvdls[0].Status.CurrentLinkTarget).To(Equal(expectedFallback),
 		"LVDL CurrentLinkTarget after fallback and PV recreation")
-	matcher.Expect(lvdls[0].Status.PreferredLinkTarget).To(gomega.Equal(expectedFallback),
+	Expect(lvdls[0].Status.PreferredLinkTarget).To(Equal(expectedFallback),
 		"LVDL PreferredLinkTarget after fallback and PV recreation")
-	matcher.Expect(lvdls[0].Spec.Policy).To(gomega.Equal(localv1.DeviceLinkPolicyPreferredLinkTarget),
+	Expect(lvdls[0].Spec.Policy).To(Equal(localv1.DeviceLinkPolicyPreferredLinkTarget),
 		"LVDL policy must remain PreferredLinkTarget after fallback")
-	matcher.Expect(lvdls[0].Status.PersistentVolumeSymlinkPath).To(gomega.Equal(pv.Spec.Local.Path),
+	Expect(lvdls[0].Status.PersistentVolumeSymlinkPath).To(Equal(pv.Spec.Local.Path),
 		"LVDL SymlinkPath after fallback and PV recreation should match PV local path")
 
 	return pv
 }
 
-// note these jobs must not exceed more than 63 characters
 func newCheckSymlinkTargetJob(nodeHostname, namespace, symlinkPath, expectedTarget string) (*batchv1.Job, error) {
 	script := `
 set -eu
@@ -423,17 +358,12 @@ actual_target="$(readlink "$SYMLINK_PATH")"
 		})
 }
 
-func verifyNodeSymlinkTarget(t *testing.T, ctx *framework.TestCtx, nodeHostname, symlinkPath, expectedTarget string) {
-	matcher := gomega.NewWithT(t)
-
-	namespace, err := ctx.GetOperatorNamespace()
-	matcher.Expect(err).NotTo(gomega.HaveOccurred(), "could not determine namespace")
-
+func verifyNodeSymlinkTarget(namespace, nodeHostname, symlinkPath, expectedTarget string) {
 	job, err := newCheckSymlinkTargetJob(nodeHostname, namespace, symlinkPath, expectedTarget)
-	matcher.Expect(err).NotTo(gomega.HaveOccurred(), "could not create symlink target check job")
+	Expect(err).NotTo(HaveOccurred(), "could not create symlink target check job")
 
-	createOrReplaceJob(t, ctx, job, fmt.Sprintf("creating symlink target check job on node: %q", nodeHostname))
-	waitForJobCompletion(t, job, fmt.Sprintf("waiting for symlink target check job to complete: %q", job.GetName()))
+	createOrReplaceJob(namespace, job, fmt.Sprintf("creating symlink target check job on node: %q", nodeHostname))
+	waitForJobCompletion(job, fmt.Sprintf("waiting for symlink target check job to complete: %q", job.GetName()))
 	job.TypeMeta.Kind = "Job"
-	eventuallyDelete(t, job)
+	eventuallyDelete(job)
 }

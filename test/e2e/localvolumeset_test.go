@@ -2,25 +2,24 @@ package e2e
 
 import (
 	"context"
-	goctx "context"
 	"fmt"
 	"path"
 	"path/filepath"
-	"testing"
 	"time"
 
-	"github.com/onsi/gomega"
-	"k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/api/resource"
-	"k8s.io/apimachinery/pkg/types"
-	"sigs.k8s.io/controller-runtime/pkg/client"
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 
 	localv1 "github.com/openshift/local-storage-operator/api/v1"
 	localv1alpha1 "github.com/openshift/local-storage-operator/api/v1alpha1"
 	"github.com/openshift/local-storage-operator/pkg/common"
 	framework "github.com/openshift/local-storage-operator/test/framework"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	provCommon "sigs.k8s.io/sig-storage-local-static-provisioner/pkg/common"
 )
 
@@ -28,106 +27,56 @@ const (
 	labelNodeRoleWorker = "node-role.kubernetes.io/worker"
 )
 
-func LocalVolumeSetTest(ctx *framework.TestCtx, cleanupFuncs *[]cleanupFn) func(*testing.T) {
-	return func(t *testing.T) {
+var _ = Describe("LocalVolumeSet", Label("LocalVolumeSet"), Ordered, func() {
+	var (
+		f         *framework.Framework
+		namespace string
+		nodeEnv   []nodeDisks
+		nodeList  *corev1.NodeList
+		lvSets    []*localv1alpha1.LocalVolumeSet
+	)
 
-		f := framework.Global
-		namespace, err := ctx.GetOperatorNamespace()
-		if err != nil {
-			t.Fatalf("error fetching namespace : %v", err)
-		}
+	BeforeAll(func() {
+		f = framework.Global
+		namespace = f.OperatorNamespace
 
-		matcher := gomega.NewGomegaWithT(t)
-		gomega.SetDefaultEventuallyTimeout(time.Minute * 10)
-		gomega.SetDefaultEventuallyPollingInterval(time.Second * 2)
+		nodeList = &corev1.NodeList{}
+		err := f.Client.List(context.TODO(), nodeList, client.HasLabels{labelNodeRoleWorker})
+		Expect(err).NotTo(HaveOccurred(), "listing worker nodes")
+		Expect(len(nodeList.Items)).To(BeNumerically(">=", 3), "expected at least 3 worker nodes")
 
-		// get nodes
-		nodeList := &corev1.NodeList{}
-		err = f.Client.List(context.TODO(), nodeList, client.HasLabels{labelNodeRoleWorker})
-		if err != nil {
-			t.Fatalf("failed to list nodes: %+v", err)
-		}
-
-		minNodes := 3
-		if len(nodeList.Items) < minNodes {
-			t.Fatalf("expected to have at least %d nodes", minNodes)
-		}
-
-		// represents the disk layout to setup on the nodes.
-		nodeEnv := []nodeDisks{
+		nodeEnv = []nodeDisks{
 			{
-				disks: []disk{
-					{size: 10},
-					{size: 20},
-					{size: 30},
-					{size: 40},
-					{size: 70},
-				},
-				node: nodeList.Items[0],
+				disks: []disk{{size: 10}, {size: 20}, {size: 30}, {size: 40}, {size: 70}},
+				node:  nodeList.Items[0],
 			},
 			{
-				disks: []disk{
-					{size: 10},
-					{size: 20},
-					{size: 30},
-					{size: 40},
-					{size: 70},
-				},
-				node: nodeList.Items[1],
+				disks: []disk{{size: 10}, {size: 20}, {size: 30}, {size: 40}, {size: 70}},
+				node:  nodeList.Items[1],
 			},
 			{
-				disks: []disk{
-					{size: 10},
-					{size: 20},
-					{size: 30},
-					{size: 40},
-					{size: 70},
-				},
-				node: nodeList.Items[2],
+				disks: []disk{{size: 10}, {size: 20}, {size: 30}, {size: 40}, {size: 70}},
+				node:  nodeList.Items[2],
 			},
 		}
 
-		t.Log("getting AWS region info from node spec")
+		f.Logf("getting AWS region info from node spec")
 		_, region, _, err := getAWSNodeInfo(nodeList.Items[0])
-		matcher.Expect(err).NotTo(gomega.HaveOccurred(), "getAWSNodeInfo")
+		Expect(err).NotTo(HaveOccurred(), "getAWSNodeInfo")
 
-		// initialize client
-		t.Log("initialize ec2 creds")
+		f.Logf("initializing ec2 creds")
 		ec2Client, err := getEC2Client(region)
-		matcher.Expect(err).NotTo(gomega.HaveOccurred(), "getEC2Client")
+		Expect(err).NotTo(HaveOccurred(), "getEC2Client")
 
-		// cleanup host dirs
-		addToCleanupFuncs(cleanupFuncs, "cleanupSymlinkDir", func(t *testing.T) error {
-			return cleanupSymlinkDir(t, ctx, nodeEnv)
-		})
-		// register disk cleanup
-		addToCleanupFuncs(cleanupFuncs, "cleanupAWSDisks", func(t *testing.T) error {
-			return cleanupAWSDisks(t, ec2Client)
+		DeferCleanup(func() error { return cleanupSymlinkDir(namespace, nodeEnv) })
+		DeferCleanup(func() error { return cleanupAWSDisks(ec2Client) })
+
+		lvSets = []*localv1alpha1.LocalVolumeSet{}
+		DeferCleanup(func() error {
+			return cleanupLVSetResources(&lvSets)
 		})
 
-		// setup lvset vars
-		tenGi := resource.MustParse("10G")
-		twentyGi := resource.MustParse("20G")
-		thirtyGi := resource.MustParse("30G")
-		fiftyGi := resource.MustParse("50G")
 		hundredTi := resource.MustParse("100Ti")
-		two := int32(2)
-		three := int32(3)
-
-		lvSets := []*localv1alpha1.LocalVolumeSet{}
-
-		// add pv and storageclass cleanup
-		addToCleanupFuncs(
-			cleanupFuncs,
-			"cleanupLVSetResources",
-			func(t *testing.T) error {
-				return cleanupLVSetResources(t, &lvSets)
-			},
-		)
-
-		// creating a noOpLVSet to pre-pull diskmaker images on all nodes and speed up the test.
-		// having the diskmaker-manager running will also kickstart measuring the age of the disks
-		// this speeds things up as PVs are only created 1m after first observing the disk.
 		noOpLVSet := &localv1alpha1.LocalVolumeSet{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "noop",
@@ -137,470 +86,459 @@ func LocalVolumeSetTest(ctx *framework.TestCtx, cleanupFuncs *[]cleanupFn) func(
 				StorageClassName: "noop",
 				DeviceInclusionSpec: &localv1alpha1.DeviceInclusionSpec{
 					DeviceTypes: []localv1alpha1.DeviceType{localv1alpha1.RawDisk},
-					MinSize:     &hundredTi, // don't match any disks
+					MinSize:     &hundredTi,
 				},
 			},
 		}
 		lvSets = append(lvSets, noOpLVSet)
-		t.Logf("creating noop localvolumeset %q", noOpLVSet.GetName())
-		err = f.Client.Create(context.TODO(), noOpLVSet, &framework.CleanupOptions{TestContext: ctx})
-		matcher.Expect(err).NotTo(gomega.HaveOccurred(), "create localvolumeset")
-
-		// create and attach volumes
-		t.Log("creating and attaching disks")
-		createAndAttachAWSVolumes(t, ec2Client, ctx, namespace, nodeEnv)
-		nodeEnv = populateDeviceInfo(t, ctx, nodeEnv)
-
-		t.Log("TEST: duplicate by-id cache reproducer for LocalVolumeSet using shared scsi-8 alias")
-		addSharedUdevSymlink(t, ctx, cleanupFuncs, []sharedByIDSymlinkTarget{
-			{
-				nodeHostname: nodeEnv[0].node.Labels[corev1.LabelHostname],
-				currentLink:  currentSymlinkForDisk(nodeEnv[0].disks[0]),
-			},
-			{
-				nodeHostname: nodeEnv[1].node.Labels[corev1.LabelHostname],
-				currentLink:  currentSymlinkForDisk(nodeEnv[1].disks[0]),
-			},
-		}, sharedScsi8Link)
-
-		sharedLVSet := &localv1alpha1.LocalVolumeSet{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "shared-byid-10g",
-				Namespace: namespace,
-			},
-			Spec: localv1alpha1.LocalVolumeSetSpec{
-				StorageClassName: "shared-byid-10g",
-				VolumeMode:       localv1.PersistentVolumeBlock,
-				NodeSelector: &corev1.NodeSelector{NodeSelectorTerms: []corev1.NodeSelectorTerm{
-					{
-						MatchExpressions: []corev1.NodeSelectorRequirement{
-							{
-								Key:      corev1.LabelHostname,
-								Operator: corev1.NodeSelectorOpIn,
-								Values:   []string{nodeEnv[0].node.ObjectMeta.Labels[corev1.LabelHostname]},
-							},
-						},
-					},
-				}},
-				DeviceInclusionSpec: &localv1alpha1.DeviceInclusionSpec{
-					DeviceTypes: []localv1alpha1.DeviceType{localv1alpha1.RawDisk},
-					MaxSize:     &twentyGi,
-				},
-			},
-		}
-
-		t.Logf("creating localvolumeset %q", sharedLVSet.GetName())
-		err = f.Client.Create(context.TODO(), sharedLVSet, &framework.CleanupOptions{TestContext: ctx})
-		matcher.Expect(err).NotTo(gomega.HaveOccurred(), "create shared localvolumeset reproducer")
-
-		sharedPVs := eventuallyFindPVs(t, f, sharedLVSet.Spec.StorageClassName, 1)
-
-		matcher.Expect(filepath.Base(sharedPVs[0].Spec.Local.Path)).To(gomega.Equal(filepath.Base(sharedScsi8Link)))
-		sharedPVNames := []string{sharedPVs[0].Name}
-		sharedLVDLs := eventuallyFindLVDLsForPVs(t, f, namespace, sharedPVNames)
-		assertLVDLsContainTargetAndNodes(t, sharedLVDLs, sharedScsi8Link, []string{nodeEnv[0].node.Name})
-		assertLVDLSymlinkPathMatchesPVs(t, sharedLVDLs, sharedPVs)
-
-		matcher.Eventually(func() error {
-			t.Log("expanding shared localvolumeset reproducer to a second node")
-			key := types.NamespacedName{Name: sharedLVSet.GetName(), Namespace: sharedLVSet.GetNamespace()}
-			if err := f.Client.Get(context.TODO(), key, sharedLVSet); err != nil {
-				return err
-			}
-			sharedLVSet.Spec.NodeSelector.NodeSelectorTerms[0].MatchExpressions[0].Values = append(
-				sharedLVSet.Spec.NodeSelector.NodeSelectorTerms[0].MatchExpressions[0].Values,
-				nodeEnv[1].node.ObjectMeta.Labels[corev1.LabelHostname],
-			)
-			return f.Client.Update(context.TODO(), sharedLVSet)
-		}, time.Minute, time.Second*2).ShouldNot(gomega.HaveOccurred(), "updating shared localvolumeset reproducer")
-
-		sharedPVs = eventuallyFindPVs(t, f, sharedLVSet.Spec.StorageClassName, 2)
-		sharedPVNames = make([]string, 0, len(sharedPVs))
-		for _, pv := range sharedPVs {
-			matcher.Expect(filepath.Base(pv.Spec.Local.Path)).To(gomega.Equal(filepath.Base(sharedScsi8Link)))
-			sharedPVNames = append(sharedPVNames, pv.Name)
-		}
-		sharedLVDLs = eventuallyFindLVDLsForPVs(t, f, namespace, sharedPVNames)
-		assertLVDLsContainTargetAndNodes(t, sharedLVDLs, sharedScsi8Link, []string{nodeEnv[0].node.Name, nodeEnv[1].node.Name})
-		assertLVDLSymlinkPathMatchesPVs(t, sharedLVDLs, sharedPVs)
-
-		t.Log("cleaning up LocalVolumeSet duplicate by-id reproducer before continuing with standard test flow")
-		eventuallyDelete(t, sharedLVSet)
-		waitForLVSetAndOwnedPVsToDisappear(t, sharedLVSet)
-		removeUdevSymlink(t, ctx, nodeEnv[0].node.Labels[corev1.LabelHostname], sharedScsi8Link)
-		removeUdevSymlink(t, ctx, nodeEnv[1].node.Labels[corev1.LabelHostname], sharedScsi8Link)
-
-		// create block and fs on two nodes parallely
-		// do cleanup job verification
-		// do overlap verification on both nodes
-		// do finalizer verification
-		// delete
-
-		// for block and fs
-		// basic match
-
-		// start the lvset with a size range of twenty to fifty on the first node
-		// should match amd claim 2 of node0: 20, 30, 40
-		// total: 2
-		// disks  left within range:
-		// node0: 2
-		// node1: 3
-		// node2: 3
-		twentyToFifty := &localv1alpha1.LocalVolumeSet{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "twentytofifty-1",
-				Namespace: namespace,
-			},
-			Spec: localv1alpha1.LocalVolumeSetSpec{
-				StorageClassName: "twentytofifty-1",
-				MaxDeviceCount:   &two,
-				VolumeMode:       localv1.PersistentVolumeBlock,
-				NodeSelector: &corev1.NodeSelector{NodeSelectorTerms: []corev1.NodeSelectorTerm{
-					{
-						MatchExpressions: []corev1.NodeSelectorRequirement{
-							{
-								Key:      corev1.LabelHostname,
-								Operator: corev1.NodeSelectorOpIn,
-								Values:   []string{nodeEnv[0].node.ObjectMeta.Labels[corev1.LabelHostname]},
-							},
-						},
-					},
-				},
-				},
-				DeviceInclusionSpec: &localv1alpha1.DeviceInclusionSpec{
-					DeviceTypes: []localv1alpha1.DeviceType{localv1alpha1.RawDisk},
-					MinSize:     &twentyGi,
-					MaxSize:     &fiftyGi,
-				},
-			},
-		}
-		lvSets = append(lvSets, twentyToFifty)
-
-		// create an identical lvset with an overlap
-		// should match amd claim 1 of node0: 10
-		// total: 1
-		// disks  left within range left:
-		// node0: 1
-		// node1: 4
-		// node2: 4
-		tenToThirty := &localv1alpha1.LocalVolumeSet{}
-		twentyToFifty.DeepCopyInto(tenToThirty)
-		tenToThirty.ObjectMeta.Name = fmt.Sprintf("tentothirty-overlapping-%s-2", twentyToFifty.GetName())
-		tenToThirty.Spec.StorageClassName = tenToThirty.GetName()
-
-		// introduce differences
-		tenToThirty.Spec.DeviceInclusionSpec.MinSize = &tenGi
-		tenToThirty.Spec.DeviceInclusionSpec.MaxSize = &thirtyGi
-
-		// filesystem lvset that only matches the 3rd node
-		twentyToFiftyFilesystem := &localv1alpha1.LocalVolumeSet{}
-		twentyToFifty.DeepCopyInto(twentyToFiftyFilesystem)
-		twentyToFiftyFilesystem.ObjectMeta.Name = "twentytofifty-fs-3"
-		twentyToFiftyFilesystem.Spec.StorageClassName = twentyToFiftyFilesystem.GetName()
-		twentyToFiftyFilesystem.Spec.NodeSelector.NodeSelectorTerms[0].MatchExpressions[0].Values[0] = nodeEnv[2].node.ObjectMeta.Labels[corev1.LabelHostname]
-
-		twentyToFiftyFilesystem.Spec.VolumeMode = localv1.PersistentVolumeFilesystem
-
-		lvSets = []*localv1alpha1.LocalVolumeSet{
-			twentyToFifty,
-			tenToThirty,
-			twentyToFiftyFilesystem,
-		}
-
-		t.Logf("creating localvolumeset %q", twentyToFifty.GetName())
-		err = f.Client.Create(context.TODO(), twentyToFifty, &framework.CleanupOptions{TestContext: ctx})
-		matcher.Expect(err).NotTo(gomega.HaveOccurred(), "create localvolumeset")
-
-		// look for 2 PVs
-		eventuallyFindPVs(t, f, twentyToFifty.Spec.StorageClassName, 2)
-
-		// update lvset
-		// already claimed: 2
-		// should match amd claim 1 of node0: 20,30,40
-		// total: 3
-		// disks  left within range:
-		// node0: 0
-		// node1: 3
-		// node2: 3
-		matcher.Eventually(func() error {
-			t.Log("updating lvset")
-			key := types.NamespacedName{Name: twentyToFifty.GetName(), Namespace: twentyToFifty.GetNamespace()}
-			err := f.Client.Get(context.TODO(), key, twentyToFifty)
-			if err != nil {
-				t.Logf("error getting lvset %q: %+v", key, err)
-				return err
-			}
-
-			twentyToFifty.Spec.MaxDeviceCount = &three
-			err = f.Client.Update(context.TODO(), twentyToFifty)
-			if err != nil {
-				t.Logf("error getting lvset %q: %+v", key, err)
-				return err
-			}
-			return nil
-		}, time.Minute, time.Second*2).ShouldNot(gomega.HaveOccurred(), "updating lvset")
-
-		// look for 3 PVs
-		twentyToFiftyBlockPVs := eventuallyFindPVs(t, f, twentyToFifty.Spec.StorageClassName, 3)
-		// verify deletion
-		for _, pv := range twentyToFiftyBlockPVs {
-			eventuallyDeletePV(t, &pv)
-		}
-		// verify that block PVs come back after deletion
-		eventuallyFindPVs(t, f, twentyToFifty.Spec.StorageClassName, 3)
-
-		t.Logf("creating localvolumeset %q", tenToThirty.GetName())
-		err = f.Client.Create(context.TODO(), tenToThirty, &framework.CleanupOptions{TestContext: ctx})
-		matcher.Expect(err).NotTo(gomega.HaveOccurred(), "create localvolumeset")
-
-		// look for 1 PV
-		eventuallyFindPVs(t, f, tenToThirty.Spec.StorageClassName, 1)
-
-		// expand overlappingLVSet to node1
-		// already claimed: 1
-		// should match amd claim 2 of node1: 10, 20, 30
-		// total: 3
-		// disks  left within range:
-		// node0: 0
-		// node1: 2
-		// node2: 3
-		matcher.Eventually(func() error {
-			t.Log("updating lvset")
-			key := types.NamespacedName{Name: tenToThirty.GetName(), Namespace: tenToThirty.GetNamespace()}
-			err := f.Client.Get(context.TODO(), key, tenToThirty)
-			if err != nil {
-				t.Logf("error getting lvset %q: %+v", key, err)
-				return err
-			}
-
-			// update node selector
-			tenToThirty.Spec.NodeSelector.NodeSelectorTerms[0].MatchExpressions[0].Values = append(
-				tenToThirty.Spec.NodeSelector.NodeSelectorTerms[0].MatchExpressions[0].Values,
-				nodeEnv[1].node.ObjectMeta.Labels[corev1.LabelHostname],
-			)
-			err = f.Client.Update(context.TODO(), tenToThirty)
-			if err != nil {
-				t.Logf("error getting lvset %q: %+v", key, err)
-				return err
-			}
-			return nil
-		}, time.Minute, time.Second*2).ShouldNot(gomega.HaveOccurred(), "updating lvset")
-
-		// look for 3 PVs
-		eventuallyFindPVs(t, f, tenToThirty.Spec.StorageClassName, 3)
-
-		// create twentyToFiftyFilesystem
-		// should match amd claim 2 of node2: 20, 30, 40
-		// total: 2
-		// disks  left within range:
-		// node0: 0
-		// node1: 1
-		// node2: 1
-		t.Logf("creating localvolumeset %q", twentyToFiftyFilesystem.GetName())
-		err = f.Client.Create(context.TODO(), twentyToFiftyFilesystem, &framework.CleanupOptions{TestContext: ctx})
-		matcher.Expect(err).NotTo(gomega.HaveOccurred(), "create localvolumeset")
-
-		eventuallyFindPVs(t, f, twentyToFiftyFilesystem.Spec.StorageClassName, 2)
-
-		// expand twentyToFiftyFilesystem to all remaining devices by setting nil nodeSelector, maxDevices, and deviceInclusionSpec
-		// devices total: 15
-		// devices claimed so far by other lvsets: 6
-		// devices claimed so far: 2
-		// new devices to be claimed: (15-(6+2))= 7
-		// total: 7+2 = 9
-
-		matcher.Eventually(func() error {
-			t.Log("updating lvset")
-			key := types.NamespacedName{Name: twentyToFiftyFilesystem.GetName(), Namespace: twentyToFiftyFilesystem.GetNamespace()}
-			err := f.Client.Get(context.TODO(), key, twentyToFiftyFilesystem)
-			if err != nil {
-				t.Logf("error getting lvset %q, %+v", key, err)
-				return err
-			}
-
-			// update node selector
-			twentyToFiftyFilesystem.Spec.NodeSelector = nil
-
-			// update maxDeviceCount
-			twentyToFiftyFilesystem.Spec.MaxDeviceCount = nil
-
-			// update deviceInclusionSpec
-			twentyToFiftyFilesystem.Spec.DeviceInclusionSpec = nil
-
-			err = f.Client.Update(context.TODO(), twentyToFiftyFilesystem)
-			if err != nil {
-				t.Logf("error updating lvset %q: %+v", key, err)
-				return err
-			}
-			return nil
-		}, time.Minute, time.Second*2).ShouldNot(gomega.HaveOccurred(), "updating lvset")
-		fsPVs := eventuallyFindPVs(t, f, twentyToFiftyFilesystem.Spec.StorageClassName, 9)
-
-		// verify pv annotation
-		t.Logf("looking for %q annotation on pvs", provCommon.AnnProvisionedBy)
-		verifyProvisionerAnnotation(t, fsPVs, nodeList.Items)
-		fsPVNames := make([]string, 0, len(fsPVs))
-		for _, pv := range fsPVs {
-			fsPVNames = append(fsPVNames, pv.Name)
-		}
-		t.Log("verifying LocalVolumeDeviceLink objects were created for filesystem PVs")
-		fsLVDLs := eventuallyFindLVDLsForPVs(t, f, namespace, fsPVNames)
-		for _, lvdl := range fsLVDLs {
-			matcher.Expect(lvdl.Status.CurrentLinkTarget).ToNot(gomega.BeEmpty(), "expected CurrentLinkTarget for LVDL %q", lvdl.Name)
-			matcher.Expect(lvdl.Status.PreferredLinkTarget).ToNot(gomega.BeEmpty(), "expected PreferredLinkTarget for LVDL %q", lvdl.Name)
-			matcher.Expect(lvdl.Status.ValidLinkTargets).ToNot(gomega.BeEmpty(), "expected ValidLinkTargets for LVDL %q", lvdl.Name)
-		}
-		assertLVDLSymlinkPathMatchesPVs(t, fsLVDLs, fsPVs)
-
-		selectedFSPV := fsPVs[0]
-		currentSymlink := findCurrentSymlinkForPV(t, nodeEnv, &selectedFSPV)
-
-		// Multi-step preferred link reconciliation: verify that the preferred
-		// symlink can be upgraded through multiple priority levels and that PV
-		// deletion + recreation preserves the correct symlink at each step.
-		t.Logf("TEST: multi-step preferred link reconciliation for lvset (scsi-2 → scsi-3 → wwn) for %s", selectedFSPV.Name)
-		selectedFSPV, multiStepCleanups := verifyMultiStepPreferredLinkReconciliation(
-			t, ctx, f, namespace, selectedFSPV, currentSymlink,
-		)
-		fsPVs[0] = selectedFSPV
-		// multiStepCleanups ops must be done after deleting LVS, so put them in the beginning of the list.
-		for i := range *cleanupFuncs {
-			multiStepCleanups = append(multiStepCleanups, (*cleanupFuncs)[i])
-		}
-		*cleanupFuncs = multiStepCleanups
-
-		// Symlink fallback test: after multi-step left the PV on the wwn link,
-		// remove it and verify LSO falls back to the next-best scsi-3 link.
-		t.Logf("TEST: symlink fallback on disappearing link for %s (wwn → scsi-3)", selectedFSPV.Name)
-		selectedFSPV = verifySymlinkFallbackOnDisappearingLink(
-			t, ctx, f, namespace, selectedFSPV,
-			"/dev/disk/by-id/wwn-local-storage-e2e-step3",
-			"/dev/disk/by-id/scsi-3-local-storage-e2e-step2",
-		)
-		fsPVs[0] = selectedFSPV
-
-		// verify deletion
-		t.Log("verify that filesystem PVs come back after deletion")
-		for _, pv := range fsPVs {
-			eventuallyDeletePV(t, &pv)
-		}
-		fsPVs = eventuallyFindPVs(t, f, twentyToFiftyFilesystem.Spec.StorageClassName, 9)
-
-		// verify consumed PVs come back after release
-		// filesystem PVs
-		t.Log("TEST: that consumed filesystem PVs are deleted and recreated upon release")
-		// record consuming objects for cleanup
-		consumingObjectList := make([]client.Object, 0)
-		addToCleanupFuncs(cleanupFuncs, "pv-consumer", func(t *testing.T) error {
-			eventuallyDelete(t, consumingObjectList...)
-			return nil
+		// creating a noOpLVSet to pre-pull diskmaker images on all nodes and speed up the test.
+		// having the diskmaker-manager running will also kickstart measuring the age of the disks
+		// this speeds things up as PVs are only created 1m after first observing the disk.
+		f.Logf("creating noop localvolumeset %q", noOpLVSet.GetName())
+		err = f.Client.Create(context.TODO(), noOpLVSet, nil)
+		Expect(err).NotTo(HaveOccurred(), "create noop localvolumeset")
+		DeferCleanup(func() {
+			eventuallyDelete(noOpLVSet)
 		})
-		for _, pv := range fsPVs[:1] {
-			pvc, job, pod := consumePV(t, ctx, pv)
-			consumingObjectList = append(consumingObjectList, job, pvc, pod)
-		}
-		consumedFSPVNames := make([]string, 0, len(fsPVs[:1]))
-		for _, pv := range fsPVs[:1] {
-			consumedFSPVNames = append(consumedFSPVNames, pv.Name)
-		}
-		t.Log("verifying filesystemUUID is populated on LVDL for consumed filesystem PVs")
-		verifyLVDLFilesystemUUIDForPVs(t, f, namespace, consumedFSPVNames)
-		// release pvs
-		eventuallyDelete(t, consumingObjectList...)
-		// verify that PVs eventually come back
-		eventuallyFindAvailablePVs(t, f, twentyToFiftyFilesystem.Spec.StorageClassName, fsPVs)
 
-		// block PVs from lvset twentyToFifty
-		t.Log("TEST: consumed block PVs are deleted and recreated upon release")
-		// record consuming objects for cleanup
-		consumingObjectList = make([]client.Object, 0)
-		for _, pv := range twentyToFiftyBlockPVs[:1] {
-			pvc, job, pod := consumePV(t, ctx, pv)
-			consumingObjectList = append(consumingObjectList, job, pvc, pod)
-		}
-		// release pvs
-		eventuallyDelete(t, consumingObjectList...)
-		// verify that PVs eventually come back
-		twentyToFiftyBlockPVs = eventuallyFindAvailablePVs(t, f, twentyToFifty.Spec.StorageClassName, twentyToFiftyBlockPVs)
+		f.Logf("creating and attaching disks")
+		createAndAttachAWSVolumes(ec2Client, namespace, nodeEnv)
+		nodeEnv = populateDeviceInfo(namespace, nodeEnv)
+	})
 
-		// verify localVolumeset deletion
-		t.Log("TEST: localvolumeset deletion does not occur with bound PVs")
+	Context("duplicate by-id cache reproducer", Ordered, func() {
+		var tc *testContext
 
-		// consume one PV
-		consumingObjectList = make([]client.Object, 0)
-		for _, pv := range twentyToFiftyBlockPVs[:1] {
-			pvc, job, pod := consumePV(t, ctx, pv)
-			consumingObjectList = append(consumingObjectList, job, pvc, pod)
-		}
-
-		matcher.Eventually(func() error {
-			t.Logf("deleting LocalVolumeSet %q", twentyToFifty.Name)
-			return f.Client.Delete(context.TODO(), twentyToFifty)
-		}, time.Minute*5, time.Second*5).ShouldNot(gomega.HaveOccurred(), "deleting LocalVolumeSet %q", twentyToFifty.Name)
-
-		var finalizers []string
-		// verify finalizer not removed with while bound pvs exists
-		matcher.Consistently(func() bool {
-			t.Logf("verifying finalizer still exists because of bound PVs")
-			err := f.Client.Get(goctx.TODO(), types.NamespacedName{Name: twentyToFifty.Name, Namespace: f.OperatorNamespace}, twentyToFifty)
-			if err != nil && (errors.IsGone(err) || errors.IsNotFound(err)) {
-				t.Fatalf("FAIL: LocalVolumeSet deleted with bound PVs: %+v", err)
-				return false
-			} else if err != nil {
-				t.Logf("error getting LocalVolumeSet: %+v", err)
-				return false
+		BeforeAll(func() {
+			tc = &testContext{
+				f:         f,
+				namespace: namespace,
+				nodeEnv:   nodeEnv,
 			}
-			finalizers = twentyToFifty.GetFinalizers()
-			return len(finalizers) > 0
-		}, time.Second*15, time.Second*3).Should(gomega.BeTrue(), "checking finalizer exists with bound PVs")
-		t.Logf("finalizers not removed with bound PVs: %q", finalizers)
-		// release PV
-		t.Logf("releasing pvs")
-		eventuallyDelete(t, consumingObjectList...)
-		twentyToFiftyLVDLNames := make([]string, 0, len(twentyToFiftyBlockPVs))
-		for _, pv := range twentyToFiftyBlockPVs {
-			twentyToFiftyLVDLNames = append(twentyToFiftyLVDLNames, pv.Name)
-		}
-		// verify LocalVolumeSet deletion
-		matcher.Eventually(func() bool {
-			t.Log("verifying LocalVolumeSet deletion")
-			err := f.Client.Get(goctx.TODO(), types.NamespacedName{Name: twentyToFifty.Name, Namespace: f.OperatorNamespace}, twentyToFifty)
-			if err != nil && (errors.IsGone(err) || errors.IsNotFound(err)) {
-				t.Logf("LocalVolumeSet deleted: %+v", err)
-				return true
-			} else if err != nil {
-				t.Logf("error getting LocalVolumeSet: %+v", err)
-				return false
+
+			tc.addHostSymlink(nodeEnv[0].node.Labels[corev1.LabelHostname], currentSymlinkForDisk(nodeEnv[0].disks[0]), sharedScsi8Link)
+			tc.addHostSymlink(nodeEnv[1].node.Labels[corev1.LabelHostname], currentSymlinkForDisk(nodeEnv[1].disks[0]), sharedScsi8Link)
+
+			twentyGi := resource.MustParse("20G")
+			sharedLVSet := &localv1alpha1.LocalVolumeSet{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "shared-byid-10g",
+					Namespace: namespace,
+				},
+				Spec: localv1alpha1.LocalVolumeSetSpec{
+					StorageClassName: "shared-byid-10g",
+					VolumeMode:       localv1.PersistentVolumeBlock,
+					NodeSelector: &corev1.NodeSelector{NodeSelectorTerms: []corev1.NodeSelectorTerm{
+						{
+							MatchExpressions: []corev1.NodeSelectorRequirement{
+								{
+									Key:      corev1.LabelHostname,
+									Operator: corev1.NodeSelectorOpIn,
+									Values:   []string{nodeEnv[0].node.ObjectMeta.Labels[corev1.LabelHostname]},
+								},
+							},
+						},
+					}},
+					DeviceInclusionSpec: &localv1alpha1.DeviceInclusionSpec{
+						DeviceTypes: []localv1alpha1.DeviceType{localv1alpha1.RawDisk},
+						MaxSize:     &twentyGi,
+					},
+				},
 			}
-			t.Logf("LocalVolumeSet found: %s with finalizers: %+v", twentyToFifty.Name, twentyToFifty.ObjectMeta.Finalizers)
-			return false
-		}, time.Minute*5, time.Second*5).Should(gomega.BeTrue(), "verifying LocalVolumeSet has been deleted", twentyToFifty.Name)
+			tc.lvSets = append(tc.lvSets, sharedLVSet)
 
-		t.Log("verifying LocalVolumeDeviceLink objects are deleted for removed LocalVolumeSet")
-		verifyLVDLsDeleted(t, f, namespace, twentyToFiftyLVDLNames)
+			f.Logf("creating localvolumeset %q", sharedLVSet.GetName())
+			err := f.Client.Create(context.TODO(), sharedLVSet, nil)
+			Expect(err).NotTo(HaveOccurred(), "create shared localvolumeset reproducer")
 
-		// check for leftover symlinks before cleanup
-		symLinkPath := path.Join(common.GetLocalDiskLocationPath(), twentyToFifty.Spec.StorageClassName)
-		checkForSymlinks(t, ctx, nodeEnv, symLinkPath)
+			DeferCleanup(func() { tc.Cleanup() })
+		})
 
-		// delete remaining LVSets explicitly, cleanupLVSetResources() will only check that everything has gone
-		eventuallyDelete(t, noOpLVSet)
-		eventuallyDelete(t, tenToThirty)
-		eventuallyDelete(t, twentyToFiftyFilesystem)
-	}
+		It("creates PVs on single node with shared scsi-8 alias", func() {
+			sharedPVs := eventuallyFindPVs(f, tc.lvSets[0].Spec.StorageClassName, 1)
+			Expect(filepath.Base(sharedPVs[0].Spec.Local.Path)).To(Equal(filepath.Base(sharedScsi8Link)))
 
-}
+			sharedPVNames := []string{sharedPVs[0].Name}
+			sharedLVDLs := eventuallyFindLVDLsForPVs(f, namespace, sharedPVNames)
+			assertLVDLsContainTargetAndNodes(sharedLVDLs, sharedScsi8Link, []string{nodeEnv[0].node.Name})
+			assertLVDLSymlinkPathMatchesPVs(sharedLVDLs, sharedPVs)
+		})
 
-func waitForLVSetAndOwnedPVsToDisappear(t *testing.T, lvset *localv1alpha1.LocalVolumeSet) {
+		It("creates PVs on second node after expanding node selector", func() {
+			sharedLVSet := tc.lvSets[0]
+			Eventually(func(ctx context.Context) error {
+				f.Logf("expanding shared localvolumeset reproducer to a second node")
+				key := types.NamespacedName{Name: sharedLVSet.GetName(), Namespace: sharedLVSet.GetNamespace()}
+				if err := f.Client.Get(ctx, key, sharedLVSet); err != nil {
+					return err
+				}
+				sharedLVSet.Spec.NodeSelector.NodeSelectorTerms[0].MatchExpressions[0].Values = append(
+					sharedLVSet.Spec.NodeSelector.NodeSelectorTerms[0].MatchExpressions[0].Values,
+					nodeEnv[1].node.ObjectMeta.Labels[corev1.LabelHostname],
+				)
+				return f.Client.Update(ctx, sharedLVSet)
+			}, time.Minute, time.Second*2).WithContext(context.Background()).ShouldNot(HaveOccurred(), "updating shared localvolumeset reproducer")
+
+			sharedPVs := eventuallyFindPVs(f, sharedLVSet.Spec.StorageClassName, 2)
+			sharedPVNames := make([]string, 0, len(sharedPVs))
+			for _, pv := range sharedPVs {
+				Expect(filepath.Base(pv.Spec.Local.Path)).To(Equal(filepath.Base(sharedScsi8Link)))
+				sharedPVNames = append(sharedPVNames, pv.Name)
+			}
+			sharedLVDLs := eventuallyFindLVDLsForPVs(f, namespace, sharedPVNames)
+			assertLVDLsContainTargetAndNodes(sharedLVDLs, sharedScsi8Link, []string{nodeEnv[0].node.Name, nodeEnv[1].node.Name})
+			assertLVDLSymlinkPathMatchesPVs(sharedLVDLs, sharedPVs)
+		})
+
+		It("cleans up shared by-id reproducer", func() {
+			f.Logf("cleaning up LocalVolumeSet duplicate by-id reproducer before continuing with standard test flow")
+			sharedLVSet := tc.lvSets[0]
+			eventuallyDelete(sharedLVSet)
+			waitForLVSetAndOwnedPVsToDisappear(sharedLVSet)
+		})
+	})
+
+	Context("block volume sets with device size filtering", Ordered, func() {
+		var tc *testContext
+
+		BeforeAll(func() {
+			tc = &testContext{
+				f:         f,
+				namespace: namespace,
+				nodeEnv:   nodeEnv,
+			}
+			DeferCleanup(func() { tc.Cleanup() })
+		})
+
+		It("creates block PVs with size range 20-50G", func() {
+			twentyGi := resource.MustParse("20G")
+			fiftyGi := resource.MustParse("50G")
+			two := int32(2)
+
+			tc.lvset = &localv1alpha1.LocalVolumeSet{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "twentytofifty-1",
+					Namespace: namespace,
+				},
+				Spec: localv1alpha1.LocalVolumeSetSpec{
+					StorageClassName: "twentytofifty-1",
+					MaxDeviceCount:   &two,
+					VolumeMode:       localv1.PersistentVolumeBlock,
+					NodeSelector: &corev1.NodeSelector{NodeSelectorTerms: []corev1.NodeSelectorTerm{
+						{
+							MatchExpressions: []corev1.NodeSelectorRequirement{
+								{
+									Key:      corev1.LabelHostname,
+									Operator: corev1.NodeSelectorOpIn,
+									Values:   []string{nodeEnv[0].node.ObjectMeta.Labels[corev1.LabelHostname]},
+								},
+							},
+						},
+					}},
+					DeviceInclusionSpec: &localv1alpha1.DeviceInclusionSpec{
+						DeviceTypes: []localv1alpha1.DeviceType{localv1alpha1.RawDisk},
+						MinSize:     &twentyGi,
+						MaxSize:     &fiftyGi,
+					},
+				},
+			}
+			tc.lvSets = append(tc.lvSets, tc.lvset)
+
+			f.Logf("creating localvolumeset %q", tc.lvset.GetName())
+			err := f.Client.Create(context.TODO(), tc.lvset, nil)
+			Expect(err).NotTo(HaveOccurred(), "create localvolumeset")
+
+			eventuallyFindPVs(f, tc.lvset.Spec.StorageClassName, 2)
+		})
+
+		It("increases device count and verifies PV recreation after deletion", func() {
+			three := int32(3)
+			Eventually(func(ctx context.Context) error {
+				f.Logf("updating lvset")
+				key := types.NamespacedName{Name: tc.lvset.GetName(), Namespace: tc.lvset.GetNamespace()}
+				err := f.Client.Get(ctx, key, tc.lvset)
+				if err != nil {
+					f.Logf("error getting lvset %q: %+v", key, err)
+					return err
+				}
+				tc.lvset.Spec.MaxDeviceCount = &three
+				err = f.Client.Update(ctx, tc.lvset)
+				if err != nil {
+					f.Logf("error updating lvset %q: %+v", key, err)
+					return err
+				}
+				return nil
+			}, time.Minute, time.Second*2).WithContext(context.Background()).ShouldNot(HaveOccurred(), "updating lvset")
+
+			tc.pvs = eventuallyFindPVs(f, tc.lvset.Spec.StorageClassName, 3)
+			for _, pv := range tc.pvs {
+				eventuallyDeletePV(&pv)
+			}
+			eventuallyFindPVs(f, tc.lvset.Spec.StorageClassName, 3)
+		})
+
+		It("creates overlapping lvset and expands to second node", func() {
+			tenGi := resource.MustParse("10G")
+			thirtyGi := resource.MustParse("30G")
+
+			overlappingLVSet := &localv1alpha1.LocalVolumeSet{}
+			tc.lvset.DeepCopyInto(overlappingLVSet)
+			overlappingLVSet.ObjectMeta = metav1.ObjectMeta{
+				Name:      fmt.Sprintf("tentothirty-overlapping-%s-2", tc.lvset.GetName()),
+				Namespace: tc.lvset.GetNamespace(),
+			}
+			overlappingLVSet.Spec.StorageClassName = overlappingLVSet.GetName()
+			overlappingLVSet.Spec.DeviceInclusionSpec.MinSize = &tenGi
+			overlappingLVSet.Spec.DeviceInclusionSpec.MaxSize = &thirtyGi
+			tc.lvSets = append(tc.lvSets, overlappingLVSet)
+
+			f.Logf("creating localvolumeset %q", overlappingLVSet.GetName())
+			err := f.Client.Create(context.TODO(), overlappingLVSet, nil)
+			Expect(err).NotTo(HaveOccurred(), "create localvolumeset")
+
+			eventuallyFindPVs(f, overlappingLVSet.Spec.StorageClassName, 1)
+
+			Eventually(func(ctx context.Context) error {
+				f.Logf("updating lvset")
+				key := types.NamespacedName{Name: overlappingLVSet.GetName(), Namespace: overlappingLVSet.GetNamespace()}
+				err := f.Client.Get(ctx, key, overlappingLVSet)
+				if err != nil {
+					f.Logf("error getting lvset %q: %+v", key, err)
+					return err
+				}
+				overlappingLVSet.Spec.NodeSelector.NodeSelectorTerms[0].MatchExpressions[0].Values = append(
+					overlappingLVSet.Spec.NodeSelector.NodeSelectorTerms[0].MatchExpressions[0].Values,
+					nodeEnv[1].node.ObjectMeta.Labels[corev1.LabelHostname],
+				)
+				err = f.Client.Update(ctx, overlappingLVSet)
+				if err != nil {
+					f.Logf("error updating lvset %q: %+v", key, err)
+					return err
+				}
+				return nil
+			}, time.Minute, time.Second*2).WithContext(context.Background()).ShouldNot(HaveOccurred(), "updating lvset")
+
+			eventuallyFindPVs(f, overlappingLVSet.Spec.StorageClassName, 3)
+		})
+
+		It("verifies consumed block PVs are recreated upon release", func() {
+			f.Logf("TEST: consumed block PVs are deleted and recreated upon release")
+			consumingObjectList := make([]client.Object, 0)
+			for _, pv := range tc.pvs[:1] {
+				pvc, job, pod := consumePV(namespace, pv)
+				consumingObjectList = append(consumingObjectList, job, pvc, pod)
+			}
+			eventuallyDelete(consumingObjectList...)
+			tc.pvs = eventuallyFindAvailablePVs(f, tc.lvset.Spec.StorageClassName, tc.pvs)
+		})
+
+		It("blocks deletion while PVs are bound", func() {
+			f.Logf("TEST: localvolumeset deletion does not occur with bound PVs")
+			consumingObjectList := make([]client.Object, 0)
+			for _, pv := range tc.pvs[:1] {
+				pvc, job, pod := consumePV(namespace, pv)
+				consumingObjectList = append(consumingObjectList, job, pvc, pod)
+			}
+
+			Eventually(func(ctx context.Context) error {
+				f.Logf("deleting LocalVolumeSet %q", tc.lvset.Name)
+				return f.Client.Delete(ctx, tc.lvset)
+			}, time.Minute*5, time.Second*5).WithContext(context.Background()).ShouldNot(HaveOccurred(), "deleting LocalVolumeSet %q", tc.lvset.Name)
+
+			var finalizers []string
+			Consistently(func() bool {
+				f.Logf("verifying finalizer still exists because of bound PVs")
+				err := f.Client.Get(context.TODO(), types.NamespacedName{Name: tc.lvset.Name, Namespace: f.OperatorNamespace}, tc.lvset)
+				if err != nil && (apierrors.IsGone(err) || apierrors.IsNotFound(err)) {
+					Fail(fmt.Sprintf("LocalVolumeSet deleted with bound PVs: %+v", err))
+					return false
+				} else if err != nil {
+					f.Logf("error getting LocalVolumeSet: %+v", err)
+					return false
+				}
+				finalizers = tc.lvset.GetFinalizers()
+				return len(finalizers) > 0
+			}, time.Second*15, time.Second*3).Should(BeTrue(), "checking finalizer exists with bound PVs")
+
+			f.Logf("finalizers not removed with bound PVs: %q", finalizers)
+			f.Logf("releasing pvs")
+			eventuallyDelete(consumingObjectList...)
+
+			lvdlNames := make([]string, 0, len(tc.pvs))
+			for _, pv := range tc.pvs {
+				lvdlNames = append(lvdlNames, pv.Name)
+			}
+
+			Eventually(func(ctx context.Context) bool {
+				f.Logf("verifying LocalVolumeSet deletion")
+				err := f.Client.Get(ctx, types.NamespacedName{Name: tc.lvset.Name, Namespace: f.OperatorNamespace}, tc.lvset)
+				if err != nil && (apierrors.IsGone(err) || apierrors.IsNotFound(err)) {
+					f.Logf("LocalVolumeSet deleted: %+v", err)
+					return true
+				} else if err != nil {
+					f.Logf("error getting LocalVolumeSet: %+v", err)
+					return false
+				}
+				f.Logf("LocalVolumeSet found: %s with finalizers: %+v", tc.lvset.Name, tc.lvset.ObjectMeta.Finalizers)
+				return false
+			}, time.Minute*5, time.Second*5).WithContext(context.Background()).Should(BeTrue(), "verifying LocalVolumeSet has been deleted")
+
+			f.Logf("verifying LocalVolumeDeviceLink objects are deleted for removed LocalVolumeSet")
+			verifyLVDLsDeleted(f, namespace, lvdlNames)
+
+			symLinkPath := path.Join(common.GetLocalDiskLocationPath(), tc.lvset.Spec.StorageClassName)
+			checkForSymlinks(namespace, nodeEnv, symLinkPath)
+		})
+	})
+
+	Context("filesystem volume sets", Ordered, func() {
+		var tc *testContext
+
+		BeforeAll(func() {
+			tc = &testContext{
+				f:         f,
+				namespace: namespace,
+				nodeEnv:   nodeEnv,
+			}
+			DeferCleanup(func() { tc.Cleanup() })
+		})
+
+		It("creates filesystem PVs and expands to all nodes", func() {
+			twentyGi := resource.MustParse("20G")
+			fiftyGi := resource.MustParse("50G")
+			two := int32(2)
+
+			tc.lvset = &localv1alpha1.LocalVolumeSet{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "twentytofifty-fs-3",
+					Namespace: namespace,
+				},
+				Spec: localv1alpha1.LocalVolumeSetSpec{
+					StorageClassName: "twentytofifty-fs-3",
+					VolumeMode:       localv1.PersistentVolumeFilesystem,
+					MaxDeviceCount:   &two,
+					NodeSelector: &corev1.NodeSelector{NodeSelectorTerms: []corev1.NodeSelectorTerm{
+						{
+							MatchExpressions: []corev1.NodeSelectorRequirement{
+								{
+									Key:      corev1.LabelHostname,
+									Operator: corev1.NodeSelectorOpIn,
+									Values:   []string{nodeEnv[2].node.ObjectMeta.Labels[corev1.LabelHostname]},
+								},
+							},
+						},
+					}},
+					DeviceInclusionSpec: &localv1alpha1.DeviceInclusionSpec{
+						DeviceTypes: []localv1alpha1.DeviceType{localv1alpha1.RawDisk},
+						MinSize:     &twentyGi,
+						MaxSize:     &fiftyGi,
+					},
+				},
+			}
+			tc.lvSets = append(tc.lvSets, tc.lvset)
+
+			f.Logf("creating localvolumeset %q", tc.lvset.GetName())
+			err := f.Client.Create(context.TODO(), tc.lvset, nil)
+			Expect(err).NotTo(HaveOccurred(), "create localvolumeset")
+
+			eventuallyFindPVs(f, tc.lvset.Spec.StorageClassName, 2)
+
+			Eventually(func(ctx context.Context) error {
+				f.Logf("updating lvset")
+				key := types.NamespacedName{Name: tc.lvset.GetName(), Namespace: tc.lvset.GetNamespace()}
+				err := f.Client.Get(ctx, key, tc.lvset)
+				if err != nil {
+					f.Logf("error getting lvset %q: %+v", key, err)
+					return err
+				}
+				tc.lvset.Spec.NodeSelector = nil
+				tc.lvset.Spec.MaxDeviceCount = nil
+				tc.lvset.Spec.DeviceInclusionSpec = nil
+				err = f.Client.Update(ctx, tc.lvset)
+				if err != nil {
+					f.Logf("error updating lvset %q: %+v", key, err)
+					return err
+				}
+				return nil
+			}, time.Minute, time.Second*2).WithContext(context.Background()).ShouldNot(HaveOccurred(), "updating lvset")
+
+			// this should give us all 15 PVs now
+			tc.pvs = eventuallyFindPVs(f, tc.lvset.Spec.StorageClassName, 15)
+
+			f.Logf("looking for %q annotation on pvs", provCommon.AnnProvisionedBy)
+			verifyProvisionerAnnotation(tc.pvs, nodeList.Items)
+
+			fsPVNames := make([]string, 0, len(tc.pvs))
+			for _, pv := range tc.pvs {
+				fsPVNames = append(fsPVNames, pv.Name)
+			}
+			f.Logf("verifying LocalVolumeDeviceLink objects were created for filesystem PVs")
+			fsLVDLs := eventuallyFindLVDLsForPVs(f, namespace, fsPVNames)
+			for _, lvdl := range fsLVDLs {
+				Expect(lvdl.Status.CurrentLinkTarget).ToNot(BeEmpty(), "expected CurrentLinkTarget for LVDL %q", lvdl.Name)
+				Expect(lvdl.Status.PreferredLinkTarget).ToNot(BeEmpty(), "expected PreferredLinkTarget for LVDL %q", lvdl.Name)
+				Expect(lvdl.Status.ValidLinkTargets).ToNot(BeEmpty(), "expected ValidLinkTargets for LVDL %q", lvdl.Name)
+			}
+			assertLVDLSymlinkPathMatchesPVs(fsLVDLs, tc.pvs)
+		})
+
+		It("reconciles preferred link through multiple priority levels", func() {
+			tc.selectedPV = tc.pvs[0]
+			tc.currentSymlink = findCurrentSymlinkForPV(nodeEnv, &tc.selectedPV)
+
+			f.Logf("TEST: multi-step preferred link reconciliation for lvset (scsi-2 -> scsi-3 -> wwn) for %s", tc.selectedPV.Name)
+			tc.selectedPV = verifyMultiStepPreferredLinkReconciliation(tc, tc.selectedPV, tc.currentSymlink)
+			tc.pvs[0] = tc.selectedPV
+		})
+
+		It("falls back when preferred link disappears", func() {
+			tc.selectedPV = tc.pvs[0]
+			f.Logf("TEST: symlink fallback on disappearing link for %s (wwn -> scsi-3)", tc.selectedPV.Name)
+			tc.selectedPV = verifySymlinkFallbackOnDisappearingLink(
+				tc, tc.selectedPV,
+				"/dev/disk/by-id/wwn-local-storage-e2e-step3",
+				"/dev/disk/by-id/scsi-3-local-storage-e2e-step2",
+			)
+			tc.pvs[0] = tc.selectedPV
+		})
+
+		It("verifies PV recreation after deletion", func() {
+			f.Logf("verify that filesystem PVs come back after deletion")
+			for _, pv := range tc.pvs {
+				eventuallyDeletePV(&pv)
+			}
+			tc.pvs = eventuallyFindPVs(f, tc.lvset.Spec.StorageClassName, 15)
+		})
+
+		It("verifies consumed filesystem PVs are recreated upon release", func() {
+			f.Logf("TEST: that consumed filesystem PVs are deleted and recreated upon release")
+			consumingObjectList := make([]client.Object, 0)
+			for _, pv := range tc.pvs[:1] {
+				pvc, job, pod := consumePV(namespace, pv)
+				consumingObjectList = append(consumingObjectList, job, pvc, pod)
+			}
+			consumedFSPVNames := make([]string, 0, len(tc.pvs[:1]))
+			for _, pv := range tc.pvs[:1] {
+				consumedFSPVNames = append(consumedFSPVNames, pv.Name)
+			}
+			f.Logf("verifying filesystemUUID is populated on LVDL for consumed filesystem PVs")
+			verifyLVDLFilesystemUUIDForPVs(f, namespace, consumedFSPVNames)
+
+			eventuallyDelete(consumingObjectList...)
+			eventuallyFindAvailablePVs(f, tc.lvset.Spec.StorageClassName, tc.pvs)
+		})
+	})
+})
+
+func waitForLVSetAndOwnedPVsToDisappear(lvset *localv1alpha1.LocalVolumeSet) {
 	f := framework.Global
-	matcher := gomega.NewWithT(t)
 
-	matcher.Eventually(func() error {
+	Eventually(func(ctx context.Context) error {
 		key := types.NamespacedName{Name: lvset.Name, Namespace: lvset.Namespace}
 		currentLVSet := &localv1alpha1.LocalVolumeSet{}
-		err := f.Client.Get(context.TODO(), key, currentLVSet)
+		err := f.Client.Get(ctx, key, currentLVSet)
 		if err != nil {
-			if !errors.IsNotFound(err) && !errors.IsGone(err) {
+			if !apierrors.IsNotFound(err) && !apierrors.IsGone(err) {
 				return err
 			}
 		} else {
@@ -608,7 +546,7 @@ func waitForLVSetAndOwnedPVsToDisappear(t *testing.T, lvset *localv1alpha1.Local
 		}
 
 		pvList := &corev1.PersistentVolumeList{}
-		err = f.Client.List(context.TODO(), pvList, client.MatchingLabels{
+		err = f.Client.List(ctx, pvList, client.MatchingLabels{
 			common.PVOwnerKindLabel:      localv1.LocalVolumeSetKind,
 			common.PVOwnerNamespaceLabel: lvset.Namespace,
 			common.PVOwnerNameLabel:      lvset.Name,
@@ -625,63 +563,13 @@ func waitForLVSetAndOwnedPVsToDisappear(t *testing.T, lvset *localv1alpha1.Local
 		}
 
 		return nil
-	}, time.Minute*8, time.Second*5).ShouldNot(gomega.HaveOccurred(), "waiting for localvolumeset %q and owned PVs to be deleted", lvset.Name)
+	}, time.Minute*8, time.Second*5).WithContext(context.Background()).ShouldNot(HaveOccurred(), "waiting for localvolumeset %q and owned PVs to be deleted", lvset.Name)
 }
 
-// The caller is responsible for releasing all resources, so we only check here that LocalVolume does not exist
-func checkForLocalVolumeSet(t *testing.T, f *framework.Framework, lvset *localv1alpha1.LocalVolumeSet) error {
-	name := lvset.Name
-	namespace := lvset.Namespace
-
-	matcher := gomega.NewWithT(t)
-	matcher.Eventually(func() error {
-		err := f.Client.Get(context.TODO(), types.NamespacedName{Name: name, Namespace: namespace}, lvset)
-		if err == nil {
-			return fmt.Errorf("checkForLocalVolumeSet: LocalVolumeSet %s still exists", name)
-		} else if !errors.IsNotFound(err) && !errors.IsGone(err) {
-			return fmt.Errorf("checkForLocalVolumeSet: failed to Get() LocalVolumeSet %s: %v", name, err)
-		}
-		t.Logf("checkForLocalVolumeSet: LocalVolumeSet %s not found -- OK", name)
-		return nil
-	}, time.Second*10, time.Second*2).ShouldNot(gomega.HaveOccurred(), "check for LocalVolumeSet %s", name)
-
-	return nil
-}
-
-// The caller is responsible for releasing all resources, so we only check here that PVs do not exist
-func checkForPersistentVolumesLVS(t *testing.T, f *framework.Framework, lvset *localv1alpha1.LocalVolumeSet) error {
-	name := lvset.Name
-	namespace := lvset.Namespace
-
-	matcher := gomega.NewWithT(t)
-	matcher.Eventually(func() error {
-		pvList := &corev1.PersistentVolumeList{}
-
-		err := f.Client.List(context.TODO(), pvList, client.MatchingLabels{
-			common.PVOwnerKindLabel:      localv1.LocalVolumeSetKind,
-			common.PVOwnerNamespaceLabel: namespace,
-			common.PVOwnerNameLabel:      name,
-		})
-		if err != nil {
-			return fmt.Errorf("checkForPersistentVolumes: cannot List() PVs for LocalVolumeSet %s: %v", name, err)
-		}
-		if len(pvList.Items) != 0 {
-			return fmt.Errorf("checkForPersistentVolumes: %d PVs still exist for LocalVolumeSet %s", len(pvList.Items), name)
-		}
-		t.Logf("checkForPersistentVolumes: no PVs found for LocalVolumeSet %s -- OK", name)
-		return nil
-	}, time.Second*10, time.Second*2).ShouldNot(gomega.HaveOccurred(), "check for LocalVolumeSet %s", name)
-
-	return nil
-}
-
-func cleanupLVSetResources(t *testing.T, lvsets *[]*localv1alpha1.LocalVolumeSet) error {
+func cleanupLVSetResources(lvsets *[]*localv1alpha1.LocalVolumeSet) error {
+	f := framework.Global
 	for _, lvset := range *lvsets {
-		t.Logf("check that lvset %q and friends (SC, PVs) have gone", lvset.GetName())
-		f := framework.Global
-		checkForLocalVolumeSet(t, f, lvset)
-		checkForPersistentVolumesLVS(t, f, lvset)
-		checkForStorageClass(t, f, lvset.Spec.StorageClassName)
+		cleanupSingleLVSet(f, lvset)
 	}
 
 	return nil

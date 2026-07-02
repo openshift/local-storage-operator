@@ -1,76 +1,70 @@
 package e2e
 
 import (
-	goctx "context"
+	"context"
 	"fmt"
-	"testing"
-	"time"
 
-	"github.com/onsi/gomega"
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 	"github.com/openshift/local-storage-operator/api/v1alpha1"
 	localv1alpha1 "github.com/openshift/local-storage-operator/api/v1alpha1"
 	framework "github.com/openshift/local-storage-operator/test/framework"
-	v1 "k8s.io/api/core/v1"
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
 	dynclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-func LocalVolumeDiscoveryTest(ctx *framework.TestCtx, cleanupFuncs *[]cleanupFn) func(*testing.T) {
-	return func(t *testing.T) {
-		f := framework.Global
-		namespace, err := ctx.GetOperatorNamespace()
-		if err != nil {
-			t.Fatalf("error fetching namespace : %v", err)
-		}
+var _ = Describe("LocalVolumeDiscovery", Label("LocalVolumeDiscovery"), Ordered, func() {
+	var (
+		f                    *framework.Framework
+		namespace            string
+		selectedNode         corev1.Node
+		localVolumeDiscovery *localv1alpha1.LocalVolumeDiscovery
+		discoveredDevices    []v1alpha1.DiscoveredDevice
+	)
 
-		selectedNode := selectNode(t, f.KubeClient)
+	BeforeAll(func() {
+		f = framework.Global
+		namespace = f.OperatorNamespace
+
+		selectedNode = selectNode(f.KubeClient)
 		originalNodeTaints := selectedNode.Spec.Taints
-		selectedNode.Spec.Taints = []v1.Taint{
+		selectedNode.Spec.Taints = []corev1.Taint{
 			{
 				Key:    "localstorage",
 				Value:  "testvalue",
 				Effect: "NoSchedule",
 			},
 		}
-		updatedNode, err := waitForNodeTaintUpdate(t, f.KubeClient, selectedNode, retryInterval, timeout)
-		if err != nil {
-			t.Fatalf("error tainting node : %v", err)
-		}
-		selectedNode = updatedNode
+		var err error
+		selectedNode, err = waitForNodeTaintUpdate(f.KubeClient, selectedNode, retryInterval, hourTimeout)
+		Expect(err).NotTo(HaveOccurred(), "tainting node")
 
-		defer func() {
+		DeferCleanup(func() {
 			selectedNode.Spec.Taints = originalNodeTaints
-			selectedNode, err = waitForNodeTaintUpdate(t, f.KubeClient, selectedNode, retryInterval, timeout)
+			_, err := waitForNodeTaintUpdate(f.KubeClient, selectedNode, retryInterval, hourTimeout)
 			if err != nil {
-				t.Fatalf("error restoring original taints on node: %v", err)
+				f.Logf("error restoring original taints on node: %v", err)
 			}
-		}()
+		})
 
-		matcher := gomega.NewGomegaWithT(t)
-		gomega.SetDefaultEventuallyTimeout(time.Minute * 10)
-		gomega.SetDefaultEventuallyPollingInterval(time.Second * 2)
+		localVolumeDiscovery = getFakeLocalVolumeDiscovery(selectedNode, namespace)
+		err = f.Client.Create(context.TODO(), localVolumeDiscovery, nil)
+		Expect(err).NotTo(HaveOccurred(), "creating localvolumediscovery cr")
 
-		localVolumeDiscovery := getFakeLocalVolumeDiscovery(selectedNode, namespace)
+		DeferCleanup(func() {
+			deleteResource(localVolumeDiscovery, localVolumeDiscovery.Namespace, localVolumeDiscovery.Name, f.Client)
+		})
+	})
 
-		err = f.Client.Create(goctx.TODO(), localVolumeDiscovery, nil)
-		if err != nil {
-			t.Fatalf("error creating localvolumediscovery cr : %v", err)
-		}
-
-		defer deleteResource(localVolumeDiscovery, localVolumeDiscovery.Name, localVolumeDiscovery.Namespace, f.Client)
-
-		discoveryDSName := "diskmaker-discovery"
-		err = waitForDaemonSet(t, f.KubeClient, namespace, discoveryDSName, retryInterval, timeout)
-		if err != nil {
-			t.Fatalf("error waiting for diskmaker daemonset : %v", err)
-		}
+	It("discovers local volumes on tainted node", func() {
+		err := waitForDaemonSet(f.KubeClient, namespace, "diskmaker-discovery", retryInterval, hourTimeout)
+		Expect(err).NotTo(HaveOccurred(), "waiting for diskmaker-discovery daemonset")
 
 		err = verifyLocalVolumeDiscovery(localVolumeDiscovery, f.Client)
-		if err != nil {
-			t.Fatalf("error verifying localvolumediscovery cr: %v", err)
-		}
+		Expect(err).NotTo(HaveOccurred(), "verifying localvolumediscovery cr")
 
 		localVolumeDiscoveryResult := &localv1alpha1.LocalVolumeDiscoveryResult{
 			ObjectMeta: metav1.ObjectMeta{
@@ -79,58 +73,52 @@ func LocalVolumeDiscoveryTest(ctx *framework.TestCtx, cleanupFuncs *[]cleanupFn)
 			},
 		}
 
-		discoveredDevices, err := verifyLocalVolumeDiscoveryResult(t, localVolumeDiscoveryResult, selectedNode.Name, f.Client)
-		if err != nil {
-			t.Fatalf("error verifying localvolumediscoveryresult. %v", err)
-		}
+		var verifyErr error
+		discoveredDevices, verifyErr = verifyLocalVolumeDiscoveryResult(localVolumeDiscoveryResult, selectedNode.Name, f.Client)
+		Expect(verifyErr).NotTo(HaveOccurred(), "verifying localvolumediscoveryresult")
+	})
 
-		t.Log("getting AWS region info from node spec")
+	It("discovers new devices via continuous discovery", func() {
+		f.Logf("getting AWS region info from node spec")
 		_, region, _, err := getAWSNodeInfo(selectedNode)
-		matcher.Expect(err).NotTo(gomega.HaveOccurred(), "getAWSNodeInfo")
+		Expect(err).NotTo(HaveOccurred(), "getAWSNodeInfo")
 
-		// initialize client
-		t.Log("initialize ec2 creds")
+		f.Logf("initializing ec2 creds")
 		ec2Client, err := getEC2Client(region)
-		matcher.Expect(err).NotTo(gomega.HaveOccurred(), "getEC2Client")
+		Expect(err).NotTo(HaveOccurred(), "getEC2Client")
 
-		// register disk cleanup
-		addToCleanupFuncs(cleanupFuncs, "cleanupAWSDisks", func(t *testing.T) error {
-			return cleanupAWSDisks(t, ec2Client)
+		DeferCleanup(func() error {
+			return cleanupAWSDisks(ec2Client)
 		})
 
-		// create and attach volumes
-		t.Log("creating and attaching disks")
-
-		// represents the disk layout to setup on the nodes.
+		f.Logf("creating and attaching disks")
 		nodeEnv := []nodeDisks{
 			{
-				disks: []disk{
-					{size: 10},
-				},
-				node: selectedNode,
+				disks: []disk{{size: 10}},
+				node:  selectedNode,
 			},
 		}
-		createAndAttachAWSVolumes(t, ec2Client, ctx, namespace, nodeEnv)
-		// verify that discovered device list got updated when a new volume is added
-		err = verifyContinousDiscovery(t, f.Client, localVolumeDiscoveryResult, discoveredDevices, selectedNode.Name)
-		if err != nil {
-			t.Fatalf("error running continuous discovery. %v", err)
+		createAndAttachAWSVolumes(ec2Client, namespace, nodeEnv)
+
+		localVolumeDiscoveryResult := &localv1alpha1.LocalVolumeDiscoveryResult{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      fmt.Sprintf("discovery-result-%s", selectedNode.Name),
+				Namespace: namespace,
+			},
 		}
 
-		err = checkLocalVolumeDiscoveryStatus(localVolumeDiscovery)
-		if err != nil {
-			t.Fatalf("error checking localvolumediscovery status. %v", err)
-		}
+		err = verifyContinousDiscovery(f.Client, localVolumeDiscoveryResult, discoveredDevices, selectedNode.Name)
+		Expect(err).NotTo(HaveOccurred(), "running continuous discovery")
+	})
 
-		err = deleteResource(localVolumeDiscovery, localVolumeDiscovery.Name, localVolumeDiscovery.Namespace, f.Client)
-		if err != nil {
-			t.Fatalf("error deleting localvolumediscovery: %v", err)
-		}
-	}
-}
+	It("reports correct discovery status", func() {
+		err := checkLocalVolumeDiscoveryStatus(localVolumeDiscovery)
+		Expect(err).NotTo(HaveOccurred(), "checking localvolumediscovery status")
+	})
+})
 
-func getFakeLocalVolumeDiscovery(selectedNode v1.Node, namespace string) *localv1alpha1.LocalVolumeDiscovery {
-	localVolumeDiscovery := &localv1alpha1.LocalVolumeDiscovery{
+func getFakeLocalVolumeDiscovery(selectedNode corev1.Node, namespace string) *localv1alpha1.LocalVolumeDiscovery {
+	return &localv1alpha1.LocalVolumeDiscovery{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "LocalVolumeDiscovery",
 			APIVersion: localv1alpha1.GroupVersion.String(),
@@ -140,16 +128,16 @@ func getFakeLocalVolumeDiscovery(selectedNode v1.Node, namespace string) *localv
 			Namespace: namespace,
 		},
 		Spec: localv1alpha1.LocalVolumeDiscoverySpec{
-			NodeSelector: &v1.NodeSelector{
-				NodeSelectorTerms: []v1.NodeSelectorTerm{
+			NodeSelector: &corev1.NodeSelector{
+				NodeSelectorTerms: []corev1.NodeSelectorTerm{
 					{
-						MatchFields: []v1.NodeSelectorRequirement{
-							{Key: "metadata.name", Operator: v1.NodeSelectorOpIn, Values: []string{selectedNode.Name}},
+						MatchFields: []corev1.NodeSelectorRequirement{
+							{Key: "metadata.name", Operator: corev1.NodeSelectorOpIn, Values: []string{selectedNode.Name}},
 						},
 					},
 				},
 			},
-			Tolerations: []v1.Toleration{
+			Tolerations: []corev1.Toleration{
 				{
 					Key:      "localstorage",
 					Value:    "testvalue",
@@ -158,8 +146,6 @@ func getFakeLocalVolumeDiscovery(selectedNode v1.Node, namespace string) *localv
 			},
 		},
 	}
-
-	return localVolumeDiscovery
 }
 
 func checkLocalVolumeDiscoveryStatus(lvd *localv1alpha1.LocalVolumeDiscovery) error {
@@ -167,64 +153,61 @@ func checkLocalVolumeDiscoveryStatus(lvd *localv1alpha1.LocalVolumeDiscovery) er
 	if localVolumeDiscoveryPhase != localv1alpha1.Discovering {
 		return fmt.Errorf("expected local volume discovery to be in discovering phase")
 	}
-
 	return nil
 }
 
 func verifyLocalVolumeDiscovery(lvd *localv1alpha1.LocalVolumeDiscovery, client framework.FrameworkClient) error {
-	waitErr := wait.PollImmediate(retryInterval, timeout, func() (bool, error) {
+	return wait.PollImmediate(retryInterval, hourTimeout, func() (bool, error) {
 		objectKey := dynclient.ObjectKey{
 			Namespace: lvd.Namespace,
 			Name:      lvd.Name,
 		}
-		err := client.Get(goctx.TODO(), objectKey, lvd)
+		err := client.Get(context.TODO(), objectKey, lvd)
 		if err != nil {
 			return false, err
 		}
 		return true, nil
 	})
-
-	return waitErr
 }
 
-func verifyContinousDiscovery(t *testing.T, client framework.FrameworkClient, lvdr *localv1alpha1.LocalVolumeDiscoveryResult,
+func verifyContinousDiscovery(client framework.FrameworkClient, lvdr *localv1alpha1.LocalVolumeDiscoveryResult,
 	oldDevices []v1alpha1.DiscoveredDevice, nodeName string) error {
-	waitErr := wait.Poll(retryInterval, timeout, func() (bool, error) {
-		updatedDiscoveredDevices, err := verifyLocalVolumeDiscoveryResult(t, lvdr, nodeName, client)
+	f := framework.Global
+	return wait.Poll(retryInterval, hourTimeout, func() (bool, error) {
+		updatedDiscoveredDevices, err := verifyLocalVolumeDiscoveryResult(lvdr, nodeName, client)
 		if err != nil {
-			return false, fmt.Errorf("error fetching discovered devices from localvolumediscoveryresult. %v", err)
+			return false, fmt.Errorf("error fetching discovered devices from localvolumediscoveryresult: %v", err)
 		}
 		if len(updatedDiscoveredDevices) > len(oldDevices) {
-			t.Log("discovered device list updated with newly added device")
+			f.Logf("discovered device list updated with newly added device")
 			return true, nil
 		}
-		t.Log("waiting for continous discovery to discover newly added device")
+		f.Logf("waiting for continuous discovery to discover newly added device")
 		return false, nil
 	})
-
-	return waitErr
 }
 
-func verifyLocalVolumeDiscoveryResult(t *testing.T, lvdr *localv1alpha1.LocalVolumeDiscoveryResult, nodeName string,
+func verifyLocalVolumeDiscoveryResult(lvdr *localv1alpha1.LocalVolumeDiscoveryResult, nodeName string,
 	client framework.FrameworkClient) ([]v1alpha1.DiscoveredDevice, error) {
+	f := framework.Global
 	discoveredDevices := []v1alpha1.DiscoveredDevice{}
-	waitErr := wait.PollImmediate(retryInterval, timeout, func() (bool, error) {
+	waitErr := wait.PollImmediate(retryInterval, hourTimeout, func() (bool, error) {
 		objectKey := dynclient.ObjectKey{
 			Namespace: lvdr.Namespace,
 			Name:      lvdr.Name,
 		}
 
-		err := client.Get(goctx.TODO(), objectKey, lvdr)
+		err := client.Get(context.TODO(), objectKey, lvdr)
 		if err != nil {
 			if apierrors.IsNotFound(err) {
-				t.Logf("LocalVolumeDiscoveryResult %q not found.", lvdr.Name)
+				f.Logf("LocalVolumeDiscoveryResult %q not found", lvdr.Name)
 				return false, nil
 			}
 			return false, err
 		}
 
 		if lvdr.Spec.NodeName != nodeName {
-			return false, fmt.Errorf("invalid node name in spec. expected: %q. actual: %q", nodeName, lvdr.Spec.NodeName)
+			return false, fmt.Errorf("invalid node name in spec. expected: %q actual: %q", nodeName, lvdr.Spec.NodeName)
 		}
 
 		if lvdr.Labels["discovery-result-node"] != nodeName {
@@ -232,7 +215,7 @@ func verifyLocalVolumeDiscoveryResult(t *testing.T, lvdr *localv1alpha1.LocalVol
 		}
 
 		if len(lvdr.Status.DiscoveredDevices) == 0 {
-			t.Errorf("waiting for discovered devices to be populated")
+			f.Logf("waiting for discovered devices to be populated")
 			return false, nil
 		}
 
