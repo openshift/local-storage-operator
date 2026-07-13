@@ -324,6 +324,53 @@ var _ = Describe("LocalVolume", Label("LocalVolume"), Ordered, func() {
 			checkForSymlinks(namespace, nodeEnv, symLinkPath)
 		})
 	})
+
+	Context("symlink restoration after wipe", Ordered, func() {
+		var tc *testContext
+
+		BeforeAll(func() {
+			tc = &testContext{
+				f:         f,
+				namespace: namespace,
+				nodeEnv:   nodeEnv,
+			}
+
+			selectedNode := nodeEnv[0].node
+			tc.localVolume = getLocalVolume(selectedNode, selectedDisk.path, namespace)
+			tc.localVolume.Name = "test-local-disk-wipe"
+			tc.localVolume.Spec.StorageClassDevices[0].StorageClassName = "test-local-sc-wipe"
+
+			Eventually(func(ctx context.Context) error {
+				f.Logf("creating localvolume for wipe test")
+				return f.Client.Create(ctx, tc.localVolume, nil)
+			}, time.Minute, time.Second*2).WithContext(context.Background()).ShouldNot(HaveOccurred(), "creating localvolume for wipe test")
+
+			DeferCleanup(func() { tc.Cleanup() })
+		})
+
+		It("restores symlinks for PreferredLinkTarget LVDLs after /mnt/local-storage wipe", func() {
+			err := waitForDaemonSet(f.KubeClient, namespace, nodedaemon.DiskMakerName, retryInterval, hourTimeout)
+			Expect(err).NotTo(HaveOccurred(), "waiting for diskmaker daemonset")
+
+			tc.pvs = eventuallyFindPVs(f, tc.localVolume.Spec.StorageClassDevices[0].StorageClassName, 1)
+
+			pvNames := make([]string, 0, len(tc.pvs))
+			for _, pv := range tc.pvs {
+				pvNames = append(pvNames, pv.Name)
+			}
+			lvdls := eventuallyFindLVDLsForPVs(f, namespace, pvNames)
+			for i := range lvdls {
+				lvdl := updateLVDLPolicy(f, &lvdls[i], localv1.DeviceLinkPolicyPreferredLinkTarget)
+				waitForLVDLLinkTargets(f, lvdl, lvdl.Status.PreferredLinkTarget, lvdl.Status.PreferredLinkTarget)
+			}
+
+			tc.pvs = eventuallyFindPVs(f, tc.localVolume.Spec.StorageClassDevices[0].StorageClassName, 1)
+
+			f.Logf("TEST: symlink restoration after /mnt/local-storage wipe")
+			Expect(tc.pvs).To(HaveLen(1))
+			tc.pvs[0] = verifySymlinkRestorationAfterWipe(tc, tc.pvs[0])
+		})
+	})
 })
 
 // --- Helper functions ---

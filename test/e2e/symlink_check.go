@@ -335,6 +335,70 @@ func verifySymlinkFallbackOnDisappearingLink(
 	return pv
 }
 
+// verifySymlinkRestorationAfterWipe deletes all symlinks under /mnt/local-storage
+// on the PV's node, then verifies that LSO restores the symlink when the LVDL
+// has PreferredLinkTarget policy.
+//
+// Precondition: the PV's LVDL must have policy=PreferredLinkTarget.
+func verifySymlinkRestorationAfterWipe(
+	tc *testContext,
+	pv corev1.PersistentVolume,
+) corev1.PersistentVolume {
+	nodeHostname := findNodeHostnameForPV(&pv)
+
+	lvdl := eventuallyGetLVDL(tc.f, tc.namespace, pv.Name)
+	Expect(lvdl.Spec.Policy).To(Equal(localv1.DeviceLinkPolicyPreferredLinkTarget),
+		"precondition: LVDL policy must be PreferredLinkTarget")
+	preferredTarget := lvdl.Status.PreferredLinkTarget
+	Expect(preferredTarget).ToNot(BeEmpty(),
+		"precondition: LVDL PreferredLinkTarget must be set before wipe")
+
+	tc.f.Logf("wipe test: wiping /mnt/local-storage on node %s", nodeHostname)
+	wipeLocalStorageSymlinks(tc.namespace, nodeHostname)
+
+	tc.f.Logf("wipe test: waiting for symlink restoration %s -> %s", pv.Spec.Local.Path, preferredTarget)
+	eventuallyVerifyNodeSymlinkTarget(tc.namespace, nodeHostname, pv.Spec.Local.Path, preferredTarget)
+
+	tc.f.Logf("wipe test: verifying LVDL state after symlink restoration")
+	lvdl = waitForLVDLLinkTargets(tc.f, lvdl, preferredTarget, preferredTarget)
+	Expect(lvdl.Spec.Policy).To(Equal(localv1.DeviceLinkPolicyPreferredLinkTarget),
+		"LVDL policy must remain PreferredLinkTarget after restoration")
+
+	return pv
+}
+
+func wipeLocalStorageSymlinks(namespace, nodeHostname string) {
+	f := framework.Global
+	f.Logf("wiping /mnt/local-storage symlinks on node %s", nodeHostname)
+
+	job, err := newWipeLocalStorageJob(nodeHostname, namespace)
+	Expect(err).NotTo(HaveOccurred(), "could not create wipe job")
+
+	createOrReplaceJob(namespace, job, fmt.Sprintf("creating wipe job on node: %q", nodeHostname))
+	waitForJobCompletion(job, fmt.Sprintf("waiting for wipe job to complete: %q", job.GetName()))
+	job.TypeMeta.Kind = "Job"
+	eventuallyDelete(job)
+}
+
+func newWipeLocalStorageJob(nodeHostname, namespace string) (*batchv1.Job, error) {
+	script := `
+set -eu
+set -x
+echo "wiping symlinks under /mnt/local-storage"
+find /mnt/local-storage -type l -delete -print 2>/dev/null || true
+echo "wipe complete"
+`
+	return newNodeJob(
+		nodeHostname,
+		namespace,
+		fmt.Sprintf("wipe-symlinks-%s", nodeHostname),
+		"deletes all symlinks under /mnt/local-storage",
+		[]string{"/bin/bash", "-c", script},
+		&NodeJobOptions{
+			ContainerRestartPolicy: corev1.RestartPolicyNever,
+		})
+}
+
 func newCheckSymlinkTargetJob(nodeHostname, namespace, symlinkPath, expectedTarget string) (*batchv1.Job, error) {
 	script := `
 set -eu
@@ -343,6 +407,7 @@ set -x
 actual_target="$(readlink "$SYMLINK_PATH")"
 [[ "$actual_target" == "$EXPECTED_TARGET" ]]
 `
+	backoffLimit := int32(0)
 	return newNodeJob(
 		nodeHostname,
 		namespace,
@@ -350,6 +415,7 @@ actual_target="$(readlink "$SYMLINK_PATH")"
 		"checks that a host symlink points to the expected target",
 		[]string{"/bin/bash", "-c", script},
 		&NodeJobOptions{
+			JobBackoffLimit:        &backoffLimit,
 			ContainerRestartPolicy: corev1.RestartPolicyNever,
 			Env: []corev1.EnvVar{
 				{Name: "SYMLINK_PATH", Value: symlinkPath},
@@ -358,12 +424,42 @@ actual_target="$(readlink "$SYMLINK_PATH")"
 		})
 }
 
-func verifyNodeSymlinkTarget(namespace, nodeHostname, symlinkPath, expectedTarget string) {
+// checkNodeSymlinkTarget runs a one-shot job that verifies the host symlink
+// points at expectedTarget. Returns an error if the check job fails (e.g. the
+// symlink is missing or points elsewhere), so callers can poll with Eventually.
+func checkNodeSymlinkTarget(namespace, nodeHostname, symlinkPath, expectedTarget string) error {
+	f := framework.Global
 	job, err := newCheckSymlinkTargetJob(nodeHostname, namespace, symlinkPath, expectedTarget)
-	Expect(err).NotTo(HaveOccurred(), "could not create symlink target check job")
+	if err != nil {
+		return err
+	}
+	createOrReplaceJob(namespace, job, fmt.Sprintf("checking symlink target on node %s", nodeHostname))
 
-	createOrReplaceJob(namespace, job, fmt.Sprintf("creating symlink target check job on node: %q", nodeHostname))
-	waitForJobCompletion(job, fmt.Sprintf("waiting for symlink target check job to complete: %q", job.GetName()))
+	j := &batchv1.Job{}
+	Eventually(func(ctx context.Context) int32 {
+		if err := f.Client.Get(ctx, types.NamespacedName{Name: job.Name, Namespace: namespace}, j); err != nil {
+			return 0
+		}
+		return j.Status.Succeeded + j.Status.Failed
+	}, time.Minute, time.Second*5).WithContext(context.Background()).Should(BeNumerically(">=", 1))
+
 	job.TypeMeta.Kind = "Job"
 	eventuallyDelete(job)
+
+	if j.Status.Succeeded == 0 {
+		return fmt.Errorf("symlink %s does not point to %s on node %s", symlinkPath, expectedTarget, nodeHostname)
+	}
+	return nil
+}
+
+func verifyNodeSymlinkTarget(namespace, nodeHostname, symlinkPath, expectedTarget string) {
+	Expect(checkNodeSymlinkTarget(namespace, nodeHostname, symlinkPath, expectedTarget)).To(Succeed(),
+		"symlink %s on node %s should point to %s", symlinkPath, nodeHostname, expectedTarget)
+}
+
+func eventuallyVerifyNodeSymlinkTarget(namespace, nodeHostname, symlinkPath, expectedTarget string) {
+	Eventually(func() error {
+		return checkNodeSymlinkTarget(namespace, nodeHostname, symlinkPath, expectedTarget)
+	}, time.Minute*8, time.Second*15).Should(Succeed(),
+		"waiting for symlink %s on node %s to point to %s", symlinkPath, nodeHostname, expectedTarget)
 }
