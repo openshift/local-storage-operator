@@ -367,6 +367,49 @@ func verifySymlinkRestorationAfterWipe(
 	return pv
 }
 
+// verifySymlinkRestorationAfterWipeNoFSSignature covers the valid-device reconcile
+// path: the PV has never been consumed, so LVDL.Status.FilesystemUUID is empty.
+func verifySymlinkRestorationAfterWipeNoFSSignature(
+	tc *testContext,
+	pv corev1.PersistentVolume,
+) corev1.PersistentVolume {
+	lvdl := eventuallyGetLVDL(tc.f, tc.namespace, pv.Name)
+	Expect(lvdl.Status.FilesystemUUID).To(BeEmpty(),
+		"precondition: LVDL FilesystemUUID must be empty when device has no filesystem signature")
+	return verifySymlinkRestorationAfterWipe(tc, pv)
+}
+
+// verifySymlinkRestorationAfterWipeWithFSSignature covers the rejected-device
+// reconcile path. It consumes the filesystem PV (so blkid reports an FS UUID
+// and the device is in-use), wipes /mnt/local-storage while the volume is still
+// Bound, verifies symlink restoration, then deletes the consumers.
+//
+// Do not release the PVC before wipe: Delete reclaim clears the filesystem
+// signature and would send the device back through the valid-device path.
+func verifySymlinkRestorationAfterWipeWithFSSignature(
+	tc *testContext,
+	pv corev1.PersistentVolume,
+) corev1.PersistentVolume {
+	tc.f.Logf("wipe+fs test: consuming PV %q to establish filesystem signature", pv.Name)
+	pvc, job, pod := consumePV(tc.namespace, pv)
+	verifyLVDLFilesystemUUIDForPVs(tc.f, tc.namespace, []string{pv.Name})
+
+	lvdl := eventuallyGetLVDL(tc.f, tc.namespace, pv.Name)
+	Expect(lvdl.Status.FilesystemUUID).ToNot(BeEmpty(),
+		"precondition: LVDL FilesystemUUID must be set when device has a filesystem signature")
+
+	tc.f.Logf("wipe+fs test: wiping while PV %q is still Bound", pv.Name)
+	pv = verifySymlinkRestorationAfterWipe(tc, pv)
+
+	lvdl = eventuallyGetLVDL(tc.f, tc.namespace, pv.Name)
+	Expect(lvdl.Status.FilesystemUUID).ToNot(BeEmpty(),
+		"FilesystemUUID must remain set after wipe restoration while Bound")
+
+	tc.f.Logf("wipe+fs test: deleting consumers for PV %q", pv.Name)
+	eventuallyDelete(job, pvc, pod)
+	return pv
+}
+
 func wipeLocalStorageSymlinks(namespace, nodeHostname string) {
 	f := framework.Global
 	f.Logf("wiping /mnt/local-storage symlinks on node %s", nodeHostname)

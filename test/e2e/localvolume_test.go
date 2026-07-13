@@ -339,6 +339,7 @@ var _ = Describe("LocalVolume", Label("LocalVolume"), Ordered, func() {
 			tc.localVolume = getLocalVolume(selectedNode, selectedDisk.path, namespace)
 			tc.localVolume.Name = "test-local-disk-wipe"
 			tc.localVolume.Spec.StorageClassDevices[0].StorageClassName = "test-local-sc-wipe"
+			tc.localVolume.Spec.StorageClassDevices[0].VolumeMode = localv1.PersistentVolumeFilesystem
 
 			Eventually(func(ctx context.Context) error {
 				f.Logf("creating localvolume for wipe test")
@@ -348,27 +349,25 @@ var _ = Describe("LocalVolume", Label("LocalVolume"), Ordered, func() {
 			DeferCleanup(func() { tc.Cleanup() })
 		})
 
-		It("restores symlinks for PreferredLinkTarget LVDLs after /mnt/local-storage wipe", func() {
+		It("restores symlink when device has no filesystem signature", func() {
 			err := waitForDaemonSet(f.KubeClient, namespace, nodedaemon.DiskMakerName, retryInterval, hourTimeout)
 			Expect(err).NotTo(HaveOccurred(), "waiting for diskmaker daemonset")
 
 			tc.pvs = eventuallyFindPVs(f, tc.localVolume.Spec.StorageClassDevices[0].StorageClassName, 1)
-
-			pvNames := make([]string, 0, len(tc.pvs))
-			for _, pv := range tc.pvs {
-				pvNames = append(pvNames, pv.Name)
-			}
-			lvdls := eventuallyFindLVDLsForPVs(f, namespace, pvNames)
-			for i := range lvdls {
-				lvdl := updateLVDLPolicy(f, &lvdls[i], localv1.DeviceLinkPolicyPreferredLinkTarget)
-				waitForLVDLLinkTargets(f, lvdl, lvdl.Status.PreferredLinkTarget, lvdl.Status.PreferredLinkTarget)
-			}
-
-			tc.pvs = eventuallyFindPVs(f, tc.localVolume.Spec.StorageClassDevices[0].StorageClassName, 1)
-
-			f.Logf("TEST: symlink restoration after /mnt/local-storage wipe")
 			Expect(tc.pvs).To(HaveLen(1))
-			tc.pvs[0] = verifySymlinkRestorationAfterWipe(tc, tc.pvs[0])
+
+			lvdl := eventuallyGetLVDL(f, namespace, tc.pvs[0].Name)
+			lvdl = updateLVDLPolicy(f, lvdl, localv1.DeviceLinkPolicyPreferredLinkTarget)
+			waitForLVDLLinkTargets(f, lvdl, lvdl.Status.PreferredLinkTarget, lvdl.Status.PreferredLinkTarget)
+
+			f.Logf("TEST: symlink restoration after wipe with no filesystem signature")
+			tc.pvs[0] = verifySymlinkRestorationAfterWipeNoFSSignature(tc, tc.pvs[0])
+		})
+
+		It("restores symlink when device has a filesystem signature", func() {
+			Expect(tc.pvs).To(HaveLen(1))
+			f.Logf("TEST: symlink restoration after wipe with filesystem signature (rejected-device path)")
+			tc.pvs[0] = verifySymlinkRestorationAfterWipeWithFSSignature(tc, tc.pvs[0])
 		})
 	})
 })
