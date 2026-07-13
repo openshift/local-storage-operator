@@ -375,7 +375,7 @@ func (r *LocalVolumeSetReconciler) processRejectedDevicesForDeviceLinks(ctx cont
 		}
 
 		var lvdlError error
-		if common.HasMismatchingSymlink(lvdl, blockDevice) {
+		if common.HasMismatchingSymlink(lvdl, blockDevice, symlinkPath) {
 			// Also attempt symlink recreation for in-use devices with PreferredLinkTarget policy.
 			_, lvdlError = r.deviceLinkHandler.RecreateSymlinkIfNeeded(ctx, lvdl, symlinkPath, blockDevice)
 		} else {

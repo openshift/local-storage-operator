@@ -511,10 +511,15 @@ func assertSingleConditionReason(t *testing.T, lvdl *v1.LocalVolumeDeviceLink, r
 
 // TestHasMismatchingSymlink verifies the HasMismatchingSymlink helper for various policies and states.
 func TestHasMismatchingSymlink(t *testing.T) {
+	existingSymlink := filepath.Join(t.TempDir(), "existing-symlink")
+	assert.NoError(t, os.Symlink("/dev/null", existingSymlink))
+	missingSymlink := filepath.Join(t.TempDir(), "missing-symlink")
+
 	testCases := []struct {
 		name        string
 		lvdl        *v1.LocalVolumeDeviceLink
 		blockDevice internal.BlockDevice
+		symlinkPath string
 		expected    bool
 	}{
 		{
@@ -527,12 +532,14 @@ func TestHasMismatchingSymlink(t *testing.T) {
 			name:        "policy None",
 			lvdl:        newLVDLWithPolicy("pv", "ns", v1.DeviceLinkPolicyNone, "/current", "/preferred"),
 			blockDevice: internal.BlockDevice{PathByID: "/preferred"},
+			symlinkPath: missingSymlink,
 			expected:    false,
 		},
 		{
 			name:        "policy CurrentLinkTarget",
 			lvdl:        newLVDLWithPolicy("pv", "ns", v1.DeviceLinkPolicyCurrentLinkTarget, "/current", "/preferred"),
 			blockDevice: internal.BlockDevice{PathByID: "/preferred"},
+			symlinkPath: missingSymlink,
 			expected:    false,
 		},
 		{
@@ -545,13 +552,29 @@ func TestHasMismatchingSymlink(t *testing.T) {
 			name:        "policy PreferredLinkTarget with matching targets",
 			lvdl:        newLVDLWithPolicy("pv", "ns", v1.DeviceLinkPolicyPreferredLinkTarget, "/same", "/same"),
 			blockDevice: internal.BlockDevice{PathByID: "/same"},
+			symlinkPath: existingSymlink,
 			expected:    false,
 		},
 		{
 			name:        "policy PreferredLinkTarget with mismatching targets",
 			lvdl:        newLVDLWithPolicy("pv", "ns", v1.DeviceLinkPolicyPreferredLinkTarget, "/current", "/dev/disk/by-id/preferred"),
 			blockDevice: internal.BlockDevice{KName: "sda", PathByID: "/dev/disk/by-id/preferred"},
+			symlinkPath: existingSymlink,
 			expected:    true,
+		},
+		{
+			name:        "policy PreferredLinkTarget with missing PV symlink",
+			lvdl:        newLVDLWithPolicy("pv", "ns", v1.DeviceLinkPolicyPreferredLinkTarget, "/same", "/same"),
+			blockDevice: internal.BlockDevice{PathByID: "/same"},
+			symlinkPath: missingSymlink,
+			expected:    true,
+		},
+		{
+			name:        "policy PreferredLinkTarget with matching targets and empty symlink path",
+			lvdl:        newLVDLWithPolicy("pv", "ns", v1.DeviceLinkPolicyPreferredLinkTarget, "/same", "/same"),
+			blockDevice: internal.BlockDevice{PathByID: "/same"},
+			symlinkPath: "",
+			expected:    false,
 		},
 	}
 
@@ -561,7 +584,7 @@ func TestHasMismatchingSymlink(t *testing.T) {
 			internal.FilePathEvalSymLinks = func(path string) (string, error) {
 				return "/dev/sda", nil
 			}
-			assert.Equal(t, tc.expected, HasMismatchingSymlink(tc.lvdl, tc.blockDevice))
+			assert.Equal(t, tc.expected, HasMismatchingSymlink(tc.lvdl, tc.blockDevice, tc.symlinkPath))
 		})
 	}
 }

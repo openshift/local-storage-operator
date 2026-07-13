@@ -59,11 +59,11 @@ type CurrentBlockDeviceInfo struct {
 //
 //	example - /dev/disk/by-id/wwn-0x123432
 //
-// This function MUST be called only when there is no valid symlinks for `newSymlinkSourcePath`
-// in `/mnt/local-storage/<sc>` and yet LSO MUST have created a PV for device pointed by `newSymlinkSourcePath`
-// in previously. So this function is our last resort to find a valid symlink path for PV.
-// Only return valid new SymlinkPath if currentLinkTarget doesn't resolve and user has asked
-// for symlinks to be recreated.
+// This function MUST be called only when there is no valid symlink for `newSymlinkSourcePath`
+// in `/mnt/local-storage/<sc>` and yet LSO previously created a PV for the device pointed by
+// `newSymlinkSourcePath`. It is our last resort to find the PV symlink path that should be
+// recreated. Returns the recovered path only when the LVDL policy is PreferredLinkTarget and
+// the PV symlink is missing or no longer points at status.currentLinkTarget.
 func (c CurrentBlockDeviceInfo) RecoverPVSymlinkPath(ctx context.Context, symlinkDir, newSymlinkSourcePath string, client client.Client) (string, error) {
 	lvdls := c.lvdls
 	if len(lvdls) > 1 {
@@ -92,10 +92,13 @@ func (c CurrentBlockDeviceInfo) RecoverPVSymlinkPath(ctx context.Context, symlin
 		return "", PolicyNotPreferredError{SymlinkSource: newSymlinkSourcePath, SymlinkDir: symlinkDir, LVDL: lvdl, PVSymlinkPath: symlinkPath}
 	}
 
-	// check if currentLinkTarget resolves to a valid device, if yes then no need to do anything
-	resolvedCurrent, err := internal.FilePathEvalSymLinks(currentLinkTarget)
-	if err == nil {
-		return "", fmt.Errorf("currentSymlink %s still resolves to %s for %s", currentLinkTarget, resolvedCurrent, newSymlinkSourcePath)
+	// If the PV symlink still points at currentLinkTarget and that target is
+	// already the source we are recovering for, nothing is broken.
+	// When newSymlinkSourcePath differs (e.g. stale by-id / sibling fallback),
+	// keep recovering so PreferredLinkTarget can relink to the new preferred path.
+	linkTarget, err := internal.Readlink(symlinkPath)
+	if err == nil && linkTarget == currentLinkTarget && currentLinkTarget == newSymlinkSourcePath {
+		return "", fmt.Errorf("PV symlink %s still points to currentLinkTarget %s for %s", symlinkPath, currentLinkTarget, newSymlinkSourcePath)
 	}
 
 	if slices.Contains(validLinkTargets, newSymlinkSourcePath) {

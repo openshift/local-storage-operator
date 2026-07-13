@@ -126,7 +126,7 @@ func SyncPVAndLVDL(ctx context.Context, args SyncPVAndLVDLArgs) error {
 	// Symlink recreation must happen before PV creation because it fixes the
 	// symlink that the PV will reference. RecreateSymlinkIfNeeded already
 	// updates the LVDL status, so we skip ApplyStatus later.
-	requiresSymlinkRecreation := HasMismatchingSymlink(lvdl, args.BlockDevice)
+	requiresSymlinkRecreation := HasMismatchingSymlink(lvdl, args.BlockDevice, symLinkPath)
 	if requiresSymlinkRecreation {
 		if _, err := deviceHandler.RecreateSymlinkIfNeeded(ctx, lvdl, symLinkPath, args.BlockDevice); err != nil {
 			return fmt.Errorf("error recreating symlink: %w", err)

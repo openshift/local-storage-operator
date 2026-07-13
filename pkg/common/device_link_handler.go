@@ -263,8 +263,9 @@ func (dl *DeviceLinkHandler) findOrCreateLVDL(ctx context.Context, pvName, names
 	return existing, nil
 }
 
-// RecreateSymlinkIfNeeded checks the LVDL policy and atomically recreates
-// the symlink if policy is PreferredLinkTarget and currentLinkTarget != preferredLinkTarget.
+// RecreateSymlinkIfNeeded atomically recreates the symlink at symLinkPath to point at
+// the preferred by-id path. Callers should invoke this when HasMismatchingSymlink is true
+// (preferred != current, or the PV symlink is missing under PreferredLinkTarget policy).
 // symLinkPath is the full path under /mnt/local-storage/<storageClass>/<deviceName>.
 // Returns nil if no action is needed or action succeeded, error if action failed.
 // On error, it sets a failure OperatorCondition on the LVDL object.
@@ -289,6 +290,12 @@ func (dl *DeviceLinkHandler) RecreateSymlinkIfNeeded(ctx context.Context, lvdl *
 	}
 
 	symLinkDir := filepath.Dir(symLinkPath)
+	// Ensure the parent directory exists (e.g. after an admin removed /mnt/local-storage/<sc>).
+	if err := os.MkdirAll(symLinkDir, 0755); err != nil {
+		msg := fmt.Sprintf("failed to create symlink dir %s: %v", symLinkDir, err)
+		condition := getCondition("MkdirFailed", msg, operatorv1.ConditionTrue)
+		return dl.updateStatus(ctx, lvdl, condition, blockDevice, preferredTarget, currentTarget, symLinkPath)
+	}
 	entries, err := internal.FilePathGlob(symLinkDir + "/*")
 	if err != nil {
 		msg := fmt.Sprintf("failed to list symlink dir %s: %v", symLinkDir, err)
@@ -441,7 +448,10 @@ func (dl *DeviceLinkHandler) setLVDLCondition(lvdl *v1.LocalVolumeDeviceLink, co
 	return lvdl
 }
 
-func HasMismatchingSymlink(lvdl *v1.LocalVolumeDeviceLink, blockDevice internal.BlockDevice) bool {
+// HasMismatchingSymlink reports whether the PV symlink under /mnt/local-storage needs
+// recreation under PreferredLinkTarget policy. That is true when the symlink is missing
+// on disk, or when currentLinkTarget differs from the preferred by-id path.
+func HasMismatchingSymlink(lvdl *v1.LocalVolumeDeviceLink, blockDevice internal.BlockDevice, symlinkPath string) bool {
 	lvdlName := "<nil>"
 	if lvdl != nil {
 		lvdlName = lvdl.Name
@@ -452,6 +462,13 @@ func HasMismatchingSymlink(lvdl *v1.LocalVolumeDeviceLink, blockDevice internal.
 	}
 	if lvdl.Spec.Policy != v1.DeviceLinkPolicyPreferredLinkTarget {
 		return false
+	}
+
+	if symlinkPath != "" {
+		if _, err := os.Lstat(symlinkPath); os.IsNotExist(err) {
+			klog.InfoS("PV symlink is missing; recreation needed", "symlinkPath", symlinkPath, "lvdl", lvdlName)
+			return true
+		}
 	}
 
 	preferredTarget, err := blockDevice.GetPathByID()
