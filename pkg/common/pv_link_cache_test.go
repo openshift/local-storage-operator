@@ -119,6 +119,19 @@ func TestCurrentBlockDeviceInfoRecoverPVSymlinkPath(t *testing.T) {
 			wantPath: "/mnt/local-storage/sc-a/wwn-1234",
 		},
 		{
+			name: "errors when reading PV symlink fails for a non-missing reason",
+			setup: func(t *testing.T, c *LocalVolumeDeviceLinkCache) (CurrentBlockDeviceInfo, string) {
+				lvdl := newCacheLVDL("pv-read-error", cacheLocalNode, "/dev/disk/by-id/wwn-1234", v1api.DeviceLinkPolicyPreferredLinkTarget, sourcePath)
+				lvdl.Status.PersistentVolumeSymlinkPath = "/mnt/local-storage/sc-a/wwn-1234"
+				c.addOrUpdateLVDL(lvdl)
+				return c.localDeviceInfos[sourcePath], sourcePath
+			},
+			readlinkFunc: func(path string) (string, error) {
+				return "", os.ErrPermission
+			},
+			wantErr: "error reading PV symlink /mnt/local-storage/sc-a/wwn-1234",
+		},
+		{
 			name: "returns symlink path when PV symlink points elsewhere",
 			setup: func(t *testing.T, c *LocalVolumeDeviceLinkCache) (CurrentBlockDeviceInfo, string) {
 				lvdl := newCacheLVDL("pv-stale", cacheLocalNode, "/dev/disk/by-id/wwn-1234", v1api.DeviceLinkPolicyPreferredLinkTarget, sourcePath)

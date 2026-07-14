@@ -584,9 +584,16 @@ func TestHasMismatchingSymlink(t *testing.T) {
 			internal.FilePathEvalSymLinks = func(path string) (string, error) {
 				return "/dev/sda", nil
 			}
-			assert.Equal(t, tc.expected, HasMismatchingSymlink(tc.lvdl, tc.blockDevice, tc.symlinkPath))
+			assert.Equal(t, tc.expected, mustHasMismatchingSymlink(t, tc.lvdl, tc.blockDevice, tc.symlinkPath))
 		})
 	}
+}
+
+func mustHasMismatchingSymlink(t *testing.T, lvdl *v1.LocalVolumeDeviceLink, blockDevice internal.BlockDevice, symlinkPath string) bool {
+	t.Helper()
+	got, err := HasMismatchingSymlink(lvdl, blockDevice, symlinkPath)
+	assert.NoError(t, err)
+	return got
 }
 
 func TestRecreateSymlinkIfNeeded(t *testing.T) {

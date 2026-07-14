@@ -340,6 +340,10 @@ func verifySymlinkFallbackOnDisappearingLink(
 // has PreferredLinkTarget policy.
 //
 // Precondition: the PV's LVDL must have policy=PreferredLinkTarget.
+//
+// A DeferCleanup restores the PV symlink if the test fails or times out after
+// the wipe; otherwise diskmaker's PV deleter cannot resolve the device and
+// LocalVolume(Set) cleanup hangs on the protection finalizer.
 func verifySymlinkRestorationAfterWipe(
 	tc *testContext,
 	pv corev1.PersistentVolume,
@@ -353,11 +357,18 @@ func verifySymlinkRestorationAfterWipe(
 	Expect(preferredTarget).ToNot(BeEmpty(),
 		"precondition: LVDL PreferredLinkTarget must be set before wipe")
 
-	tc.f.Logf("wipe test: wiping /mnt/local-storage on node %s", nodeHostname)
-	wipeLocalStorageSymlinks(tc.namespace, nodeHostname)
+	symlinkPath := pv.Spec.Local.Path
+	DeferCleanup(func() {
+		tc.f.Logf("cleanup: ensuring PV symlink %s -> %s exists on node %s after wipe test",
+			symlinkPath, preferredTarget, nodeHostname)
+		restoreLocalStorageSymlink(tc.namespace, nodeHostname, symlinkPath, preferredTarget)
+	})
 
-	tc.f.Logf("wipe test: waiting for symlink restoration %s -> %s", pv.Spec.Local.Path, preferredTarget)
-	eventuallyVerifyNodeSymlinkTarget(tc.namespace, nodeHostname, pv.Spec.Local.Path, preferredTarget)
+	tc.f.Logf("wipe test: wiping /mnt/local-storage on node %s", nodeHostname)
+	wipeLocalStorageSymlinks(tc.namespace, nodeHostname, symlinkPath)
+
+	tc.f.Logf("wipe test: waiting for symlink restoration %s -> %s", symlinkPath, preferredTarget)
+	eventuallyVerifyNodeSymlinkTarget(tc.namespace, nodeHostname, symlinkPath, preferredTarget)
 
 	tc.f.Logf("wipe test: verifying LVDL state after symlink restoration")
 	lvdl = waitForLVDLLinkTargets(tc.f, lvdl, preferredTarget, preferredTarget)
@@ -410,11 +421,11 @@ func verifySymlinkRestorationAfterWipeWithFSSignature(
 	return pv
 }
 
-func wipeLocalStorageSymlinks(namespace, nodeHostname string) {
+func wipeLocalStorageSymlinks(namespace, nodeHostname, symlinkPath string) {
 	f := framework.Global
-	f.Logf("wiping /mnt/local-storage symlinks on node %s", nodeHostname)
+	f.Logf("wiping /mnt/local-storage symlinks on node %s (expecting %s present)", nodeHostname, symlinkPath)
 
-	job, err := newWipeLocalStorageJob(nodeHostname, namespace)
+	job, err := newWipeLocalStorageJob(nodeHostname, namespace, symlinkPath)
 	Expect(err).NotTo(HaveOccurred(), "could not create wipe job")
 
 	createOrReplaceJob(namespace, job, fmt.Sprintf("creating wipe job on node: %q", nodeHostname))
@@ -423,12 +434,30 @@ func wipeLocalStorageSymlinks(namespace, nodeHostname string) {
 	eventuallyDelete(job)
 }
 
-func newWipeLocalStorageJob(nodeHostname, namespace string) (*batchv1.Job, error) {
+// restoreLocalStorageSymlink recreates a /mnt/local-storage PV symlink on the
+// node. Used by DeferCleanup after wipe tests so PV deletion can still resolve
+// the device path if LSO did not restore the link in time.
+func restoreLocalStorageSymlink(namespace, nodeHostname, symlinkPath, target string) {
+	f := framework.Global
+	f.Logf("restoring PV symlink %s -> %s on node %s", symlinkPath, target, nodeHostname)
+
+	job, err := newRestoreLocalStorageSymlinkJob(nodeHostname, namespace, symlinkPath, target)
+	Expect(err).NotTo(HaveOccurred(), "could not create restore symlink job")
+
+	createOrReplaceJob(namespace, job, fmt.Sprintf("creating restore symlink job on node: %q", nodeHostname))
+	waitForJobCompletion(job, fmt.Sprintf("waiting for restore symlink job to complete: %q", job.GetName()))
+	job.TypeMeta.Kind = "Job"
+	eventuallyDelete(job)
+}
+
+func newWipeLocalStorageJob(nodeHostname, namespace, symlinkPath string) (*batchv1.Job, error) {
 	script := `
 set -eu
 set -x
+echo "verifying PV symlink exists before wipe: $SYMLINK_PATH"
+test -L "$SYMLINK_PATH"
 echo "wiping symlinks under /mnt/local-storage"
-find /mnt/local-storage -type l -delete -print 2>/dev/null || true
+find /mnt/local-storage -type l -delete -print
 echo "wipe complete"
 `
 	return newNodeJob(
@@ -439,6 +468,34 @@ echo "wipe complete"
 		[]string{"/bin/bash", "-c", script},
 		&NodeJobOptions{
 			ContainerRestartPolicy: corev1.RestartPolicyNever,
+			Env: []corev1.EnvVar{
+				{Name: "SYMLINK_PATH", Value: symlinkPath},
+			},
+		})
+}
+
+func newRestoreLocalStorageSymlinkJob(nodeHostname, namespace, symlinkPath, target string) (*batchv1.Job, error) {
+	script := `
+set -eu
+set -x
+echo "restoring PV symlink $SYMLINK_PATH -> $TARGET"
+mkdir -p "$(dirname "$SYMLINK_PATH")"
+ln -sfn "$TARGET" "$SYMLINK_PATH"
+actual_target="$(readlink "$SYMLINK_PATH")"
+[[ "$actual_target" == "$TARGET" ]]
+`
+	return newNodeJob(
+		nodeHostname,
+		namespace,
+		fmt.Sprintf("restore-symlink-%s", nodeHostname),
+		"restores a PV symlink under /mnt/local-storage after wipe tests",
+		[]string{"/bin/bash", "-c", script},
+		&NodeJobOptions{
+			ContainerRestartPolicy: corev1.RestartPolicyNever,
+			Env: []corev1.EnvVar{
+				{Name: "SYMLINK_PATH", Value: symlinkPath},
+				{Name: "TARGET", Value: target},
+			},
 		})
 }
 
@@ -484,7 +541,9 @@ func checkNodeSymlinkTarget(namespace, nodeHostname, symlinkPath, expectedTarget
 			return 0
 		}
 		return j.Status.Succeeded + j.Status.Failed
-	}, time.Minute, time.Second*5).WithContext(context.Background()).Should(BeNumerically(">=", 1))
+	}, time.Minute, time.Second*5).WithContext(context.Background()).
+		Should(BeNumerically(">=", 1),
+			"check symlink job %q on node %q for path %q did not complete", job.Name, nodeHostname, symlinkPath)
 
 	job.TypeMeta.Kind = "Job"
 	eventuallyDelete(job)

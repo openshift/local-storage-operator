@@ -580,3 +580,132 @@ func TestSyncPVAndLVDL_DeviceLinkLifecycle(t *testing.T) {
 		})
 	}
 }
+
+// TestSyncPVAndLVDL_SkipsReleasedPV verifies that SyncPVAndLVDL returns
+// ErrTryAgain for a Released PV and does not recreate the symlink or update
+// LVDL/PV state while cleanup is still in progress.
+func TestSyncPVAndLVDL_SkipsReleasedPV(t *testing.T) {
+	reclaimPolicyDelete := corev1.PersistentVolumeReclaimDelete
+	fakeByIDLink := "/dev/disk/by-id/wwn-preferred"
+
+	tmpDir := diskmakertest.TempDir(t, "create-local-pv-released-")
+
+	lv := localv1.LocalVolume{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       localv1.LocalVolumeKind,
+			APIVersion: localv1.GroupVersion.String(),
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "lv-released",
+			Namespace: "openshift-local-storage",
+			UID:       "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+		},
+	}
+	node := corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:   "node-released",
+			Labels: map[string]string{corev1.LabelHostname: "node-hostname-released"},
+		},
+	}
+	sc := storagev1.StorageClass{
+		ObjectMeta:    metav1.ObjectMeta{Name: "sc-released"},
+		ReclaimPolicy: &reclaimPolicyDelete,
+	}
+
+	symLinkPath := filepath.Join(tmpDir, sc.Name, "claimed")
+	pvName := common.GeneratePVName(filepath.Base(symLinkPath), node.Name, sc.Name)
+	currentTarget := "/dev/disk/by-id/wwn-current"
+
+	assert.NoError(t, os.MkdirAll(filepath.Dir(symLinkPath), 0755))
+	assert.NoError(t, os.Symlink(currentTarget, symLinkPath))
+
+	releasedPV := &corev1.PersistentVolume{
+		ObjectMeta: metav1.ObjectMeta{Name: pvName},
+		Spec: corev1.PersistentVolumeSpec{
+			PersistentVolumeReclaimPolicy: reclaimPolicyDelete,
+			PersistentVolumeSource: corev1.PersistentVolumeSource{
+				Local: &corev1.LocalVolumeSource{Path: symLinkPath},
+			},
+			StorageClassName: sc.Name,
+		},
+		Status: corev1.PersistentVolumeStatus{Phase: corev1.VolumeReleased},
+	}
+	lvdl := &localv1.LocalVolumeDeviceLink{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      pvName,
+			Namespace: lv.Namespace,
+		},
+		Spec: localv1.LocalVolumeDeviceLinkSpec{
+			PersistentVolumeName: pvName,
+			NodeName:             node.Name,
+			Policy:               localv1.DeviceLinkPolicyPreferredLinkTarget,
+		},
+		Status: localv1.LocalVolumeDeviceLinkStatus{
+			CurrentLinkTarget:           currentTarget,
+			PreferredLinkTarget:         fakeByIDLink,
+			PersistentVolumeSymlinkPath: symLinkPath,
+		},
+	}
+
+	r, testConfig := getFakeDiskMaker(t, tmpDir, &lv, &node, &sc, releasedPV, lvdl)
+	testConfig.runtimeConfig.Node = &node
+	testConfig.runtimeConfig.Name = common.GetProvisionedByValue(node)
+	testConfig.runtimeConfig.Namespace = lv.Namespace
+	testConfig.runtimeConfig.DiscoveryMap[sc.Name] = provCommon.MountConfig{
+		VolumeMode: string(localv1.PersistentVolumeBlock),
+	}
+	testConfig.fakeVolUtil.AddNewDirEntries(tmpDir, map[string][]*provUtil.FakeDirEntry{
+		sc.Name: {
+			{Name: filepath.Base(symLinkPath), Capacity: 10 * common.GiB, VolumeType: provUtil.FakeEntryBlock},
+		},
+	})
+
+	diskmakertest.WithInternalMocks(t, func() {
+		internal.FilePathGlob = func(pattern string) ([]string, error) {
+			if pattern == filepath.Join(internal.DiskByIDDir, "*") {
+				return []string{fakeByIDLink}, nil
+			}
+			return filepath.Glob(pattern)
+		}
+		internal.FilePathEvalSymLinks = func(path string) (string, error) {
+			if path == fakeByIDLink || path == currentTarget {
+				return "/dev/null", nil
+			}
+			return filepath.EvalSymlinks(path)
+		}
+	})
+
+	err := common.SyncPVAndLVDL(t.Context(), common.SyncPVAndLVDLArgs{
+		LocalVolumeLikeObject: &lv,
+		RuntimeConfig:         r.runtimeConfig,
+		StorageClass:          sc,
+		MountPointMap:         sets.New[string](),
+		Client:                r.Client,
+		ClientReader:          r.ClientReader,
+		SymLinkPath:           symLinkPath,
+		BlockDevice: internal.BlockDevice{
+			Name:     "null",
+			KName:    "null",
+			PathByID: fakeByIDLink,
+		},
+		CacheWriter:      r.pvLinkCache,
+		ExtraLabelsForPV: map[string]string{},
+	})
+	assert.ErrorIs(t, err, common.ErrTryAgain)
+
+	target, readErr := os.Readlink(symLinkPath)
+	assert.NoError(t, readErr)
+	assert.Equal(t, currentTarget, target,
+		"symlink must not be recreated while PV is Released")
+
+	gotLVDL := &localv1.LocalVolumeDeviceLink{}
+	assert.NoError(t, r.Client.Get(context.TODO(), types.NamespacedName{Name: pvName, Namespace: lv.Namespace}, gotLVDL))
+	assert.Equal(t, currentTarget, gotLVDL.Status.CurrentLinkTarget,
+		"LVDL CurrentLinkTarget must not change while PV is Released")
+	assert.Equal(t, fakeByIDLink, gotLVDL.Status.PreferredLinkTarget)
+	assert.Equal(t, localv1.DeviceLinkPolicyPreferredLinkTarget, gotLVDL.Spec.Policy)
+
+	gotPV := &corev1.PersistentVolume{}
+	assert.NoError(t, r.Client.Get(context.TODO(), types.NamespacedName{Name: pvName}, gotPV))
+	assert.Equal(t, corev1.VolumeReleased, gotPV.Status.Phase)
+}

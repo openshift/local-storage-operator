@@ -451,43 +451,48 @@ func (dl *DeviceLinkHandler) setLVDLCondition(lvdl *v1.LocalVolumeDeviceLink, co
 // HasMismatchingSymlink reports whether the PV symlink under /mnt/local-storage needs
 // recreation under PreferredLinkTarget policy. That is true when the symlink is missing
 // on disk, or when currentLinkTarget differs from the preferred by-id path.
-func HasMismatchingSymlink(lvdl *v1.LocalVolumeDeviceLink, blockDevice internal.BlockDevice, symlinkPath string) bool {
+// Unexpected Lstat failures (permission, I/O, etc.) are returned so callers can
+// requeue instead of treating the link as present.
+func HasMismatchingSymlink(lvdl *v1.LocalVolumeDeviceLink, blockDevice internal.BlockDevice, symlinkPath string) (bool, error) {
 	lvdlName := "<nil>"
 	if lvdl != nil {
 		lvdlName = lvdl.Name
 	}
 	klog.V(4).Infof("checking for mismatching symlinks, lvdl %s", lvdlName)
 	if lvdl == nil {
-		return false
+		return false, nil
 	}
 	if lvdl.Spec.Policy != v1.DeviceLinkPolicyPreferredLinkTarget {
-		return false
+		return false, nil
 	}
 
 	if symlinkPath != "" {
-		if _, err := os.Lstat(symlinkPath); os.IsNotExist(err) {
-			klog.InfoS("PV symlink is missing; recreation needed", "symlinkPath", symlinkPath, "lvdl", lvdlName)
-			return true
+		if _, err := os.Lstat(symlinkPath); err != nil {
+			if os.IsNotExist(err) {
+				klog.InfoS("PV symlink is missing; recreation needed", "symlinkPath", symlinkPath, "lvdl", lvdlName)
+				return true, nil
+			}
+			return false, fmt.Errorf("error checking PV symlink %s: %w", symlinkPath, err)
 		}
 	}
 
 	preferredTarget, err := blockDevice.GetPathByID()
 	if err != nil {
 		klog.ErrorS(err, "error getting pathbyid for device", "device", blockDevice.Name)
-		return false
+		return false, nil
 	}
 
 	currentTarget := lvdl.Status.CurrentLinkTarget
 	klog.Infof("checking for mismatching symlinks current: %s, preferred: %s", currentTarget, preferredTarget)
 
 	if preferredTarget == "" {
-		return false
+		return false, nil
 	}
 
 	if currentTarget == preferredTarget {
-		return false
+		return false, nil
 	}
-	return true
+	return true, nil
 }
 
 func getCondition(reason, msg string, status operatorv1.ConditionStatus) operatorv1.OperatorCondition {

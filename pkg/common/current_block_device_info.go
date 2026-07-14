@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"slices"
 
@@ -96,8 +97,14 @@ func (c CurrentBlockDeviceInfo) RecoverPVSymlinkPath(ctx context.Context, symlin
 	// already the source we are recovering for, nothing is broken.
 	// When newSymlinkSourcePath differs (e.g. stale by-id / sibling fallback),
 	// keep recovering so PreferredLinkTarget can relink to the new preferred path.
+	// Only treat a missing symlink (or a successfully read alternate target) as
+	// recoverable; permission/I/O/non-symlink failures must surface.
 	linkTarget, err := internal.Readlink(symlinkPath)
-	if err == nil && linkTarget == currentLinkTarget && currentLinkTarget == newSymlinkSourcePath {
+	if err != nil {
+		if !os.IsNotExist(err) {
+			return "", fmt.Errorf("error reading PV symlink %s: %w", symlinkPath, err)
+		}
+	} else if linkTarget == currentLinkTarget && currentLinkTarget == newSymlinkSourcePath {
 		return "", fmt.Errorf("PV symlink %s still points to currentLinkTarget %s for %s", symlinkPath, currentLinkTarget, newSymlinkSourcePath)
 	}
 
