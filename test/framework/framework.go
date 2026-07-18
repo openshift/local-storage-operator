@@ -31,7 +31,8 @@ import (
 	"go.uber.org/zap/zapcore"
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
-	log "github.com/sirupsen/logrus"
+	ginkgo "github.com/onsi/ginkgo/v2"
+	ginkgotypes "github.com/onsi/ginkgo/v2/types"
 	zaplog "go.uber.org/zap"
 	extscheme "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset/scheme"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -50,6 +51,7 @@ import (
 var (
 	// Global framework struct
 	Global *Framework
+	Pid    = os.Getpid() // Can be stubbed out for testing.
 )
 
 type Framework struct {
@@ -194,7 +196,7 @@ func (f *Framework) addToScheme(addToScheme addToSchemeFunc, obj dynclient.Objec
 		}
 		if err != nil {
 			f.restMapper.Reset()
-			log.Warn(err)
+			f.Log(err)
 			return false, nil
 		}
 		f.Client = &frameworkClient{Client: dynClient}
@@ -234,7 +236,7 @@ func (f *Framework) runM(m *testing.M) (int, error) {
 	if err != nil {
 		return 0, fmt.Errorf("failed to run operator locally: %w", err)
 	}
-	log.Info("Started local operator")
+	f.Log("Started local operator")
 
 	// run the tests
 	exitCode := m.Run()
@@ -242,9 +244,9 @@ func (f *Framework) runM(m *testing.M) (int, error) {
 	// kill the local operator and print its logs
 	err = localCmd.Process.Kill()
 	if err != nil {
-		log.Warn("Failed to stop local operator process")
+		f.Log("Failed to stop local operator process")
 	}
-	fmt.Printf("\n------ Local operator output ------\n%s\n", outBuf.String())
+	f.Logf("\n------ Local operator output ------\n%s\n", outBuf.String())
 	return exitCode, nil
 }
 
@@ -281,4 +283,40 @@ func (f *Framework) setupLocalCommand() (*exec.Cmd, error) {
 	}
 	localCmd.Env = append(localCmd.Env, fmt.Sprintf("%v=%v", WatchNamespaceEnvVar, watchNamespace))
 	return localCmd, nil
+}
+
+// Log implements TB.Log. It overrides the implementation from Ginkgo to ensure consistent output.
+// this implementation is copied from https://github.com/gnufied/kubernetes/blob/implement-volume-health-api/test/e2e/framework/framework.go#L168
+func (f *Framework) Log(args ...any) {
+	frameworkLog(f, 1, strings.TrimSuffix(fmt.Sprintln(args...), "\n"))
+}
+
+// Logf implements TB.Logf. It overrides the implementation from Ginkgo to ensure consistent output.
+// copied from https://github.com/gnufied/kubernetes/blob/implement-volume-health-api/test/e2e/framework/framework.go#L168
+func (f *Framework) Logf(format string, args ...any) {
+	frameworkLog(f, 1, fmt.Sprintf(format, args...))
+}
+
+func unwind(skip int) (string, int) {
+	location := ginkgotypes.NewCodeLocation(skip + 1)
+	return location.FileName, location.LineNumber
+}
+
+// log re-implements klog.Info: same header, but stack unwinding
+// with support for ginkgo.GinkgoWriter and skipping stack levels.
+func frameworkLog(f *Framework, offset int, msg string) {
+	now := time.Now()
+	file, line := unwind(offset + 1)
+	if file == "" {
+		file = "???"
+		line = 1
+	} else if slash := strings.LastIndex(file, "/"); slash >= 0 {
+		file = file[slash+1:]
+	}
+	_, month, day := now.Date()
+	hour, minute, second := now.Clock()
+	header := fmt.Sprintf("I%02d%02d %02d:%02d:%02d.%06d %7d %s:%d]",
+		month, day, hour, minute, second, now.Nanosecond()/1000, Pid, file, line)
+
+	fmt.Fprintln(ginkgo.GinkgoWriter, header, msg)
 }

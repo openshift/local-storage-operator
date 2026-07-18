@@ -4,10 +4,9 @@ import (
 	"context"
 	"fmt"
 	"strings"
-	"testing"
 	"time"
 
-	"github.com/onsi/gomega"
+	. "github.com/onsi/gomega"
 	routev1client "github.com/openshift/client-go/route/clientset/versioned"
 	"github.com/openshift/library-go/test/library/metrics"
 	framework "github.com/openshift/local-storage-operator/test/framework"
@@ -48,25 +47,26 @@ func newPrometheusClient(f *framework.Framework) prometheusv1.API {
 }
 
 // Wait for a given metric to have a given number of results.
-func waitForMetric(t *testing.T, prometheusClient prometheusv1.API, metric string, value model.SampleValue) {
-	t.Logf("Waiting for metric %s to be %f", metric, value)
-	matcher := gomega.NewWithT(t)
-	matcher.Eventually(func() model.SampleValue {
-		result, err := runQueryAtTime(t, prometheusClient, metric, time.Now())
-		matcher.Expect(err).NotTo(gomega.HaveOccurred())
+func waitForMetric(prometheusClient prometheusv1.API, metric string, value model.SampleValue) {
+	f := framework.Global
+	f.Logf("Waiting for metric %s to be %f", metric, value)
+	Eventually(func() model.SampleValue {
+		result, err := runQueryAtTime(prometheusClient, metric, time.Now())
+		Expect(err).NotTo(HaveOccurred())
 		if len(result) == 0 {
 			// report missing metric as "0"
-			t.Logf("Metric %s has no results, reporting zero", metric)
+			f.Logf("Metric %s has no results, reporting zero", metric)
 			return 0.0
 		}
 
-		t.Logf("Metric %s has %d results, the last value is %f", metric, len(result), result[0].Value)
+		f.Logf("Metric %s has %d results, the last value is %f", metric, len(result), result[0].Value)
 		return result[0].Value
-	}, time.Minute*5, time.Second*5).Should(gomega.Equal(value))
+	}, time.Minute*5, time.Second*5).Should(Equal(value))
 }
 
 // Copied & updated from openshift/origin test/extended/util/prometheus/helpers.go
-func runQueryAtTime(t *testing.T, prometheusClient prometheusv1.API, query string, evaluationTime time.Time) (model.Vector, error) {
+func runQueryAtTime(prometheusClient prometheusv1.API, query string, evaluationTime time.Time) (model.Vector, error) {
+	f := framework.Global
 	var lastErr error
 	var result model.Value
 	var warnings prometheusv1.Warnings
@@ -75,7 +75,7 @@ func runQueryAtTime(t *testing.T, prometheusClient prometheusv1.API, query strin
 		if lastErr == nil {
 			break
 		}
-		t.Logf("error querying metric %s (%d/5): %v", query, i+1, lastErr)
+		f.Logf("error querying metric %s (%d/5): %v", query, i+1, lastErr)
 		time.Sleep(10 * time.Second)
 	}
 	if lastErr != nil {
@@ -83,7 +83,7 @@ func runQueryAtTime(t *testing.T, prometheusClient prometheusv1.API, query strin
 	}
 
 	if len(warnings) > 0 {
-		t.Logf("#### warnings \n\t%v\n", strings.Join(warnings, "\n\t"))
+		f.Logf("#### warnings \n\t%v", strings.Join(warnings, "\n\t"))
 	}
 	if result.Type() != model.ValVector {
 		return nil, fmt.Errorf("result type is not the vector: %v", result.Type())

@@ -720,7 +720,12 @@ func (r *LocalVolumeReconciler) processRejectedDevicesForDeviceLinks(ctx context
 				klog.ErrorS(err, "error finding lvdl", "lvdl", lvdlName)
 			}
 			var lvdlError error
-			if common.HasMismatchingSymlink(lvdl, blockDevice) {
+			requiresSymlinkRecreation, mismatchErr := common.HasMismatchingSymlink(lvdl, blockDevice, symlinkPath)
+			if mismatchErr != nil {
+				klog.ErrorS(mismatchErr, "error checking symlink mismatch", "device", blockDevice.Name, "symlinkPath", symlinkPath)
+				continue
+			}
+			if requiresSymlinkRecreation {
 				_, lvdlError = r.deviceLinkHandler.RecreateSymlinkIfNeeded(ctx, lvdl, symlinkPath, blockDevice)
 			} else {
 				// it is possible that symlinkPath has become stale, in which case we must let RecreateSymlinkIfNeeded to fix it.
