@@ -4,183 +4,74 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/signal"
-	"syscall"
 	"testing"
 	"time"
 
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 	"github.com/openshift/local-storage-operator/api"
 	localv1 "github.com/openshift/local-storage-operator/api/v1"
 	localv1alpha1 "github.com/openshift/local-storage-operator/api/v1alpha1"
 	framework "github.com/openshift/local-storage-operator/test/framework"
-	"github.com/openshift/local-storage-operator/test/framework/e2eutil"
-	"github.com/stretchr/testify/assert"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-)
-
-var (
-	retryInterval = time.Second * 5
-	// timeout              = time.Second * 120
-	timeout              = time.Hour
-	cleanupRetryInterval = time.Second * 1
-	cleanupTimeout       = time.Second * 5
-
-	// testmap is a map from test-name to test-wrapper.
-	// test-wrapper returns a func that can be run with t.Run(func(*testing.T), but
-	// has access to a framework.Context and cleanupFuncs via closure.
-	testMap = map[string]func(*framework.TestCtx, *[]cleanupFn) func(*testing.T){
-		"LocalVolumeDiscovery": LocalVolumeDiscoveryTest,
-		"LocalVolume":          LocalVolumeTest,
-		"LocalVolumeSet":       LocalVolumeSetTest,
-	}
-	// this is to order the tests to make them more efficient (e.g. discover will cause all images to be pulled on the nodes)
-	testNames = []string{"LocalVolumeDiscovery", "LocalVolumeSet", "LocalVolume"}
 )
 
 func TestMain(m *testing.M) {
 	framework.MainEntry(m)
 }
 
-// TestLocalStorage runs the tests and handles the setup and teardown of the test environment.
-// Each test is a closure func(*testing.T) that has access to a context.
-// Additional setup can be done within the test
-func TestLocalStorage(t *testing.T) {
+func TestE2E(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "Local Storage Operator E2E Suite")
+}
 
-	// register CRD schemes
+var _ = BeforeSuite(func(ctx context.Context) {
+	GinkgoWriter.TeeTo(os.Stdout)
+
 	localVolumeDiscoveryList := &localv1alpha1.LocalVolumeDiscoveryList{}
-	err := framework.AddToFrameworkScheme(api.AddToScheme, localVolumeDiscoveryList)
-	if err != nil {
-		t.Fatalf("error adding local volume discovery list : %v", err)
-	}
-	err = framework.AddToFrameworkScheme(localv1.AddToScheme, localVolumeDiscoveryList)
-	if err != nil {
-		t.Fatalf("error adding local volume discovery list : %v", err)
-	}
-	err = framework.AddToFrameworkScheme(localv1alpha1.AddToScheme, localVolumeDiscoveryList)
-	if err != nil {
-		t.Fatalf("error adding local volume discovery list : %v", err)
-	}
+	Expect(framework.AddToFrameworkScheme(api.AddToScheme, localVolumeDiscoveryList)).To(Succeed())
+	Expect(framework.AddToFrameworkScheme(localv1.AddToScheme, localVolumeDiscoveryList)).To(Succeed())
+	Expect(framework.AddToFrameworkScheme(localv1alpha1.AddToScheme, localVolumeDiscoveryList)).To(Succeed())
 
 	localVolumeList := &localv1.LocalVolumeList{}
-	err = framework.AddToFrameworkScheme(localv1.AddToScheme, localVolumeList)
-	if err != nil {
-		t.Fatalf("error adding local volume list : %v", err)
-	}
-	err = framework.AddToFrameworkScheme(localv1alpha1.AddToScheme, localVolumeList)
-	if err != nil {
-		t.Fatalf("error adding local volume list : %v", err)
-	}
+	Expect(framework.AddToFrameworkScheme(localv1.AddToScheme, localVolumeList)).To(Succeed())
+	Expect(framework.AddToFrameworkScheme(localv1alpha1.AddToScheme, localVolumeList)).To(Succeed())
+
 	localVolumeSetList := &localv1alpha1.LocalVolumeSetList{}
-	err = framework.AddToFrameworkScheme(localv1.AddToScheme, localVolumeSetList)
-	if err != nil {
-		t.Fatalf("error adding local volume set list : %v", err)
-	}
-	err = framework.AddToFrameworkScheme(localv1alpha1.AddToScheme, localVolumeSetList)
-	if err != nil {
-		t.Fatalf("error adding local volume set list : %v", err)
-	}
+	Expect(framework.AddToFrameworkScheme(localv1.AddToScheme, localVolumeSetList)).To(Succeed())
+	Expect(framework.AddToFrameworkScheme(localv1alpha1.AddToScheme, localVolumeSetList)).To(Succeed())
 
-	// Run tests with setup and teardown
-	for _, testName := range testNames {
-		testWrapper := testMap[testName]
-		context := framework.NewContext(t)
+	f := framework.Global
+	namespace := f.OperatorNamespace
 
-		// a list of functions that will be run at the end of every test suite
-		// they will be run even if an interrupt is sent
-		// test suites can register functions
-		cleanupFuncs := make([]cleanupFn, 0)
-		runCleanup := getCleanupRunner(t, &cleanupFuncs)
-
-		// handle ctrl-c
-		stopChan := make(chan os.Signal, 1)
-		signal.Notify(stopChan, os.Interrupt, syscall.SIGTERM)
-		go func() {
-			t.Log("listening for interrupt")
-			for range stopChan {
-				// block until interrupt recieved
-				fmt.Println("\r- Interrupt recieved, cleaning up")
-				t.Logf("running %d cleanup functions.", len(cleanupFuncs))
-				runCleanup()
-				os.Exit(1)
+	f.Logf("Waiting for local-storage-operator to be ready in namespace %s", namespace)
+	Eventually(func(ctx context.Context) error {
+		deployment, err := f.KubeClient.AppsV1().Deployments(namespace).Get(ctx, "local-storage-operator", metav1.GetOptions{})
+		if err != nil {
+			if apierrors.IsNotFound(err) {
+				return fmt.Errorf("deployment not found yet")
 			}
-
-		}()
-		// add context cleanup to cleanup funcs
-		addToCleanupFuncs(&cleanupFuncs, "cleanup test context", func(t *testing.T) error {
-			context.Cleanup()
-			return nil
-		})
-
-		err = enableNamespaceMetrics(t, context)
-		if err != nil {
-			t.Fatalf("error enabling namespace metrics : %v", err)
+			return err
 		}
-		// deploy the local-storage-operator
-		err = waitForOperatorToBeReady(t, context)
-		if err != nil {
-			t.Fatalf("error waiting for operator to be ready : %v", err)
+		if deployment.Status.AvailableReplicas < 1 {
+			return fmt.Errorf("waiting for full availability (%d/1)", deployment.Status.AvailableReplicas)
 		}
+		return nil
+	}, hourTimeout, retryInterval).WithContext(ctx).Should(Succeed(), "waiting for operator to be ready")
 
-		testWithContext := testWrapper(context, &cleanupFuncs)
-		t.Run(testName, testWithContext)
-
-		errs := runCleanup()
-		for _, err := range errs {
-			assert.NoErrorf(t, err, "expected cleanup step to succeed")
-		}
-		if t.Failed() {
-			t.Logf("============= Failed: %q =============================== ", testName)
-		}
-	}
-
-}
-
-func waitForOperatorToBeReady(t *testing.T, ctx *framework.TestCtx) error {
-	namespace, err := ctx.GetOperatorNamespace()
-	if err != nil {
-		return err
-	}
-	t.Logf("Found namespace: %v", namespace)
-
-	// get global framework variables
-	f := framework.Global
-	// wait for local-storage-operator to be ready
-	t.Log("Waiting for local-storage-operator to be ready...")
-	err = e2eutil.WaitForDeployment(t, f.KubeClient, namespace, "local-storage-operator", 1, retryInterval, timeout)
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
-// The namespace created by the e2e job often doesn't have it enabled.
-// Enable it now.
-func enableNamespaceMetrics(t *testing.T, ctx *framework.TestCtx) error {
-	namespace, err := ctx.GetOperatorNamespace()
-	if err != nil {
-		return err
-	}
-	f := framework.Global
-
-	ns, err := f.KubeClient.CoreV1().Namespaces().Get(t.Context(), namespace, metav1.GetOptions{})
-	if err != nil {
-		return err
-	}
-
+	ns, err := f.KubeClient.CoreV1().Namespaces().Get(context.TODO(), namespace, metav1.GetOptions{})
+	Expect(err).NotTo(HaveOccurred(), "getting namespace")
 	if ns.Labels == nil {
 		ns.Labels = make(map[string]string)
 	}
-	if ns.Labels["openshift.io/cluster-monitoring"] == "true" {
-		t.Logf("Namespace %s already has cluster-monitoring enabled", namespace)
-		return nil
+	if ns.Labels["openshift.io/cluster-monitoring"] != "true" {
+		f.Logf("Enabling cluster-monitoring for namespace %s", namespace)
+		ns.Labels["openshift.io/cluster-monitoring"] = "true"
+		_, err = f.KubeClient.CoreV1().Namespaces().Update(context.TODO(), ns, metav1.UpdateOptions{})
+		Expect(err).NotTo(HaveOccurred(), "enabling namespace metrics")
 	}
 
-	t.Logf("Enabling cluster-monitoring for namespace %s", namespace)
-	ns.Labels["openshift.io/cluster-monitoring"] = "true"
-	_, err = f.KubeClient.CoreV1().Namespaces().Update(context.TODO(), ns, metav1.UpdateOptions{})
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
+	SetDefaultEventuallyTimeout(time.Minute * 10)
+	SetDefaultEventuallyPollingInterval(time.Second * 2)
+})

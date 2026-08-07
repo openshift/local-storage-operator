@@ -123,10 +123,22 @@ func SyncPVAndLVDL(ctx context.Context, args SyncPVAndLVDLArgs) error {
 		return fmt.Errorf("error finding localvolumedevicelink object %s: %w", pvName, err)
 	}
 
+	// Do not recreate symlinks or update LVDL/PV state for released volumes.
+	existingPV := &corev1.PersistentVolume{ObjectMeta: metav1.ObjectMeta{Name: pvName}}
+	err = client.Get(ctx, types.NamespacedName{Name: pvName}, existingPV)
+	if err == nil && existingPV.Status.Phase == corev1.VolumeReleased {
+		klog.InfoS("PV is still being cleaned, not going to recreate it", "pvName", pvName, "disk", deviceName)
+		// Caller should try again soon
+		return ErrTryAgain
+	}
+
 	// Symlink recreation must happen before PV creation because it fixes the
 	// symlink that the PV will reference. RecreateSymlinkIfNeeded already
 	// updates the LVDL status, so we skip ApplyStatus later.
-	requiresSymlinkRecreation := HasMismatchingSymlink(lvdl, args.BlockDevice)
+	requiresSymlinkRecreation, err := HasMismatchingSymlink(lvdl, args.BlockDevice, symLinkPath)
+	if err != nil {
+		return fmt.Errorf("error checking symlink mismatch: %w", err)
+	}
 	if requiresSymlinkRecreation {
 		if _, err := deviceHandler.RecreateSymlinkIfNeeded(ctx, lvdl, symLinkPath, args.BlockDevice); err != nil {
 			return fmt.Errorf("error recreating symlink: %w", err)
@@ -152,16 +164,6 @@ func SyncPVAndLVDL(ctx context.Context, args SyncPVAndLVDLArgs) error {
 	actualVolumeMode, err := provCommon.GetVolumeMode(runtimeConfig.VolUtil, symLinkPath)
 	if err != nil {
 		return fmt.Errorf("could not read the device's volume mode from the node: %w", err)
-	}
-
-	// Do not attempt to create or update existing PV's that have been released
-	existingPV := &corev1.PersistentVolume{ObjectMeta: metav1.ObjectMeta{Name: pvName}}
-	err = client.Get(ctx, types.NamespacedName{Name: pvName}, existingPV)
-
-	if err == nil && existingPV.Status.Phase == corev1.VolumeReleased {
-		klog.InfoS("PV is still being cleaned, not going to recreate it", "pvName", pvName, "disk", deviceName)
-		// Caller should try again soon
-		return ErrTryAgain
 	}
 
 	var capacityBytes int64

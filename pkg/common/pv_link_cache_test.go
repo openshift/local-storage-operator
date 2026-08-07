@@ -32,6 +32,7 @@ func TestCurrentBlockDeviceInfoRecoverPVSymlinkPath(t *testing.T) {
 		name            string
 		setup           func(t *testing.T, c *LocalVolumeDeviceLinkCache) (CurrentBlockDeviceInfo, string)
 		symlinkEvalFunc func(path string) (string, error)
+		readlinkFunc    func(path string) (string, error)
 		apiObjects      []client.Object
 		wantPath        string
 		wantErr         string
@@ -73,34 +74,86 @@ func TestCurrentBlockDeviceInfoRecoverPVSymlinkPath(t *testing.T) {
 			wantErr: "policy is not PreferredLinkTarget",
 		},
 		{
-			name: "errors when current link still resolves",
+			name: "errors when PV symlink still points to currentLinkTarget",
 			setup: func(t *testing.T, c *LocalVolumeDeviceLinkCache) (CurrentBlockDeviceInfo, string) {
-				lvdl := newCacheLVDL("pv-resolves", cacheLocalNode, "/tmp/current-resolves", v1api.DeviceLinkPolicyPreferredLinkTarget, sourcePath)
+				lvdl := newCacheLVDL("pv-healthy", cacheLocalNode, "/dev/disk/by-id/wwn-1234", v1api.DeviceLinkPolicyPreferredLinkTarget, sourcePath)
+				lvdl.Status.PersistentVolumeSymlinkPath = "/mnt/local-storage/sc-a/wwn-1234"
 				c.addOrUpdateLVDL(lvdl)
-				info := c.localDeviceInfos[sourcePath]
-				return info, sourcePath
+				return c.localDeviceInfos[sourcePath], sourcePath
 			},
-			symlinkEvalFunc: func(path string) (string, error) {
-				if path == "/tmp/current-resolves" {
-					return "/dev/sda", nil
+			readlinkFunc: func(path string) (string, error) {
+				if path == "/mnt/local-storage/sc-a/wwn-1234" {
+					return "/dev/disk/by-id/wwn-1234", nil
 				}
 				return "", os.ErrNotExist
 			},
-			apiObjects: []client.Object{
-				localPV("pv-resolves", "/mnt/local-storage/sc-a/current-resolves"),
-			},
-			wantErr: "currentSymlink /tmp/current-resolves still resolves",
+			wantErr: "PV symlink /mnt/local-storage/sc-a/wwn-1234 still points to currentLinkTarget",
 		},
 		{
-			name: "returns recomputed symlink path when preferred policy and unresolved current",
+			name: "returns symlink path when PV symlink points at current but preferred source changed",
+			setup: func(t *testing.T, c *LocalVolumeDeviceLinkCache) (CurrentBlockDeviceInfo, string) {
+				lvdl := newCacheLVDL("pv-sibling", cacheLocalNode, "/dev/disk/by-id/wwn-old", v1api.DeviceLinkPolicyPreferredLinkTarget, "/dev/disk/by-id/wwn-old", "/dev/disk/by-id/scsi-sibling")
+				lvdl.Status.PersistentVolumeSymlinkPath = "/mnt/local-storage/sc-a/old-symlink-name"
+				c.addOrUpdateLVDL(lvdl)
+				return c.localDeviceInfos["/dev/disk/by-id/wwn-old"], "/dev/disk/by-id/wwn-new"
+			},
+			readlinkFunc: func(path string) (string, error) {
+				if path == "/mnt/local-storage/sc-a/old-symlink-name" {
+					return "/dev/disk/by-id/wwn-old", nil
+				}
+				return "", os.ErrNotExist
+			},
+			wantPath: "/mnt/local-storage/sc-a/old-symlink-name",
+		},
+		{
+			name: "returns symlink path when PV symlink is missing",
+			setup: func(t *testing.T, c *LocalVolumeDeviceLinkCache) (CurrentBlockDeviceInfo, string) {
+				lvdl := newCacheLVDL("pv-missing-link", cacheLocalNode, "/dev/disk/by-id/wwn-1234", v1api.DeviceLinkPolicyPreferredLinkTarget, sourcePath)
+				lvdl.Status.PersistentVolumeSymlinkPath = "/mnt/local-storage/sc-a/wwn-1234"
+				c.addOrUpdateLVDL(lvdl)
+				return c.localDeviceInfos[sourcePath], sourcePath
+			},
+			readlinkFunc: func(path string) (string, error) {
+				return "", os.ErrNotExist
+			},
+			wantPath: "/mnt/local-storage/sc-a/wwn-1234",
+		},
+		{
+			name: "errors when reading PV symlink fails for a non-missing reason",
+			setup: func(t *testing.T, c *LocalVolumeDeviceLinkCache) (CurrentBlockDeviceInfo, string) {
+				lvdl := newCacheLVDL("pv-read-error", cacheLocalNode, "/dev/disk/by-id/wwn-1234", v1api.DeviceLinkPolicyPreferredLinkTarget, sourcePath)
+				lvdl.Status.PersistentVolumeSymlinkPath = "/mnt/local-storage/sc-a/wwn-1234"
+				c.addOrUpdateLVDL(lvdl)
+				return c.localDeviceInfos[sourcePath], sourcePath
+			},
+			readlinkFunc: func(path string) (string, error) {
+				return "", os.ErrPermission
+			},
+			wantErr: "error reading PV symlink /mnt/local-storage/sc-a/wwn-1234",
+		},
+		{
+			name: "returns symlink path when PV symlink points elsewhere",
+			setup: func(t *testing.T, c *LocalVolumeDeviceLinkCache) (CurrentBlockDeviceInfo, string) {
+				lvdl := newCacheLVDL("pv-stale", cacheLocalNode, "/dev/disk/by-id/wwn-1234", v1api.DeviceLinkPolicyPreferredLinkTarget, sourcePath)
+				lvdl.Status.PersistentVolumeSymlinkPath = "/mnt/local-storage/sc-a/wwn-1234"
+				c.addOrUpdateLVDL(lvdl)
+				return c.localDeviceInfos[sourcePath], sourcePath
+			},
+			readlinkFunc: func(path string) (string, error) {
+				if path == "/mnt/local-storage/sc-a/wwn-1234" {
+					return "/dev/disk/by-id/old-stale", nil
+				}
+				return "", os.ErrNotExist
+			},
+			wantPath: "/mnt/local-storage/sc-a/wwn-1234",
+		},
+		{
+			name: "returns recomputed symlink path when preferred policy",
 			setup: func(t *testing.T, c *LocalVolumeDeviceLinkCache) (CurrentBlockDeviceInfo, string) {
 				lvdl := newCacheLVDL("pv-success", cacheLocalNode, "/dev/disk/by-id/yyy", v1api.DeviceLinkPolicyPreferredLinkTarget, sourcePath)
 				c.addOrUpdateLVDL(lvdl)
 				info := c.localDeviceInfos[sourcePath]
 				return info, sourcePath
-			},
-			symlinkEvalFunc: func(path string) (string, error) {
-				return "", os.ErrNotExist
 			},
 			apiObjects: []client.Object{
 				localPV("pv-success", "/mnt/local-storage/sc-a/xxx"),
@@ -116,9 +169,6 @@ func TestCurrentBlockDeviceInfoRecoverPVSymlinkPath(t *testing.T) {
 				c.addOrUpdateLVDL(lvdl)
 				return c.localDeviceInfos["/dev/disk/by-id/wwn-other"], sourcePath
 			},
-			symlinkEvalFunc: func(path string) (string, error) {
-				return "", os.ErrNotExist
-			},
 			apiObjects: []client.Object{
 				localPV("pv-invalid-target", "/mnt/local-storage/sc-a/current-invalid"),
 			},
@@ -132,9 +182,6 @@ func TestCurrentBlockDeviceInfoRecoverPVSymlinkPath(t *testing.T) {
 				c.addOrUpdateLVDL(lvdl)
 				return c.localDeviceInfos[sourcePath], sourcePath
 			},
-			symlinkEvalFunc: func(path string) (string, error) {
-				return "", os.ErrNotExist
-			},
 			// pvObjectsForInfo would imply basename "current-status"; status SymlinkPath basename wins in getLVDLAndSymlinkPath.
 			wantPath: filepath.Join(symlinkDir, "from-lvdl-status"),
 		},
@@ -145,9 +192,6 @@ func TestCurrentBlockDeviceInfoRecoverPVSymlinkPath(t *testing.T) {
 				lvdl.Status.PersistentVolumeSymlinkPath = ""
 				c.addOrUpdateLVDL(lvdl)
 				return c.localDeviceInfos[sourcePath], sourcePath
-			},
-			symlinkEvalFunc: func(path string) (string, error) {
-				return "", os.ErrNotExist
 			},
 			apiObjects: []client.Object{
 				&corev1.PersistentVolume{
@@ -169,9 +213,6 @@ func TestCurrentBlockDeviceInfoRecoverPVSymlinkPath(t *testing.T) {
 				c.addOrUpdateLVDL(lvdl)
 				return c.localDeviceInfos[sourcePath], sourcePath
 			},
-			symlinkEvalFunc: func(path string) (string, error) {
-				return "", os.ErrNotExist
-			},
 			apiObjects: []client.Object{
 				localPV("pv-local", "/mnt/local-storage/sc-a/from-pv-local"),
 			},
@@ -185,9 +226,6 @@ func TestCurrentBlockDeviceInfoRecoverPVSymlinkPath(t *testing.T) {
 				c.addOrUpdateLVDL(lvdl)
 				return c.localDeviceInfos[sourcePath], sourcePath
 			},
-			symlinkEvalFunc: func(path string) (string, error) {
-				return "", os.ErrNotExist
-			},
 			wantErr: "error getting associated pv object pv-missing",
 		},
 		{
@@ -197,9 +235,6 @@ func TestCurrentBlockDeviceInfoRecoverPVSymlinkPath(t *testing.T) {
 				lvdl.Status.PersistentVolumeSymlinkPath = ""
 				c.addOrUpdateLVDL(lvdl)
 				return c.localDeviceInfos[sourcePath], sourcePath
-			},
-			symlinkEvalFunc: func(path string) (string, error) {
-				return "", os.ErrNotExist
 			},
 			apiObjects: []client.Object{
 				localPV("pv-empty-local", ""),
@@ -214,9 +249,6 @@ func TestCurrentBlockDeviceInfoRecoverPVSymlinkPath(t *testing.T) {
 				c.addOrUpdateLVDL(lvdl)
 				return c.localDeviceInfos[sourcePath], sourcePath
 			},
-			symlinkEvalFunc: func(path string) (string, error) {
-				return "", os.ErrNotExist
-			},
 			apiObjects: []client.Object{
 				csiPV("pv-csi", "example.com/csi", "volume-handle"),
 			},
@@ -230,9 +262,6 @@ func TestCurrentBlockDeviceInfoRecoverPVSymlinkPath(t *testing.T) {
 				c.addOrUpdateLVDL(lvdl)
 				return c.localDeviceInfos[sourcePath], sourcePath
 			},
-			symlinkEvalFunc: func(path string) (string, error) {
-				return "", os.ErrNotExist
-			},
 			apiObjects: []client.Object{},
 			wantErr:    "does not match expected symlink directory",
 		},
@@ -241,14 +270,24 @@ func TestCurrentBlockDeviceInfoRecoverPVSymlinkPath(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			origEval := internal.FilePathEvalSymLinks
+			origReadlink := internal.Readlink
 			t.Cleanup(func() {
 				internal.FilePathEvalSymLinks = origEval
+				internal.Readlink = origReadlink
 			})
 
 			if tc.symlinkEvalFunc != nil {
 				internal.FilePathEvalSymLinks = tc.symlinkEvalFunc
 			} else {
 				internal.FilePathEvalSymLinks = func(path string) (string, error) {
+					return "", os.ErrNotExist
+				}
+			}
+			if tc.readlinkFunc != nil {
+				internal.Readlink = tc.readlinkFunc
+			} else {
+				// Default: PV symlink missing so recovery can return the path.
+				internal.Readlink = func(path string) (string, error) {
 					return "", os.ErrNotExist
 				}
 			}
