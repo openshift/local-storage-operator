@@ -30,6 +30,7 @@ const (
 	inMechanicalPropertyList = "inMechanicalPropertyList"
 	inVendorList             = "inVendorList"
 	inModelList              = "inModelList"
+	inSerialList             = "inSerialList"
 
 	// exclusion matcher names:
 	notInDeviceNameFilter = "notInDeviceNameFilter"
@@ -199,6 +200,30 @@ var matcherMap = map[string]func(internal.BlockDevice, *localv1alpha1.DeviceIncl
 			}
 		}
 		return matched, nil
+	},
+	inSerialList: func(dev internal.BlockDevice, spec *localv1alpha1.DeviceInclusionSpec) (bool, error) {
+		if spec == nil {
+			return true, nil
+		}
+                if len(spec.Serials) == 0 {
+                        return true, nil
+                }
+                deviceSerial := strings.TrimSpace(dev.Serial)
+                hasConfiguredSerial := false
+                for _, serial := range spec.Serials {
+                        serial = strings.TrimSpace(serial)
+                        if serial == "" {
+                                continue
+                        }
+                        hasConfiguredSerial = true
+                        if strings.EqualFold(deviceSerial, serial) {
+                                return true, nil
+                        }
+                }
+                if !hasConfiguredSerial {
+                        return true, nil
+                }
+                return false, nil
 	},
 }
 

@@ -18,6 +18,8 @@ NAME="sda1" KNAME="sda1" ROTA="1" TYPE="part" SIZE="62913494528" MODEL="" VENDOR
 	lsblkOutput2 = `NAME="sdc" KNAME="sdc" ROTA="1" TYPE="disk" SIZE="62914560000" MODEL="VBOX HARDDISK" VENDOR="ATA" RO="0" RM="1" STATE="running" SERIAL=""
 NAME="sdc3" KNAME="sdc3" ROTA="1" TYPE="part" SIZE="62913494528" MODEL="" VENDOR="" RO="0" RM="1" STATE="" SERIAL=""
 `
+	lsblkOutput3 = `NAME="nvme0n1" ROTA="0" TYPE="disk" SIZE="1234567890" MODEL="Micron MTFDKBA512TFH" VENDOR="" RO="0" RM="0" STATE="live" KNAME="nvme0n1" SERIAL="221035A4EFA5" PARTLABEL=""
+`
 	blkIDOutput1 = `/dev/sdc: TYPE="ext4"
 /dev/sdc3: TYPE="ext2"
 `
@@ -147,6 +149,29 @@ func TestListBlockDevices(t *testing.T) {
 					Name:   "sda",
 					Model:  "VBOX HARDDISK",
 					Vendor: "ATA",
+				},
+			},
+		},
+		{
+			label:             "Case 5: block devices with serial",
+			lsblkOutput:       lsblkOutput3,
+			blkIDOutput:       "",
+			totalBlockDevices: 1,
+			totalBadRows:      0,
+			expected: []BlockDevice{
+				{
+					Name:       "nvme0n1",
+					FSType:     "",
+					Type:       "disk",
+					Size:       "1234567890",
+					Model:      "Micron MTFDKBA512TFH",
+					Vendor:     "",
+					Serial:     "221035A4EFA5",
+					Rotational: "0",
+					ReadOnly:   "0",
+					Removable:  "0",
+					State:      "live",
+					PartLabel:  "",
 				},
 			},
 		},
