@@ -459,6 +459,10 @@ spec:
                   target.workload.openshift.io/management: '{"effect": "PreferredDuringScheduling"}'
                 labels:
                   name: local-storage-operator
+                  openshift.storage.lso.network-policy.deny-all: default
+                  openshift.storage.lso.network-policy.dns: allow
+                  openshift.storage.lso.network-policy.api-server: allow
+                  openshift.storage.lso.network-policy.operator-metrics: allow
               spec:
                 serviceAccountName: local-storage-operator
                 priorityClassName: openshift-user-critical
