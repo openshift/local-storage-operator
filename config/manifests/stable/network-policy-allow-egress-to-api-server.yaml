@@ -1,0 +1,14 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: lso-allow-egress-to-api-server
+spec:
+  podSelector:
+    matchLabels:
+      openshift.storage.lso.network-policy.api-server: allow
+  egress:
+  - ports:
+    - protocol: TCP
+      port: 6443
+  policyTypes:
+  - Egress
