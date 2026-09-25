@@ -175,7 +175,13 @@ func getDiskMakerDiscoveryDSMutateFn(request reconcile.Request,
 			"${CONTAINER_IMAGE}", common.GetDiskMakerImage(),
 			"${RBAC_PROXY_IMAGE}", common.GetKubeRBACProxyImage(),
 			"${TLS_MIN_VERSION}", tlsMinVersion,
-			"${TLS_CIPHER_SUITES}", tlsCipherSuites,
+		}
+		// TLS 1.3 has no configurable cipher suites; omit the flag entirely rather
+		// than passing --tls-cipher-suites= (empty) which kube-rbac-proxy rejects.
+		if tlsCipherSuites != "" {
+			pairs = append(pairs, "${TLS_CIPHER_SUITES}", tlsCipherSuites)
+		} else {
+			pairs = append(pairs, "        - --tls-cipher-suites=${TLS_CIPHER_SUITES}\n", "")
 		}
 
 		dsBytes, err := assets.ReadFileAndReplace(common.DiskMakerDiscoveryDaemonSetTemplate, pairs)
