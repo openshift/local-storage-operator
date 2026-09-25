@@ -26,10 +26,14 @@ func TestDeviceAge(t *testing.T) {
 	oldMatcherMap := matcherMap
 	matcherMap = make(map[string]func(internal.BlockDevice, *localv1alpha1.DeviceInclusionSpec) (bool, error), 0)
 
+	oldExclusionMap := exclusionMap
+	exclusionMap = make(map[string]func(internal.BlockDevice, *localv1alpha1.DeviceExclusionSpec) (bool, error), 0)
+
 	// reset the filters and matchers
 	defer func() {
 		FilterMap = oldFilterMap
 		matcherMap = oldMatcherMap
+		exclusionMap = oldExclusionMap
 	}()
 
 	r, tc := newFakeLocalVolumeSetReconciler(t)
