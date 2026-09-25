@@ -70,11 +70,27 @@ func TestGetDiskMakerDSMutateFnNoTLSArgs(t *testing.T) {
 	request := reconcile.Request{
 		NamespacedName: types.NamespacedName{Namespace: "test-ns"},
 	}
-	// Empty TLS values (e.g. when APIServer is unreachable): mutateFn should still succeed.
-	mutateFn := getDiskMakerDSMutateFn(request, nil, nil, nil, "hash", "", "")
+	// Empty cipher suites (TLS 1.3 custom profile): --tls-cipher-suites must be absent,
+	// not passed as empty, because kube-rbac-proxy rejects --tls-cipher-suites= (empty).
+	mutateFn := getDiskMakerDSMutateFn(request, nil, nil, nil, "hash", "VersionTLS13", "")
 	ds := &appsv1.DaemonSet{}
 	err := mutateFn(ds)
-	assert.NoError(t, err, "mutateFn should not return an error with empty TLS values")
+	assert.NoError(t, err, "mutateFn should not return an error with empty TLS cipher suites")
+
+	var proxyContainer *corev1.Container
+	for i := range ds.Spec.Template.Spec.Containers {
+		if ds.Spec.Template.Spec.Containers[i].Name == "kube-rbac-proxy" {
+			proxyContainer = &ds.Spec.Template.Spec.Containers[i]
+			break
+		}
+	}
+	assert.NotNilf(t, proxyContainer, "kube-rbac-proxy container should be present")
+	assert.Containsf(t, proxyContainer.Args, "--tls-min-version=VersionTLS13",
+		"kube-rbac-proxy args should contain --tls-min-version")
+	for _, arg := range proxyContainer.Args {
+		assert.NotContainsf(t, arg, "--tls-cipher-suites",
+			"kube-rbac-proxy args must not contain --tls-cipher-suites when cipher list is empty")
+	}
 }
 
 func TestMutateAggregatedSpecTemplates(t *testing.T) {

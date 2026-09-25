@@ -182,6 +182,11 @@ func getDiskMakerDiscoveryDSMutateFn(request reconcile.Request,
 		if err != nil {
 			return err
 		}
+		// TLS 1.3 has no configurable cipher suites; kube-rbac-proxy rejects
+		// --tls-cipher-suites= (empty), so strip the arg line entirely.
+		if tlsCipherSuites == "" {
+			dsBytes = nodedaemon.RemoveCipherSuitesArg(dsBytes)
+		}
 		dsTemplate := resourceread.ReadDaemonSetV1OrDie(dsBytes)
 
 		nodedaemon.MutateAggregatedSpec(
