@@ -1,6 +1,7 @@
 package nodedaemon
 
 import (
+	"bytes"
 	"context"
 	"os"
 
@@ -81,6 +82,11 @@ func getDiskMakerDSMutateFn(
 		if err != nil {
 			return err
 		}
+		// TLS 1.3 has no configurable cipher suites; kube-rbac-proxy rejects
+		// --tls-cipher-suites= (empty), so strip the arg line entirely.
+		if tlsCipherSuites == "" {
+			dsBytes = RemoveCipherSuitesArg(dsBytes)
+		}
 		dsTemplate := resourceread.ReadDaemonSetV1OrDie(dsBytes)
 
 		// common spec
@@ -98,6 +104,20 @@ func getDiskMakerDSMutateFn(
 
 		return nil
 	}
+}
+
+// RemoveCipherSuitesArg strips the --tls-cipher-suites arg line from a YAML manifest,
+// regardless of leading whitespace. Mirrors library-go's removeCipherSuitesArgument approach.
+func RemoveCipherSuitesArg(manifest []byte) []byte {
+	const marker = "- --tls-cipher-suites="
+	var out bytes.Buffer
+	for _, line := range bytes.SplitAfter(manifest, []byte("\n")) {
+		if string(bytes.TrimSpace(line)) == marker {
+			continue
+		}
+		out.Write(line)
+	}
+	return out.Bytes()
 }
 
 // MutateAggregatedSpec returns a mutate function that applies the other arguments to the referenced daemonset
