@@ -1,0 +1,22 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: lso-allow-ingress-to-operator-metrics
+spec:
+  podSelector:
+    matchLabels:
+      openshift.storage.lso.network-policy.operator-metrics: allow
+  ingress:
+  - ports:
+    - protocol: TCP
+      port: 8080
+    from:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: openshift-monitoring
+  # 8081 is a health probe (kubelet), so leave the source unrestricted.
+  - ports:
+    - protocol: TCP
+      port: 8081
+  policyTypes:
+  - Ingress
