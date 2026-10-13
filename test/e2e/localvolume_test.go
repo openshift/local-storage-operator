@@ -559,37 +559,6 @@ var _ = Describe("LocalVolume", Label("LocalVolume"), Ordered, func() {
 
 // --- Helper functions ---
 
-func verifyLVDLFilesystemUUIDForPVs(f *framework.Framework, namespace string, pvNames []string) {
-	pvNameSet := map[string]struct{}{}
-	for _, pvName := range pvNames {
-		pvNameSet[pvName] = struct{}{}
-	}
-	Eventually(func(ctx context.Context) bool {
-		lvdlList := &localv1.LocalVolumeDeviceLinkList{}
-		err := f.Client.List(ctx, lvdlList, client.InNamespace(namespace))
-		if err != nil {
-			f.Logf("error listing LocalVolumeDeviceLink objects while verifying filesystemUUID: %v", err)
-			return false
-		}
-		uuidFoundCount := 0
-		for _, lvdl := range lvdlList.Items {
-			if _, ok := pvNameSet[lvdl.Spec.PersistentVolumeName]; !ok {
-				continue
-			}
-			if lvdl.Status.FilesystemUUID == "" {
-				f.Logf("filesystemUUID not populated yet for LVDL %q / PV %q", lvdl.Name, lvdl.Spec.PersistentVolumeName)
-				return false
-			}
-			if lvdl.Status.PersistentVolumeSymlinkPath == "" {
-				f.Logf("SymlinkPath not populated yet for LVDL %q / PV %q", lvdl.Name, lvdl.Spec.PersistentVolumeName)
-				return false
-			}
-			uuidFoundCount++
-		}
-		return uuidFoundCount == len(pvNameSet)
-	}, time.Minute*5, time.Second*5).WithContext(context.Background()).Should(BeTrue(), "waiting for filesystemUUID on all consumed filesystem PV LVDLs")
-}
-
 func verifyLVDLsDeleted(f *framework.Framework, namespace string, lvdlNames []string) {
 	targetNames := map[string]struct{}{}
 	for _, name := range lvdlNames {
