@@ -71,7 +71,7 @@ func runQueryAtTime(prometheusClient prometheusv1.API, query string, evaluationT
 	var result model.Value
 	var warnings prometheusv1.Warnings
 	for i := range 5 {
-		result, warnings, lastErr = prometheusClient.Query(context.TODO(), query, evaluationTime)
+		result, warnings, _, lastErr = prometheusClient.Query(context.TODO(), query, evaluationTime)
 		if lastErr == nil {
 			break
 		}
