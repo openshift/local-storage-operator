@@ -22,6 +22,7 @@ import (
 	"flag"
 	"os"
 	"runtime"
+	"slices"
 	"time"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
@@ -31,8 +32,13 @@ import (
 	"k8s.io/klog/v2"
 
 	configv1 "github.com/openshift/api/config/v1"
+	"github.com/openshift/api/features"
+	configv1client "github.com/openshift/client-go/config/clientset/versioned"
+	configinformers "github.com/openshift/client-go/config/informers/externalversions"
 	crcommon "github.com/openshift/controller-runtime-common/pkg/tls"
 	libcrypto "github.com/openshift/library-go/pkg/crypto"
+	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
+	libevents "github.com/openshift/library-go/pkg/operator/events"
 	localv1 "github.com/openshift/local-storage-operator/api/v1"
 	localv1alpha1 "github.com/openshift/local-storage-operator/api/v1alpha1"
 	"github.com/openshift/local-storage-operator/pkg/common"
@@ -47,7 +53,10 @@ import (
 	"go.uber.org/zap/zapcore"
 	apiruntime "k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+	"k8s.io/apimachinery/pkg/util/wait"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/rest"
+	"k8s.io/utils/clock"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -133,10 +142,26 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Resolve whether the TLSGroupPreferences feature gate is enabled. The predefined
+	// TLS profiles bake non-empty Groups arrays into them, so without this gate LSO
+	// would restrict TLS group (curve) preferences on every cluster as soon as the
+	// supporting libraries are in place. Until the feature is GA, curves must stay
+	// unrestricted on clusters where the gate is disabled (the default).
+	tlsGroupsEnabled := resolveTLSGroupPreferencesEnabled(restConfig)
+
 	var tlsConfigFn func(*tls.Config)
 	if libcrypto.ShouldHonorClusterTLSProfile(adherence) {
+		// Drop Groups when the feature gate is disabled so the metrics server does
+		// not restrict curves (Surface A feature-gate gating). Operate on a copy so
+		// the watcher baseline below keeps the full fetched profile; otherwise the
+		// watcher would compare a Groups-stripped baseline against the live APIServer
+		// profile and trigger a spurious restart on every startup.
+		metricsProfile := tlsProfile
+		if !tlsGroupsEnabled {
+			metricsProfile.Groups = nil
+		}
 		var unsupportedCiphers []string
-		tlsConfigFn, unsupportedCiphers = lsotls.GetTLSConfigFromProfile(tlsProfile)
+		tlsConfigFn, unsupportedCiphers = lsotls.GetTLSConfigFromProfile(metricsProfile)
 		if len(unsupportedCiphers) > 0 {
 			klog.Warningf("TLS profile contains %d unsupported cipher suites: %v",
 				len(unsupportedCiphers), unsupportedCiphers)
@@ -144,6 +169,9 @@ func main() {
 		klog.Infof("TLS adherence policy %q: using cluster TLS profile", adherence)
 	} else {
 		defaultProfile := *configv1.TLSProfiles[libcrypto.DefaultTLSProfileType]
+		if !tlsGroupsEnabled {
+			defaultProfile.Groups = nil
+		}
 		var unsupportedCiphers []string
 		tlsConfigFn, unsupportedCiphers = lsotls.GetTLSConfigFromProfile(defaultProfile)
 		if len(unsupportedCiphers) > 0 {
@@ -186,8 +214,9 @@ func main() {
 		os.Exit(1)
 	}
 	if err = (&lvdcontroller.LocalVolumeDiscoveryReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
+		Client:           mgr.GetClient(),
+		Scheme:           mgr.GetScheme(),
+		TLSGroupsEnabled: tlsGroupsEnabled,
 	}).SetupWithManager(mgr); err != nil {
 		klog.ErrorS(err, "unable to create LocalVolumeDiscovery controller")
 		os.Exit(1)
@@ -202,8 +231,9 @@ func main() {
 	}
 
 	if err = (&nodedaemoncontroller.DaemonReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
+		Client:           mgr.GetClient(),
+		Scheme:           mgr.GetScheme(),
+		TLSGroupsEnabled: tlsGroupsEnabled,
 	}).SetupWithManager(mgr); err != nil {
 		klog.ErrorS(err, "unable to create NodeDaemon controller")
 		os.Exit(1)
@@ -236,4 +266,60 @@ func main() {
 		klog.ErrorS(err, "problem running manager")
 		os.Exit(1)
 	}
+}
+
+// resolveTLSGroupPreferencesEnabled reports whether the TLSGroupPreferences feature
+// gate is enabled for the OpenShift version this operator is managing.
+//
+// LSO is OLM-managed and ships no version env var, so it passes the missingVersion
+// marker as the desired version and library-go derives the managed version from the
+// ClusterVersion, consistent with the CSI operators (STOR-3176).
+//
+// library-go's FeatureGateAccess terminates the process when feature gates change,
+// so the resolved value is valid for the life of this process; a restart re-resolves
+// it. On any error or timeout it returns false, keeping curves unrestricted, which is
+// the correct pre-GA default.
+func resolveTLSGroupPreferencesEnabled(restConfig *rest.Config) bool {
+	const missingVersion = "0.0.1-snapshot"
+
+	configClientset, err := configv1client.NewForConfig(restConfig)
+	if err != nil {
+		klog.ErrorS(err, "unable to build config clientset for feature gate detection; assuming TLSGroupPreferences disabled")
+		return false
+	}
+
+	configInformers := configinformers.NewSharedInformerFactory(configClientset, 10*time.Minute)
+	recorder := libevents.NewLoggingEventRecorder("local-storage-operator-featuregates", clock.RealClock{})
+
+	featureGateAccess := featuregates.NewFeatureGateAccess(
+		missingVersion, missingVersion,
+		configInformers.Config().V1().ClusterVersions(),
+		configInformers.Config().V1().FeatureGates(),
+		recorder,
+	)
+	go featureGateAccess.Run(context.Background())
+	configInformers.Start(wait.NeverStop)
+
+	select {
+	case <-featureGateAccess.InitialFeatureGatesObserved():
+		featureGates, err := featureGateAccess.CurrentFeatureGates()
+		if err != nil {
+			klog.ErrorS(err, "unable to read feature gates; assuming TLSGroupPreferences disabled")
+			return false
+		}
+		// Enabled panics if the gate is not registered for the resolved version,
+		// which happens on releases where TLSGroupPreferences does not exist yet.
+		// Treat an unknown gate as disabled, matching the pre-GA default.
+		if !slices.Contains(featureGates.KnownFeatures(), features.FeatureGateTLSGroupPreferences) {
+			klog.Infof("TLSGroupPreferences feature gate not registered; assuming disabled")
+			return false
+		}
+		enabled := featureGates.Enabled(features.FeatureGateTLSGroupPreferences)
+		klog.Infof("TLSGroupPreferences feature gate enabled: %t", enabled)
+		return enabled
+	case <-time.After(60 * time.Second):
+		klog.Error("timed out waiting for feature gates to be observed")
+		os.Exit(1)
+	}
+	return false
 }

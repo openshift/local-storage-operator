@@ -56,6 +56,7 @@ type DaemonReconciler struct {
 	Client                        client.Client
 	Scheme                        *runtime.Scheme
 	Recorder                      record.EventRecorder
+	TLSGroupsEnabled              bool
 	deletedStaticProvisioner      bool
 	deletedOrphanedServiceMonitor bool
 	lastObservedTLSConfig         map[string]interface{}
@@ -102,14 +103,14 @@ func (r *DaemonReconciler) Reconcile(ctx context.Context, request ctrl.Request) 
 
 	configMapDataHash := dataHash(configMap.Data)
 
-	tlsMinVersion, tlsCipherSuites, observedTLSConfig, err := lsotls.GetTLSProfileValues(ctx, r.Client, r.lastObservedTLSConfig)
+	tlsMinVersion, tlsCipherSuites, tlsCurves, observedTLSConfig, err := lsotls.GetTLSProfileValues(ctx, r.Client, r.TLSGroupsEnabled, r.lastObservedTLSConfig)
 	if err != nil {
 		klog.Warningf("failed to get cluster TLS profile, proceeding with kube-rbac-proxy defaults: %v", err)
 	} else {
 		r.lastObservedTLSConfig = observedTLSConfig
 	}
 
-	diskMakerDSMutateFn := getDiskMakerDSMutateFn(request, tolerations, ownerRefs, nodeSelector, configMapDataHash, tlsMinVersion, tlsCipherSuites)
+	diskMakerDSMutateFn := getDiskMakerDSMutateFn(request, tolerations, ownerRefs, nodeSelector, configMapDataHash, tlsMinVersion, tlsCipherSuites, tlsCurves)
 	ds, opResult, err := CreateOrUpdateDaemonset(ctx, r.Client, diskMakerDSMutateFn)
 	if err != nil {
 		return ctrl.Result{}, err

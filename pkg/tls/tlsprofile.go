@@ -4,11 +4,13 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"strconv"
 	"strings"
 
 	configv1 "github.com/openshift/api/config/v1"
 	configlistersv1 "github.com/openshift/client-go/config/listers/config/v1"
 	crcommon "github.com/openshift/controller-runtime-common/pkg/tls"
+	libgocrypto "github.com/openshift/library-go/pkg/crypto"
 	libapiserver "github.com/openshift/library-go/pkg/operator/configobserver/apiserver"
 	libevents "github.com/openshift/library-go/pkg/operator/events"
 	"github.com/openshift/library-go/pkg/operator/resourcesynccontroller"
@@ -16,34 +18,81 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/cache"
+	"k8s.io/klog/v2"
 	"k8s.io/utils/clock"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 // GetTLSProfileValues fetches the cluster API Server TLS profile via
-// library-go's ObserveTLSSecurityProfile and returns TLS_MIN_VERSION, TLS_CIPHER_SUITES,
-// observedConfig for future comparisons and avoid unnecessary updates
-// Returns empty strings on error so callers fall back to kube-rbac-proxy defaults.
-func GetTLSProfileValues(ctx context.Context, c client.Client, previousObservedConfig map[string]interface{}) (minVersion, cipherSuites string, observedConfig map[string]interface{}, err error) {
+// library-go's ObserveTLSSecurityProfileWithGroupPaths and returns TLS_MIN_VERSION,
+// TLS_CIPHER_SUITES, TLS_CURVE_PREFERENCES, and observedConfig for future comparisons
+// to avoid unnecessary updates. Returns empty strings on error so callers fall back to
+// kube-rbac-proxy defaults.
+//
+// Curve preferences are only produced when tlsGroupsEnabled is true (the TLSGroupPreferences
+// feature gate is enabled); otherwise an empty string is returned so callers leave curves
+// unrestricted. The observer emits the (FIPS-filtered) group names, which are converted to
+// numeric curve IDs for kube-rbac-proxy; unrecognized groups are warned-and-skipped rather
+// than failing.
+func GetTLSProfileValues(ctx context.Context, c client.Client, tlsGroupsEnabled bool, previousObservedConfig map[string]interface{}) (minVersion, cipherSuites, curvePreferences string, observedConfig map[string]interface{}, err error) {
 	listers := &apiServerListers{&clientAPIServerLister{client: c, ctx: ctx}}
 	recorder := libevents.NewLoggingEventRecorder("local-storage-operator-tls", clock.RealClock{})
 
-	observedConfig, errors := libapiserver.ObserveTLSSecurityProfile(listers, recorder, previousObservedConfig)
+	minTLSVersionPath := []string{"servingInfo", "minTLSVersion"}
+	cipherSuitesPath := []string{"servingInfo", "cipherSuites"}
+	var groupsPath []string
+	if tlsGroupsEnabled {
+		groupsPath = []string{"servingInfo", "curvePreferences"}
+	}
+
+	observedConfig, errors := libapiserver.ObserveTLSSecurityProfileWithGroupPaths(listers, recorder, previousObservedConfig, minTLSVersionPath, cipherSuitesPath, groupsPath)
 	if len(errors) > 0 {
-		return "", "", nil, fmt.Errorf("failed to observe TLS security profile: %v", errors)
+		return "", "", "", nil, fmt.Errorf("failed to observe TLS security profile: %v", errors)
 	}
 
-	minVersion, _, err = unstructured.NestedString(observedConfig, "servingInfo", "minTLSVersion")
+	minVersion, _, err = unstructured.NestedString(observedConfig, minTLSVersionPath...)
 	if err != nil {
-		return "", "", nil, fmt.Errorf("failed to extract minTLSVersion from observed config: %w", err)
+		return "", "", "", nil, fmt.Errorf("failed to extract minTLSVersion from observed config: %w", err)
 	}
 
-	suites, _, err := unstructured.NestedStringSlice(observedConfig, "servingInfo", "cipherSuites")
+	suites, _, err := unstructured.NestedStringSlice(observedConfig, cipherSuitesPath...)
 	if err != nil {
-		return "", "", nil, fmt.Errorf("failed to extract cipherSuites from observed config: %w", err)
+		return "", "", "", nil, fmt.Errorf("failed to extract cipherSuites from observed config: %w", err)
 	}
 
-	return minVersion, strings.Join(suites, ","), observedConfig, nil
+	curvePreferences, err = extractCurvePreferences(observedConfig, groupsPath)
+	if err != nil {
+		return "", "", "", nil, err
+	}
+
+	return minVersion, strings.Join(suites, ","), curvePreferences, observedConfig, nil
+}
+
+// extractCurvePreferences converts the observed TLS group names at groupsPath to the
+// comma-separated numeric curve IDs expected by kube-rbac-proxy's --tls-curve-preferences.
+// It returns an empty string when the TLSGroupPreferences feature gate is disabled
+// (groupsPath is nil) or no groups are observed. Unrecognized groups are warned-and-skipped.
+// The group names are already FIPS-filtered by the observer.
+func extractCurvePreferences(observedConfig map[string]interface{}, groupsPath []string) (string, error) {
+	if len(groupsPath) == 0 {
+		return "", nil
+	}
+
+	groups, _, err := unstructured.NestedStringSlice(observedConfig, groupsPath...)
+	if err != nil {
+		return "", fmt.Errorf("failed to extract curvePreferences from observed config: %w", err)
+	}
+
+	curveIDs, unrecognized := libgocrypto.TLSGroupsToCurvePreferences(groups)
+	if len(unrecognized) > 0 {
+		klog.Warningf("ignoring unrecognized TLS groups: %v", unrecognized)
+	}
+
+	ids := make([]string, len(curveIDs))
+	for i, id := range curveIDs {
+		ids[i] = strconv.Itoa(int(id))
+	}
+	return strings.Join(ids, ","), nil
 }
 
 // clientAPIServerLister implements configlistersv1.APIServerLister backed by a

@@ -61,6 +61,7 @@ type LocalVolumeDiscoveryReconciler struct {
 	Client                client.Client
 	Scheme                *runtime.Scheme
 	Recorder              record.EventRecorder
+	TLSGroupsEnabled      bool
 	lastObservedTLSConfig map[string]interface{}
 }
 
@@ -93,7 +94,7 @@ func (r *LocalVolumeDiscoveryReconciler) Reconcile(ctx context.Context, request 
 		return ctrl.Result{}, err
 	}
 
-	tlsMinVersion, tlsCipherSuites, observedTLSConfig, err := lsotls.GetTLSProfileValues(ctx, r.Client, r.lastObservedTLSConfig)
+	tlsMinVersion, tlsCipherSuites, tlsCurves, observedTLSConfig, err := lsotls.GetTLSProfileValues(ctx, r.Client, r.TLSGroupsEnabled, r.lastObservedTLSConfig)
 	if err != nil {
 		klog.Warningf("failed to get cluster TLS profile, proceeding with kube-rbac-proxy defaults: %v", err)
 	} else {
@@ -105,7 +106,8 @@ func (r *LocalVolumeDiscoveryReconciler) Reconcile(ctx context.Context, request 
 		getOwnerRefs(instance),
 		instance.Spec.NodeSelector,
 		tlsMinVersion,
-		tlsCipherSuites)
+		tlsCipherSuites,
+		tlsCurves)
 	ds, opResult, err := nodedaemon.CreateOrUpdateDaemonset(ctx, r.Client, diskMakerDSMutateFn)
 	if err != nil {
 		message := fmt.Sprintf("failed to create discovery daemonset. Error %+v", err)
@@ -167,7 +169,8 @@ func getDiskMakerDiscoveryDSMutateFn(request reconcile.Request,
 	ownerRefs []metav1.OwnerReference,
 	nodeSelector *corev1.NodeSelector,
 	tlsMinVersion string,
-	tlsCipherSuites string) func(*appsv1.DaemonSet) error {
+	tlsCipherSuites string,
+	tlsCurves string) func(*appsv1.DaemonSet) error {
 
 	return func(ds *appsv1.DaemonSet) error {
 		pairs := []string{
@@ -176,6 +179,7 @@ func getDiskMakerDiscoveryDSMutateFn(request reconcile.Request,
 			"${RBAC_PROXY_IMAGE}", common.GetKubeRBACProxyImage(),
 			"${TLS_MIN_VERSION}", tlsMinVersion,
 			"${TLS_CIPHER_SUITES}", tlsCipherSuites,
+			"${TLS_CURVE_PREFERENCES}", tlsCurves,
 		}
 
 		dsBytes, err := assets.ReadFileAndReplace(common.DiskMakerDiscoveryDaemonSetTemplate, pairs)
@@ -186,6 +190,11 @@ func getDiskMakerDiscoveryDSMutateFn(request reconcile.Request,
 		// --tls-cipher-suites= (empty), so strip the arg line entirely.
 		if tlsCipherSuites == "" {
 			dsBytes = nodedaemon.RemoveCipherSuitesArg(dsBytes)
+		}
+		// Without curve preferences (feature disabled, or no/empty Groups) the
+		// --tls-curve-preferences line must be removed, not left empty.
+		if tlsCurves == "" {
+			dsBytes = nodedaemon.RemoveCurvePreferencesArg(dsBytes)
 		}
 		dsTemplate := resourceread.ReadDaemonSetV1OrDie(dsBytes)
 

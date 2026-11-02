@@ -43,11 +43,12 @@ func TestMutateAggregatedSpecWithNilNodeSelector(t *testing.T) {
 func TestGetDiskMakerDSMutateFnTLSArgs(t *testing.T) {
 	tlsMinVersion := "VersionTLS12"
 	tlsCipherSuites := "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256"
+	tlsCurves := "29,23,24"
 
 	request := reconcile.Request{
 		NamespacedName: types.NamespacedName{Namespace: "test-ns"},
 	}
-	mutateFn := getDiskMakerDSMutateFn(request, nil, nil, nil, "hash", tlsMinVersion, tlsCipherSuites)
+	mutateFn := getDiskMakerDSMutateFn(request, nil, nil, nil, "hash", tlsMinVersion, tlsCipherSuites, tlsCurves)
 	ds := &appsv1.DaemonSet{}
 	err := mutateFn(ds)
 	assert.NoError(t, err, "mutateFn should not return an error")
@@ -64,18 +65,21 @@ func TestGetDiskMakerDSMutateFnTLSArgs(t *testing.T) {
 		"kube-rbac-proxy args should contain --tls-min-version")
 	assert.Containsf(t, proxyContainer.Args, "--tls-cipher-suites="+tlsCipherSuites,
 		"kube-rbac-proxy args should contain --tls-cipher-suites")
+	assert.Containsf(t, proxyContainer.Args, "--tls-curve-preferences="+tlsCurves,
+		"kube-rbac-proxy args should contain --tls-curve-preferences")
 }
 
 func TestGetDiskMakerDSMutateFnNoTLSArgs(t *testing.T) {
 	request := reconcile.Request{
 		NamespacedName: types.NamespacedName{Namespace: "test-ns"},
 	}
-	// Empty cipher suites (TLS 1.3 custom profile): --tls-cipher-suites must be absent,
-	// not passed as empty, because kube-rbac-proxy rejects --tls-cipher-suites= (empty).
-	mutateFn := getDiskMakerDSMutateFn(request, nil, nil, nil, "hash", "VersionTLS13", "")
+	// Empty cipher suites (TLS 1.3 custom profile) and empty curves (feature disabled):
+	// --tls-cipher-suites and --tls-curve-preferences must be absent, not passed as empty,
+	// because kube-rbac-proxy rejects an empty value for them.
+	mutateFn := getDiskMakerDSMutateFn(request, nil, nil, nil, "hash", "VersionTLS13", "", "")
 	ds := &appsv1.DaemonSet{}
 	err := mutateFn(ds)
-	assert.NoError(t, err, "mutateFn should not return an error with empty TLS cipher suites")
+	assert.NoError(t, err, "mutateFn should not return an error with empty TLS cipher suites and curves")
 
 	var proxyContainer *corev1.Container
 	for i := range ds.Spec.Template.Spec.Containers {
@@ -90,6 +94,8 @@ func TestGetDiskMakerDSMutateFnNoTLSArgs(t *testing.T) {
 	for _, arg := range proxyContainer.Args {
 		assert.NotContainsf(t, arg, "--tls-cipher-suites",
 			"kube-rbac-proxy args must not contain --tls-cipher-suites when cipher list is empty")
+		assert.NotContainsf(t, arg, "--tls-curve-preferences",
+			"kube-rbac-proxy args must not contain --tls-curve-preferences when curve list is empty")
 	}
 }
 

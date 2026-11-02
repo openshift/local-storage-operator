@@ -395,6 +395,8 @@ spec:
               resources:
                 - infrastructures
                 - apiservers
+                - featuregates
+                - clusterversions
               verbs:
                 - get
                 - list

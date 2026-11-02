@@ -66,6 +66,7 @@ func getDiskMakerDSMutateFn(
 	dataHash string,
 	tlsMinVersion string,
 	tlsCipherSuites string,
+	tlsCurves string,
 ) func(*appsv1.DaemonSet) error {
 
 	return func(ds *appsv1.DaemonSet) error {
@@ -76,6 +77,7 @@ func getDiskMakerDSMutateFn(
 			"${PRIORITY_CLASS_NAME}", os.Getenv("PRIORITY_CLASS_NAME"),
 			"${TLS_MIN_VERSION}", tlsMinVersion,
 			"${TLS_CIPHER_SUITES}", tlsCipherSuites,
+			"${TLS_CURVE_PREFERENCES}", tlsCurves,
 		}
 
 		dsBytes, err := assets.ReadFileAndReplace(common.DiskMakerManagerDaemonSetTemplate, pairs)
@@ -86,6 +88,11 @@ func getDiskMakerDSMutateFn(
 		// --tls-cipher-suites= (empty), so strip the arg line entirely.
 		if tlsCipherSuites == "" {
 			dsBytes = RemoveCipherSuitesArg(dsBytes)
+		}
+		// Without curve preferences (feature disabled, or no/empty Groups) the
+		// --tls-curve-preferences line must be removed, not left empty.
+		if tlsCurves == "" {
+			dsBytes = RemoveCurvePreferencesArg(dsBytes)
 		}
 		dsTemplate := resourceread.ReadDaemonSetV1OrDie(dsBytes)
 
@@ -109,7 +116,17 @@ func getDiskMakerDSMutateFn(
 // RemoveCipherSuitesArg strips the --tls-cipher-suites arg line from a YAML manifest,
 // regardless of leading whitespace. Mirrors library-go's removeCipherSuitesArgument approach.
 func RemoveCipherSuitesArg(manifest []byte) []byte {
-	const marker = "- --tls-cipher-suites="
+	return removeArgLine(manifest, "- --tls-cipher-suites=")
+}
+
+// RemoveCurvePreferencesArg strips the --tls-curve-preferences arg line from a YAML manifest,
+// regardless of leading whitespace. Mirrors library-go's removeCurvePreferencesArgument approach.
+func RemoveCurvePreferencesArg(manifest []byte) []byte {
+	return removeArgLine(manifest, "- --tls-curve-preferences=")
+}
+
+// removeArgLine strips any line whose trimmed content exactly equals marker.
+func removeArgLine(manifest []byte, marker string) []byte {
 	var out bytes.Buffer
 	for _, line := range bytes.SplitAfter(manifest, []byte("\n")) {
 		if string(bytes.TrimSpace(line)) == marker {
