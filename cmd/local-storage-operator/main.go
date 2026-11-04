@@ -277,15 +277,15 @@ func main() {
 //
 // library-go's FeatureGateAccess terminates the process when feature gates change,
 // so the resolved value is valid for the life of this process; a restart re-resolves
-// it. On any error or timeout it returns false, keeping curves unrestricted, which is
-// the correct pre-GA default.
+// it. On any error or timeout it does os.Exit(1), avoiding curves unrestricted behavior
+// when we are not sure about feature-gate state.
 func resolveTLSGroupPreferencesEnabled(restConfig *rest.Config) bool {
 	const missingVersion = "0.0.1-snapshot"
 
 	configClientset, err := configv1client.NewForConfig(restConfig)
 	if err != nil {
-		klog.ErrorS(err, "unable to build config clientset for feature gate detection; assuming TLSGroupPreferences disabled")
-		return false
+		klog.ErrorS(err, "unable to build config clientset for feature gate detection; exiting")
+		os.Exit(1)
 	}
 
 	configInformers := configinformers.NewSharedInformerFactory(configClientset, 10*time.Minute)
@@ -304,8 +304,8 @@ func resolveTLSGroupPreferencesEnabled(restConfig *rest.Config) bool {
 	case <-featureGateAccess.InitialFeatureGatesObserved():
 		featureGates, err := featureGateAccess.CurrentFeatureGates()
 		if err != nil {
-			klog.ErrorS(err, "unable to read feature gates; assuming TLSGroupPreferences disabled")
-			return false
+			klog.ErrorS(err, "unable to read feature gates; exiting")
+			os.Exit(1)
 		}
 		// Enabled panics if the gate is not registered for the resolved version,
 		// which happens on releases where TLSGroupPreferences does not exist yet.
