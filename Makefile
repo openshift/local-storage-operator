@@ -99,12 +99,17 @@ fmt: ## Run go fmt against code.
 # vet: ## Run go vet against code.
 # 	go vet ./...
 
-ENVTEST_ASSETS_DIR=$(shell pwd)/testbin
+# ENVTEST_K8S_VERSION is the version of the envtest/kubebuilder control-plane
+# binaries (etcd, kube-apiserver, kubectl) to download. 1.27.x matches the
+# k8s.io/* v0.27 and controller-runtime v0.15 dependencies of this module.
+ENVTEST_K8S_VERSION = 1.27.1
+# envtest binaries are now served from the controller-tools GitHub-hosted index.
+# The old storage.googleapis.com/kubebuilder-tools bucket has been removed, so
+# --use-deprecated-gcs=false (the GitHub index) is required.
+ENVTEST_INDEX = https://raw.githubusercontent.com/kubernetes-sigs/controller-tools/HEAD/envtest-releases.yaml
 
-test: manifests generate diskmaker-rbac fmt ## Run tests.
-	mkdir -p ${ENVTEST_ASSETS_DIR}
-	test -f ${ENVTEST_ASSETS_DIR}/setup-envtest.sh || curl -sSLo ${ENVTEST_ASSETS_DIR}/setup-envtest.sh https://raw.githubusercontent.com/kubernetes-sigs/controller-runtime/v0.7.2/hack/setup-envtest.sh
-	source ${ENVTEST_ASSETS_DIR}/setup-envtest.sh; fetch_envtest_tools $(ENVTEST_ASSETS_DIR); setup_envtest_env $(ENVTEST_ASSETS_DIR); go test ./common/... ./controllers/... ./diskmaker/...  ./internal/... -coverprofile cover.out
+test: manifests generate diskmaker-rbac fmt envtest ## Run tests.
+	KUBEBUILDER_ASSETS="$$($(ENVTEST) use $(ENVTEST_K8S_VERSION) --use-deprecated-gcs=false --index $(ENVTEST_INDEX) -p path)" go test ./common/... ./controllers/... ./diskmaker/...  ./internal/... -coverprofile cover.out
 
 # ##@ Build
 
@@ -143,6 +148,14 @@ controller-gen: ## Download controller-gen locally if necessary.
 KUSTOMIZE = $(shell pwd)/bin/kustomize
 kustomize: ## Download kustomize locally if necessary.
 	$(call go-get-tool,$(KUSTOMIZE),sigs.k8s.io/kustomize/kustomize/v5@v5.1.0)
+
+# setup-envtest is pinned to a release-0.16 commit: it is the newest setup-envtest
+# that still builds with Go 1.20 (this module's toolchain) while supporting the
+# GitHub-hosted envtest index (--index / --use-deprecated-gcs=false). Newer
+# releases (>= release-0.18) require Go >= 1.22 and will not build here.
+ENVTEST = $(shell pwd)/bin/setup-envtest
+envtest: ## Download setup-envtest locally if necessary.
+	$(call go-get-tool,$(ENVTEST),sigs.k8s.io/controller-runtime/tools/setup-envtest@v0.0.0-20240531164907-7006f379adf2)
 
 # go-get-tool will 'go get' any package $2 and install it to $1.
 PROJECT_DIR := $(shell dirname $(abspath $(lastword $(MAKEFILE_LIST))))
